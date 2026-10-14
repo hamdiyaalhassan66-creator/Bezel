@@ -13809,6 +13809,7 @@ const [vidAudios, setVidAudios] = useState([]); // [{ id, name, src, start, len,
 const [selAudio, setSelAudio] = useState(null); // { aid }
 const audioElsRef = useRef(new Map()); // clip id -> HTMLAudioElement
   const [vidSel, setVidSel] = useState({ shot: null, key: null, ids: [] });
+  const [vidTexts, setVidTexts] = useState([]); // [{ id, tid, start, len, enter, exit }]
   const [vidDuration, setVidDuration] = useState(10);
   const [vidPlaying, setVidPlaying] = useState(false);
   const [vidLoop, setVidLoop] = useState(true);
