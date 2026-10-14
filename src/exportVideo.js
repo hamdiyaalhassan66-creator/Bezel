@@ -32,8 +32,35 @@ export function estimateVideoBytes(format, w, h, fps, frames) {
   return (bitrateFor(w, h, fps) / 8) * (frames / fps);
 }
 
+const AUDIO_SR = 48000;
+
+// Mixes every unmuted clip into one stereo buffer, placed and trimmed like on the timeline.
+// seconds = output length. speed = export speed (the audio is sped up with the video).
+async function mixAudio(clips, seconds, speed) {
+  const live = (clips ?? []).filter((c) => !c.muted && (c.volume ?? 1) > 0);
+  if (!live.length || typeof OfflineAudioContext === "undefined") return null;
+  const ctx = new OfflineAudioContext(2, Math.max(1, Math.ceil(seconds * AUDIO_SR)), AUDIO_SR);
+  let any = false;
+  for (const c of live) {
+    try {
+      const buf = await ctx.decodeAudioData(await (await fetch(c.src)).arrayBuffer());
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.playbackRate.value = speed;
+      const gain = ctx.createGain();
+      gain.gain.value = Math.min(1, Math.max(0, c.volume ?? 1));
+      src.connect(gain).connect(ctx.destination);
+      src.start(c.start / speed, c.offset ?? 0, c.len);
+      any = true;
+    } catch (err) {
+      console.warn("Audio clip skipped:", c.name, err);
+    }
+  }
+  return any ? ctx.startRendering() : null;
+}
+
 // MP4 (H.264) and WebM (VP9, optional alpha) through WebCodecs
-async function encodeWebCodecs(kind, { width, height, fps, count, transparent, renderFrame, onProgress }) {
+async function encodeWebCodecs(kind, { width, height, fps, count, transparent, renderFrame, onProgress, audio }) {
   if (typeof VideoEncoder === "undefined") {
     throw new Error("This browser has no WebCodecs support. Use a recent Chrome, Edge or Safari.");
   }
@@ -55,10 +82,18 @@ async function encodeWebCodecs(kind, { width, height, fps, count, transparent, r
     throw new Error(`${isMp4 ? "H.264" : "VP9"} at ${width}x${height} isn't supported here. Try a lower resolution.`);
   }
 
+  // Audio: only if the browser can encode it and there's something to play
+  const aCfg = { codec: isMp4 ? "mp4a.40.2" : "opus", sampleRate: AUDIO_SR, numberOfChannels: 2, bitrate: 128000 };
+  let audioBuf = null;
+  if (audio?.clips?.length && typeof AudioEncoder !== "undefined" && (await AudioEncoder.isConfigSupported(aCfg)).supported) {
+    audioBuf = await mixAudio(audio.clips, count / fps, audio.speed ?? 1);
+  }
+  const aMux = audioBuf ? { audio: { codec: isMp4 ? "aac" : "A_OPUS", numberOfChannels: 2, sampleRate: AUDIO_SR } } : {};
+
   const target = isMp4 ? new Mp4Target() : new WebmTarget();
   const muxer = isMp4
-    ? new Mp4Muxer({ target, video: { codec: "avc", width, height }, fastStart: "in-memory" })
-    : new WebmMuxer({ target, video: { codec: "V_VP9", width, height, frameRate: fps, alpha: useAlpha } });
+    ? new Mp4Muxer({ target, video: { codec: "avc", width, height }, ...aMux, fastStart: "in-memory" })
+    : new WebmMuxer({ target, video: { codec: "V_VP9", width, height, frameRate: fps, alpha: useAlpha }, ...aMux });
 
   let failure = null;
   const encoder = new VideoEncoder({
@@ -80,6 +115,39 @@ async function encodeWebCodecs(kind, { width, height, fps, count, transparent, r
     onProgress?.((i + 1) / count);
   }
   await encoder.flush();
+
+  if (audioBuf) {
+    let aFail = null;
+    const aEnc = new AudioEncoder({
+      output: (chunk, meta) => muxer.addAudioChunk(chunk, meta),
+      error: (e) => (aFail = e),
+    });
+    aEnc.configure(aCfg);
+    const L = audioBuf.getChannelData(0);
+    const R = audioBuf.getChannelData(1);
+    const STEP = 4800; // 100 ms per chunk
+    for (let i = 0; i < audioBuf.length; i += STEP) {
+      const n = Math.min(STEP, audioBuf.length - i);
+      const data = new Float32Array(n * 2); // planar: all left samples, then all right
+      data.set(L.subarray(i, i + n), 0);
+      data.set(R.subarray(i, i + n), n);
+      const ad = new AudioData({
+        format: "f32-planar",
+        sampleRate: AUDIO_SR,
+        numberOfFrames: n,
+        numberOfChannels: 2,
+        timestamp: Math.round((i * 1e6) / AUDIO_SR),
+        data,
+      });
+      aEnc.encode(ad);
+      ad.close();
+      while (aEnc.encodeQueueSize > 16) await new Promise((r) => setTimeout(r, 4));
+      if (aFail) throw aFail;
+    }
+    await aEnc.flush();
+    if (aFail) throw aFail;
+  }
+
   muxer.finalize();
   return new Blob([target.buffer], { type: isMp4 ? "video/mp4" : "video/webm" });
 }

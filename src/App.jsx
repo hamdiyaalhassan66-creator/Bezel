@@ -9238,6 +9238,25 @@ function FrameVideoTemplateCard({ tpl, index, label, active, renderKey, renderSt
   );
 }
 
+function AudioWave({ a }) {
+  const n = a.peaks?.length;
+  if (!n || !a.dur) return null;
+  const i0 = Math.floor(((a.offset ?? 0) / a.dur) * n);
+  const i1 = Math.min(n, Math.max(i0 + 1, Math.ceil((((a.offset ?? 0) + a.len) / a.dur) * n)));
+  const slice = a.peaks.slice(i0, i1);
+  const d = slice
+    .map((p, i) => {
+      const h = Math.max(0.04, p / 100);
+      return `M${i + 0.5} ${1 - h}V${1 + h}`;
+    })
+    .join("");
+  return (
+    <svg className="absolute inset-0 w-full h-full pointer-events-none text-[#FF47BC]/70" viewBox={`0 0 ${Math.max(1, slice.length)} 2`} preserveAspectRatio="none">
+      <path d={d} stroke="currentColor" strokeWidth="1" vectorEffect="non-scaling-stroke" fill="none" />
+    </svg>
+  );
+}
+
 function VideoTimeline({ v }) {
   const { shots, duration, selShot, selKey, selIds, selProp, timeRef } = v;
   const [collapsed, setCollapsed] = useState(false);
@@ -9435,6 +9454,7 @@ useEffect(() => {
   const [nameDraft, setNameDraft] = useState("");
   const nameCancelRef = useRef(false);
   const imgInputRef = useRef(null);
+  const audioInputRef = useRef(null);
   const imgTargetRef = useRef(null);
   const startRename = (s) => {
     setNameDraft(s.name);
@@ -9857,7 +9877,7 @@ useLayoutEffect(() => {
       if (e.code === "Space" && !t.closest?.("button")) { e.preventDefault(); l.onTogglePlay(); }
       else if (e.key === "ArrowLeft") { e.preventDefault(); l.onStep(-1); }
       else if (e.key === "ArrowRight") { e.preventDefault(); l.onStep(1); }
-      else if ((e.key === "Delete" || e.key === "Backspace") && (l.selIds.length || l.selBg || l.selText)) { e.preventDefault(); l.onDelete(); }
+      else if ((e.key === "Delete" || e.key === "Backspace") && (l.selIds.length || l.selBg || l.selText || l.selAudio)) { e.preventDefault(); l.onDelete(); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -10083,6 +10103,8 @@ const bgDown = (b, mode) =>
   clipRowDown(b, mode, (add) => { if (!pickRow("bg", b.id, add)) v.onBgSelect(b.id, add); }, (p) => v.onBgPatch(b.id, p), "bg");
 const textDown = (c, mode) =>
   clipRowDown(c, mode, (add) => { if (!pickRow("text", c.id, add)) v.onTextSelect(c.id, add); }, (p) => v.onTextPatch(c.id, p), "text");
+const audioDown = (c, mode) =>
+  clipRowDown(c, mode, () => v.onAudioSelect(c.id), (p) => v.onAudioPatch(c.id, p), "audio");
 
 const rowLabel = (key, text, selected, onClick, onContext, Icon, rename, hide) => (
   <div
@@ -10282,7 +10304,7 @@ const openEase = (e, sid, kid, prop = null) => {
       <Palette size={16} weight="bold" />
     </VidBtn>
     <VidBtn label="Loop" shortcut={["⇧", "L"]} tone={v.loop ? "pink" : "default"} onClick={v.onLoop}><ArrowsCounterClockwise size={16} weight="bold" /></VidBtn>
-    {(selIds.length > 0 || v.selBg || v.selText) && (
+    {(selIds.length > 0 || v.selBg || v.selText || v.selAudio) && (
       <VidBtn label="Delete" tone="danger" shortcut={["⌫"]} onClick={v.onDelete} disabled={v.exporting}>
         <TrashSimple size={16} weight="bold" />
       </VidBtn>
@@ -10305,7 +10327,20 @@ const openEase = (e, sid, kid, prop = null) => {
       </div>
     </div>
     <div className="flex items-center gap-1">
-      <VidBtn label="Audio isn't built yet" disabled><MusicNoteSimple size={16} weight="bold" /></VidBtn>
+      <VidBtn label="Add audio" onClick={() => audioInputRef.current?.click()} disabled={v.exporting}>
+        <MusicNoteSimple size={16} weight="bold" />
+      </VidBtn>
+      <input
+        ref={audioInputRef}
+        type="file"
+        accept="audio/*"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) v.onAudioAdd(f);
+          e.target.value = "";
+        }}
+      />
       <VidBtn label={collapsed ? "Expand timeline" : "Collapse timeline"} onClick={() => setCollapsed((c) => !c)}>
         <CaretDown size={16} weight="bold" style={{ transform: collapsed ? "rotate(180deg)" : "rotate(0deg)" }} className="transition-transform duration-200" />
       </VidBtn>
@@ -10557,6 +10592,21 @@ const openEase = (e, sid, kid, prop = null) => {
       start: () => startTextRename(c),
     },
     { hidden: v.textHidden(c.tid), toggle: () => v.onTextToggleHidden(c.tid) }
+  )
+)}
+{v.audios.map((a) =>
+  rowLabel(
+    `au-${a.id}`,
+    a.name,
+    v.selAudio?.aid === a.id,
+    () => {
+      if (v.playing) v.onPause();
+      v.onAudioSelect(a.id);
+    },
+    undefined,
+    MusicNoteSimple,
+    undefined,
+    { hidden: !!a.muted, toggle: () => v.onAudioPatch(a.id, { muted: !a.muted }) } // eye = mute
   )
 )}
         </div>
@@ -10840,6 +10890,30 @@ const openEase = (e, sid, kid, prop = null) => {
     {renderTextClip(c)}
   </div>
 ))}
+{v.audios.map((a) => {
+  const sel = v.selAudio?.aid === a.id;
+  return (
+    <div key={a.id} className={`fx-enter relative h-[30px] ${sel ? "bg-[#FF47BC]/5" : "bg-[#F0F0F0] dark:bg-[#1F1F1F]"}`}>
+      <div
+        onPointerDown={audioDown(a, "move")}
+        className={`group absolute top-0 h-[30px] rounded-[8px] overflow-hidden cursor-grab active:cursor-grabbing bg-[#FF47BC]/20 hover:bg-[#FF47BC]/25 border-2 ${
+          sel ? "border-[#FF47BC]" : "border-transparent"
+        } ${a.muted ? "opacity-40" : ""}`}
+        style={{ left: VID_PAD + a.start * pps, width: a.len * pps }}
+      >
+        <AudioWave a={a} />
+        <span className="absolute inset-y-0 left-3 right-3 flex items-center truncate leading-4 pointer-events-none text-[#FF47BC]">
+          {a.name}
+        </span>
+        {[["l", "left-0"], ["r", "right-0"]].map(([m, side]) => (
+          <div key={m} onPointerDown={audioDown(a, m)} className={`group/h absolute ${side} inset-y-0 w-2.5 flex items-center justify-center cursor-ew-resize`}>
+            <i className={`w-0.5 h-4 rounded-full bg-[#FF47BC] transition-opacity ${sel ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+})}
         </div>
       </div>
 
@@ -13696,6 +13770,8 @@ vidFrameSeenRef.current = new Set();
 setVidShots([]);
 setVidBgs([]);
 setVidTexts([]);
+setVidAudios([]);
+setSelAudio(null);
 setSelBg(null);
 setSelText(null);
     vidNo.current = 2;
@@ -13729,7 +13805,9 @@ setSelText(null);
   const videoMock = videoOn && toolbarMode === "mockup";
   const [vidShots, setVidShots] = useState([]); // [{ id, name, start, len, ease, keys }]
 const [vidBgs, setVidBgs] = useState([]);     // [{ id, start, len, snap, css, anim }]   (start = absolute seconds)
-const [vidTexts, setVidTexts] = useState([]); // [{ id, tid, start, len, enter, exit }]  (start = absolute seconds)
+const [vidAudios, setVidAudios] = useState([]); // [{ id, name, src, start, len, offset, dur, peaks, volume, muted }]
+const [selAudio, setSelAudio] = useState(null); // { aid }
+const audioElsRef = useRef(new Map()); // clip id -> HTMLAudioElement
   const [vidSel, setVidSel] = useState({ shot: null, key: null, ids: [] });
   const [vidDuration, setVidDuration] = useState(10);
   const [vidPlaying, setVidPlaying] = useState(false);
@@ -13749,6 +13827,7 @@ vidLive.current = {
   shots: vidShots,
   bgs: vidBgs,
   texts: vidTexts,
+  audios: vidAudios,
   sel: vidSel,
   loop: vidLoop,
   duration: vidDuration,
@@ -14123,12 +14202,14 @@ const step = (now) => {
   applyCam(sampleShots(shots, t));
   applyBgAt(t);
   applyAnimAt(t);
+  syncAudio(t, !exporting);
   raf = requestAnimationFrame(step);
 };
     raf = requestAnimationFrame(step);
     return () => {
       cancelAnimationFrame(raf);
       commitCam(sampleShots(vidLive.current.shots, vidTimeRef.current));
+      syncAudio(0, false);
     };
   }, [vidPlaying]);
 
@@ -14538,6 +14619,7 @@ const vidToggleKey = () => {
 // If there's no room left, the shot is extended to fit it. Returns that shot's id.
 // deselect shots, so playback range goes back to the whole timeline
 const clearShotSel = () => {
+  setSelAudio(null);
   const next = { shot: null, key: null, ids: [], prop: null };
   vidLive.current.sel = next;
   setVidSel(next);
@@ -14819,10 +14901,106 @@ useEffect(() => {
 
   // can't shrink past the end of the last shot
   const vidSetDuration = (d) => {
-    const { shots, bgs, texts } = vidLive.current;
-const minEnd = Math.max(1, ...shots.map((s) => s.start + s.len), ...bgs.map((b) => b.start + b.len), ...texts.map((c) => c.start + c.len));
+    const { shots, bgs, texts, audios } = vidLive.current;
+const minEnd = Math.max(1, ...shots.map((s) => s.start + s.len), ...bgs.map((b) => b.start + b.len), ...texts.map((c) => c.start + c.len), ...audios.map((a) => a.start + a.len));
     setVidDuration(Math.min(600, Math.max(minEnd, Math.round(d * 10) / 10)));
   };
+  // ---- Audio clips (independent of shots / frames) ----
+  const audioEl = (a) => {
+    const m = audioElsRef.current;
+    let el = m.get(a.id);
+    if (!el) {
+      el = new Audio(a.src);
+      el.preload = "auto";
+      m.set(a.id, el);
+    }
+    return el;
+  };
+  // play = true: audio inside its clip plays in sync with t. false: everything pauses.
+  const syncAudio = (t, play) => {
+    const list = vidLive.current.audios ?? [];
+    audioElsRef.current.forEach((el, id) => {
+      if (!list.some((a) => a.id === id) && !el.paused) el.pause(); // clip was deleted / undone
+    });
+    list.forEach((a) => {
+      const el = audioEl(a);
+      const inside = play && !a.muted && t >= a.start && t < a.start + a.len;
+      if (!inside) {
+        if (!el.paused) el.pause();
+        return;
+      }
+      const want = (a.offset ?? 0) + (t - a.start);
+      el.volume = vidClamp(a.volume ?? 1, 0, 1);
+      if (el.paused) {
+        el.currentTime = want;
+        el.play().catch(() => {});
+      } else if (Math.abs(el.currentTime - want) > 0.3) {
+        el.currentTime = want; // playhead jumped (seek / loop)
+      }
+    });
+  };
+  const vidPatchAudio = (id, patch) => {
+    const apply = (list) =>
+      list.map((a) => {
+        if (a.id !== id) return a;
+        const n = { ...a, ...patch };
+        // trimming the left edge moves the start point inside the source file
+        if (patch.start !== undefined && patch.len !== undefined) n.offset = Math.max(0, (a.offset ?? 0) + (patch.start - a.start));
+        return n;
+      });
+    vidLive.current.audios = apply(vidLive.current.audios);
+    setVidAudios(apply);
+  };
+  const vidSelectAudio = (id) => {
+    clearShotSel();
+    setSelBg(null);
+    setSelText(null);
+    setSelAudio({ aid: id });
+  };
+  const vidDeleteAudio = (id) => {
+    const el = audioElsRef.current.get(id);
+    if (el) {
+      el.pause();
+      audioElsRef.current.delete(id);
+    }
+    setVidAudios((prev) => prev.filter((a) => a.id !== id));
+    setSelAudio((p) => (p?.aid === id ? null : p));
+  };
+  const vidAddAudio = async (file) => {
+    const src = URL.createObjectURL(file);
+    let dur = 5, peaks = null;
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      const ctx = new Ctx();
+      const buf = await ctx.decodeAudioData(await file.arrayBuffer());
+      ctx.close();
+      dur = buf.duration;
+      const N = 400, ch = buf.getChannelData(0), step = Math.max(1, Math.floor(ch.length / N));
+      const raw = Array.from({ length: N }, (_, i) => {
+        let m = 0;
+        const end = Math.min(ch.length, (i + 1) * step);
+        for (let j = i * step; j < end; j += Math.max(1, step >> 5)) m = Math.max(m, Math.abs(ch[j]));
+        return m;
+      });
+      const top = Math.max(...raw, 1e-6);
+      peaks = raw.map((p) => Math.round((p / top) * 100));
+    } catch {
+      dur = await new Promise((res) => {
+        const a = new Audio(src);
+        a.onloadedmetadata = () => res(a.duration || 5);
+        a.onerror = () => res(5);
+      });
+    }
+    const total = vidLive.current.duration;
+    const start = +Math.min(vidTimeRef.current, Math.max(0, total - 0.2)).toFixed(3);
+    const len = +Math.max(0.2, Math.min(dur, total - start)).toFixed(3);
+    const id = vidId.current++;
+    const clip = { id, name: file.name.replace(/\.[^.]+$/, ""), src, start, len, offset: 0, dur, peaks, volume: 1, muted: false };
+    vidLive.current.audios = [...vidLive.current.audios, clip];
+    setVidAudios((prev) => [...prev, clip]);
+    vidSelectAudio(id);
+  };
+
   const vidSkip = (dir) => {
     const { shots, duration } = vidLive.current;
     const t = vidTimeRef.current, eps = 1 / 60;
@@ -15195,6 +15373,11 @@ const vidToggle = () => {
 bgs: vidBgs,
 texts: vidTexts,
 selBg,
+audios: vidAudios,
+selAudio,
+onAudioAdd: vidAddAudio,
+onAudioSelect: vidSelectAudio,
+onAudioPatch: vidPatchAudio,
 onBgSelect: vidSelectBg,
 onAddBg: vidAddBg,
 onBgPatch: vidPatchBg,
@@ -15203,6 +15386,7 @@ onShotAnim: vidSetShotAnim,
 onShotImg: vidSetShotImg,
 selText,
 onSelectRange: ({ shots, bgs, texts }) => {
+  setSelAudio(null);
   const next = { shot: shots[shots.length - 1] ?? null, key: null, ids: shots, prop: null };
   vidLive.current.sel = next;
   setVidSel(next);
@@ -15275,6 +15459,7 @@ onBgDelete: vidDeleteBg,
     setVidBgs((prev) => prev.filter((b) => !ids.includes(b.id)));
     setSelBg(null);
   }
+  if (selAudio) vidDeleteAudio(selAudio.aid);
   if (selText) (selText.ids ?? [selText.cid]).forEach(vidDeleteText);
   if (vidLive.current.sel.ids.length) vidDelete();
 },
@@ -15288,6 +15473,7 @@ onBgDelete: vidDeleteBg,
   if (!additive || shot == null) {
     setSelBg(null);
     setSelText(null);
+    setSelAudio(null);
   }
   const cur = vidLive.current.sel;
   let ids;
@@ -15337,6 +15523,7 @@ onBgDelete: vidDeleteBg,
         transparent,
         name: projectTitle || "mockup",
         onProgress: setExportProgress,
+        audio: { clips: vidLive.current.audios, speed: videoSpeed },
         renderFrame: async (i) => {
           const t = Math.min(duration, (i / fps) * videoSpeed);
           vidTimeRef.current = t;
@@ -15440,6 +15627,7 @@ const unpackBgs = (bgs) =>
 vidShots,
 vidBgs: packBgs(vidBgs),
 vidTexts,
+vidAudios,
 vidDuration,
     vidHead,
   };
@@ -15577,6 +15765,10 @@ if (s.vidShots) {
   setVidBgs(restoredBgs);
   setVidTexts(restoredTexts);
   setSelText(null);
+  const restoredAudios = s.vidAudios ?? [];
+  vidLive.current.audios = restoredAudios;
+  setVidAudios(restoredAudios);
+  setSelAudio(null);
       setVidDuration(s.vidDuration);
       setSelBg(null);
       vidBgActive.current = null; // forces the background clip to be re-applied
@@ -15680,7 +15872,7 @@ if (s.vidShots) {
       ...m.bgs.map((x) => x.id),
       ...m.texts.map((x) => x.id),
     ]);
-    vidId.current = Math.max(vidId.current, 1 + Math.max(0, ...vids));
+    vidId.current = Math.max(vidId.current, 1 + Math.max(0, ...vids, ...(s.vidAudios ?? []).map((x) => x.id)));
 
     setTextPopupOpen(false);
     setColorPickerOpen(false);
