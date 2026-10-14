@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { makeScrubDrag } from "./scrub.js";
+import { useAltScrub } from "./SizeFields.jsx";
 
 export default function DimensionInput({ label, value, onChange, className = "w-full", min = 1, max = 99999, mixed = false, live = false }) {
   const [text, setText] = useState(String(Math.round(value)));
@@ -7,13 +8,14 @@ export default function DimensionInput({ label, value, onChange, className = "w-
   const inputRef = useRef(null);
   const maxDigits = Number.isFinite(max) ? String(max).length : null; // null = no digit cap
   const showMixed = mixed && !focused;
+  const altScrub = useAltScrub({ value: Math.round(value), min, max, onChange });
 
   useEffect(() => {
     if (!focused) setText(String(Math.round(value)));
   }, [value, focused]);
 
   return (
-    <div className={`flex items-center gap-2 px-2 py-1.5 bg-[#EDEDED] dark:bg-[#292929] rounded-lg ${className}`}>
+    <div {...altScrub.props} className={`flex items-center gap-2 px-2 py-1.5 bg-[#EDEDED] dark:bg-[#292929] rounded-lg ${className} ${altScrub.cursorClass}`}>
       <span
         onPointerDown={(e) => {
           inputRef.current?.blur(); // so the field re-syncs to the scrubbed value

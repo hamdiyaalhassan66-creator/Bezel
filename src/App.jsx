@@ -8887,30 +8887,115 @@ const vtBgCss = (sn) =>
     : "transparent";
 
 const VT_RAW = [
-  { id: "vt-push", label: "Push In", tags: "zoom close hero push", poster: 5,
-    bgs: [VBG(0, { type: "gradient", preset: "ocean-blue" })],
-    shots: [VSHOT("Push in", 0, 5, [VK(0, { rotationX: -12, rotationY: 24, zoom: 40 }, "expo-out"), VK(5, { rotationX: -3, rotationY: 6, zoom: 80 })])] },
-  { id: "vt-float", label: "Float", tags: "drift small calm loop", poster: 0,
-    bgs: [VBG(0, { type: "custom", preset: "ethereal-gradient-abstraction" })],
-    shots: [VSHOT("Float", 0, 6, [
-      VK(0, { rotationX: -6, rotationY: -12, zoom: 52 }, "sine-in-out"),
-      VK(3, { rotationX: -2, rotationY: 12, positionY: 6, zoom: 52 }, "sine-in-out"),
-      VK(6, { rotationX: -6, rotationY: -12, zoom: 52 }),
+  // Spins a full turn from a wide-angle, far-away start, then lands on a calm close angle
+  { id: "vt-whiplash", label: "Whiplash", tags: "spin 360 fast fov zoom crazy wide", poster: 1.6,
+    bgs: [VBG(0, { type: "gradient", preset: "cobalt-flare" }, { grain: 6 })],
+    shots: [VSHOT("Whiplash", 0, 5, [
+      VK(0, { rotationX: -25, rotationY: -180, rotationZ: -20, zoom: 15, fov: 105 }, "expo-out"),
+      VK(1.6, { rotationX: -10, rotationY: 25, rotationZ: 4, zoom: 78, fov: 30 }, "sine-in-out"),
+      VK(3.2, { rotationX: -6, rotationY: -18, rotationZ: -6, zoom: 88, fov: 24 }, "expo-in-out"),
+      VK(5, { rotationX: -8, rotationY: 360, rotationZ: 0, zoom: 70, fov: 27 }),
+    ], { enter: { id: "flip-h", dur: 900, delay: 0 } })] },
+
+  // Dolly zoom: camera flies in while the lens goes from telephoto to ultra-wide
+  { id: "vt-vertigo", label: "Vertigo", tags: "dolly zoom hitchcock fov warp distortion", poster: 3,
+    bgs: [VBG(0, { type: "gradient", preset: "midnight-magenta" }, { grain: 8 })],
+    shots: [VSHOT("Vertigo", 0, 6, [
+      VK(0, { rotationX: -8, rotationY: 20, zoom: 5, fov: 0 }, "cubic-in-out"),
+      VK(3.5, { rotationX: -14, rotationY: -12, rotationZ: 6, zoom: 100, fov: 120 }, "expo-out"),
+      VK(6, { rotationX: -10, rotationY: 8, rotationZ: 0, zoom: 55, fov: 60 }),
     ])] },
-  { id: "vt-tilt", label: "Tilt Sweep", tags: "tilt dutch rotate sweep", poster: 1.5,
-    shots: [VSHOT("Tilt sweep", 0, 5, [VK(0, { rotationY: 20, rotationZ: -14, zoom: 66 }, "cubic-in-out"), VK(5, { rotationY: -20, rotationZ: 14, zoom: 66 })])] },
-  { id: "vt-orbit", label: "Orbit", tags: "orbit turn around angle", poster: 3,
-    bgs: [VBG(0, { type: "gradient", preset: "violet-noir" }, { grain: 8 })],
-    shots: [VSHOT("Orbit", 0, 6, [VK(0, { rotationX: -10, rotationY: -35, zoom: 68 }, "sine-in-out"), VK(6, { rotationX: -10, rotationY: 35, zoom: 68 })])] },
-  { id: "vt-rise", label: "Rise", tags: "enter slide bottom reveal", poster: 4,
-    bgs: [VBG(0, { type: "gradient", preset: "amber-sky" })],
-    shots: [VSHOT("Rise", 0, 5, [VK(0, { rotationX: -15, rotationY: 25 }, "cubic-out"), VK(5, { rotationX: -8, rotationY: 12, zoom: 74 })],
-      { enter: { id: "slide-bottom", dur: 1100, delay: 0 } })] },
-  { id: "vt-spin", label: "Spin", tags: "back flip turn 180 rotate", poster: 1.5,
-    shots: [VSHOT("Spin", 0, 6, [VK(0, { rotationX: -8, rotationY: 0 }, "cubic-in-out"), VK(6, { rotationX: -8, rotationY: 180 })])] },
-  { id: "vt-drop", label: "Drop In", tags: "enter exit slide top bounce", poster: 2,
-    shots: [VSHOT("Drop in", 0, 4, [VK(0, { rotationX: -10, rotationY: 20 }, "back-out"), VK(4, { rotationX: -6, rotationY: 8 })],
-      { enter: { id: "slide-top", dur: 900, delay: 0 }, exit: { id: "slide-bottom", dur: 700, delay: 0 } })] },
+
+  // Full roll around the screen axis while swinging sideways and breathing zoom / fov
+  { id: "vt-roll", label: "Barrel Roll", tags: "roll rotate z 360 spin tilt", poster: 2.5,
+    bgs: [VBG(0, { type: "custom", preset: "iridescent-metallic-art" })],
+    shots: [VSHOT("Barrel roll", 0, 5, [
+      VK(0, { rotationX: -10, rotationY: 35, rotationZ: 0, zoom: 60, fov: 27 }, "cubic-in-out"),
+      VK(2.5, { rotationX: -22, rotationY: -35, rotationZ: 180, zoom: 90, fov: 70 }, "cubic-in-out"),
+      VK(5, { rotationX: -10, rotationY: 35, rotationZ: 360, zoom: 60, fov: 27 }),
+    ])] },
+
+  // Starts jammed in one corner at extreme zoom, sweeps across to the opposite corner, then pulls out to hero
+  { id: "vt-corner", label: "Corner Sweep", tags: "macro corner pan close up slide edge detail", poster: 2,
+    bgs: [
+      VBG(0, { type: "solid", hex: "0A0A0C" }),
+      VBG(3.5, { type: "gradient", preset: "amber-dusk" }, { grain: 12, enter: { id: "wipe", dur: 700, delay: 0 } }),
+    ],
+    shots: [
+      VSHOT("Corner sweep", 0, 3.5, [
+        VK(0, { rotationX: -28, rotationY: 50, rotationZ: -8, positionX: 45, positionY: -50, zoom: 100, fov: 18 }, "cubic-in-out"),
+        VK(3.5, { rotationX: 18, rotationY: -48, rotationZ: 8, positionX: -45, positionY: 50, zoom: 100, fov: 18 }),
+      ]),
+      VSHOT("Pull out", 3.5, 3, [
+        VK(0, { rotationX: 18, rotationY: -48, rotationZ: 8, positionX: -45, positionY: 50, zoom: 100, fov: 18 }, "expo-out"),
+        VK(3, { rotationX: -15, rotationY: 25, rotationZ: 0, positionX: 0, positionY: 0, zoom: 62, fov: 27 }),
+      ]),
+    ] },
+
+  // Slams in with a heavy fisheye, then snaps flat with a spring
+  { id: "vt-crash", label: "Fisheye Crash", tags: "fisheye wide fov crash impact spring snap", poster: 0.4,
+    bgs: [VBG(0, { type: "gradient", preset: "sunset-orange" }, { grain: 10, enter: { id: "barrel", dur: 900, delay: 0 } })],
+    shots: [VSHOT("Fisheye crash", 0, 5, [
+      VK(0, { rotationX: -45, rotationY: 70, rotationZ: -35, zoom: 100, fov: 120 }, "spring"),
+      VK(2.4, { rotationX: -10, rotationY: 18, rotationZ: 0, zoom: 70, fov: 27 }, "sine-in-out"),
+      VK(5, { rotationX: -6, rotationY: 8, rotationZ: 2, zoom: 76, fov: 24 }),
+    ], { enter: { id: "scale", dur: 700, delay: 0 } })] },
+
+  // One flip around Y, then one flip around X, each with an overshoot
+  { id: "vt-flips", label: "Double Flip", tags: "flip turn rotate 360 x y back overshoot", poster: 1.8,
+    bgs: [
+      VBG(0, { type: "gradient", preset: "deep-teal" }, { grain: 6 }),
+      VBG(3, { type: "gradient", preset: "violet-noir" }, { grain: 8, enter: { id: "mask-expand", dur: 800, delay: 0 } }),
+    ],
+    shots: [
+      VSHOT("Flip Y", 0, 3, [
+        VK(0, { rotationX: -8, rotationY: 0, zoom: 62 }, "back-in-out"),
+        VK(3, { rotationX: -8, rotationY: 360, zoom: 62 }),
+      ]),
+      VSHOT("Flip X", 3, 3, [
+        VK(0, { rotationX: -8, rotationY: 360, zoom: 62 }, "back-in-out"),
+        VK(3, { rotationX: -368, rotationY: 360, zoom: 62 }),
+      ]),
+    ] },
+
+  // Starts straight above the device, spirals down while winding the roll, ends head-on
+  { id: "vt-spiral", label: "Spiral Down", tags: "overhead top down spiral rotate dive descend", poster: 3,
+    bgs: [VBG(0, { type: "gradient", preset: "dusk-horizon" })],
+    shots: [VSHOT("Spiral down", 0, 6, [
+      VK(0, { rotationX: -88, rotationY: 0, rotationZ: 180, zoom: 20, fov: 75 }, "cubic-in-out"),
+      VK(3, { rotationX: -55, rotationY: 30, rotationZ: -90, zoom: 60, fov: 45 }, "expo-out"),
+      VK(6, { rotationX: -4, rotationY: 0, rotationZ: 0, zoom: 76, fov: 27 }),
+    ])] },
+
+  // Hard cuts between wildly different angles (no easing between poses), then settles
+  { id: "vt-strobe", label: "Strobe Cut", tags: "cut hard angles fast glitch beat jump", poster: 1.2,
+    bgs: [
+      VBG(0, { type: "gradient", preset: "violet-noir" }, { grain: 8 }),
+      VBG(1.5, { type: "gradient", preset: "midnight-magenta" }, { grain: 8, enter: { id: "glitch", dur: 600, delay: 0 } }),
+      VBG(3, { type: "custom", preset: "abstract-glowing-object" }, { enter: { id: "pixel", dur: 600, delay: 0 } }),
+    ],
+    shots: [VSHOT("Strobe cut", 0, 4.5, [
+      VK(0, { rotationX: -15, rotationY: 25, zoom: 70 }, "hold"),
+      VK(0.5, { rotationX: -12, rotationY: 28, rotationZ: -16, zoom: 70 }, "hold"),
+      VK(1, { rotationX: -22, rotationY: 38, positionX: 18, positionY: -42, zoom: 100, fov: 22 }, "hold"),
+      VK(1.5, { rotationX: -18, rotationY: 52, zoom: 88, fov: 105 }, "hold"),
+      VK(2, { rotationX: -88, rotationY: 0, zoom: 55 }, "hold"),
+      VK(2.5, { rotationX: -12, rotationY: 150, zoom: 70 }, "hold"),
+      VK(3, { rotationX: -30, rotationY: -60, rotationZ: 25, zoom: 64 }, "expo-out"),
+      VK(4.5, { rotationX: -8, rotationY: 10, rotationZ: 0, zoom: 74 }),
+    ])] },
+
+  // Big swings left and right that lose energy each time, with the camera pumping in and out
+  { id: "vt-pendulum", label: "Pendulum", tags: "swing sway rock left right pendulum zoom pump", poster: 2,
+    bgs: [VBG(0, { type: "gradient", preset: "burnt-clay" }, { grain: 8 })],
+    shots: [VSHOT("Pendulum", 0, 7, [
+      VK(0, { rotationX: -8, rotationY: -75, rotationZ: 14, zoom: 45, fov: 40 }, "sine-in-out"),
+      VK(1.75, { rotationX: -8, rotationY: 75, rotationZ: -14, zoom: 95, fov: 20 }, "sine-in-out"),
+      VK(3.5, { rotationX: -8, rotationY: -45, rotationZ: 9, zoom: 55, fov: 35 }, "sine-in-out"),
+      VK(5.25, { rotationX: -8, rotationY: 28, rotationZ: -5, zoom: 80, fov: 25 }, "sine-in-out"),
+      VK(7, { rotationX: -6, rotationY: 0, rotationZ: 0, zoom: 70, fov: 27 }),
+    ])] },
+
   { id: "vt-reveal", label: "Reveal", tags: "macro close pull back two shots", poster: 5,
     bgs: [
       VBG(0, { type: "solid", hex: "0C0D10" }),
@@ -8920,9 +9005,6 @@ const VT_RAW = [
       VSHOT("Close-up", 0, 3, [VK(0, { rotationX: -22, rotationY: 38, zoom: 100, fov: 22 }, "sine-in-out"), VK(3, { rotationX: -20, rotationY: 34, zoom: 100, fov: 22 })]),
       VSHOT("Pull back", 3, 3, [VK(0, { rotationX: -20, rotationY: 34, zoom: 100, fov: 22 }, "expo-out"), VK(3, { rotationX: -15, rotationY: 25, zoom: 62 })]),
     ] },
-  { id: "vt-fly", label: "Fly-by", tags: "wide fisheye sweep fast", poster: 2,
-    bgs: [VBG(0, { type: "custom", preset: "iridescent-metallic-art" })],
-    shots: [VSHOT("Fly-by", 0, 6, [VK(0, { rotationX: -10, rotationY: -40, zoom: 80, fov: 90 }, "cubic-in-out"), VK(6, { rotationX: -6, rotationY: 40, zoom: 70, fov: 60 })])] },
   { id: "vt-tumble", label: "Tumble", tags: "tumble spin exit dramatic", poster: 1,
     bgs: [
       VBG(0, { type: "gradient", preset: "steel-blue" }),
@@ -9123,7 +9205,7 @@ function VideoTemplateCard({ tpl, index, label, active, renderKey, renderStills,
       onPointerEnter={() => setHover(true)}
       onPointerLeave={() => setHover(false)}
       style={{ animationDelay: `${Math.min(index, 5) * 30}ms` }}
-      className={`template-enter group flex flex-col items-stretch gap-1.5 min-w-0 p-1 rounded-xl transition-colors duration-200 ${
+      className={`template-enter group flex flex-col items-stretch gap-2 min-w-0 p-2 rounded-2xl transition-colors duration-200 ${
         active ? "bg-[#FF47BC]/10" : "hover:bg-black/[0.03] dark:hover:bg-white/5"
       }`}
     >
@@ -9220,7 +9302,7 @@ function FrameVideoTemplateCard({ tpl, index, label, active, renderKey, renderSt
       onPointerEnter={() => setHover(true)}
       onPointerLeave={() => setHover(false)}
       style={{ animationDelay: `${Math.min(index, 5) * 30}ms` }}
-      className={`template-enter group flex flex-col items-stretch gap-1.5 min-w-0 p-1 rounded-xl transition-colors duration-200 ${
+      className={`template-enter group flex flex-col items-stretch gap-2 min-w-0 p-2 rounded-2xl transition-colors duration-200 ${
         active ? "bg-[#FF47BC]/10" : "hover:bg-black/[0.03] dark:hover:bg-white/5"
       }`}
     >
@@ -9707,11 +9789,12 @@ const groupTrack = (g) => {
     </div>
   );
 };
-  // Clicking a shot while playing: pause and jump to the end of that shot. Returns true if it did.
+  // Clicking a shot while playing: pause and jump to the start of that shot. Returns true if it did.
+  // (name kept so the existing call sites don't change)
   const pauseToEnd = (s) => {
     if (!v.playing) return false;
     v.onPause();
-    v.onSeek(s.start + s.len);
+    v.onSeek(s.start);
     return true;
   };
 
@@ -10630,7 +10713,8 @@ const openEase = (e, sid, kid, prop = null) => {
                   className={`relative h-[30px] ${parentActive ? "bg-[#FF47BC]/10" : sel ? "bg-[#FF47BC]/5" : "bg-[#F0F0F0] dark:bg-[#1F1F1F]"}`}
                   onPointerDown={(e) => {
                     if (!pickRow("shot", s.id, e.shiftKey)) v.onSelect(s.id, null, e.shiftKey);
-                    if (pauseToEnd(s)) e.stopPropagation(); // keep the scrub from overriding the jump to the shot's end
+                    pauseToEnd(s);
+                    e.stopPropagation(); // keep the scrub from overriding the jump to the shot's initial state
                   }}
                   onContextMenu={(e) => openShotMenu(e, s)}
                 >
@@ -11678,6 +11762,22 @@ const addFrameImage = (file, targetIds = null) => {
     framesLatestRef.current = next;
     setFrames(next);
     setSelectedIds(selIds);
+
+    // frames that took the image's size: refresh the pose in their row's only keyframe
+    const resized = new Set(
+      next.filter((f) => { const o = prev.find((p) => p.id === f.id); return o && (o.w !== f.w || o.h !== f.h); }).map((f) => f.id)
+    );
+    if (resized.size && box) {
+      const poses = framePoseMap(next, box);
+      const apply = (shots) =>
+        shots.map((s) =>
+          resized.has(s.frameId) && s.keys.length === 1
+            ? { ...s, keys: s.keys.map((k) => ({ ...k, frames: { [s.frameId]: poses[s.frameId] } })) }
+            : s
+        );
+      vidLive.current.shots = apply(vidLive.current.shots);
+      setVidShots(apply);
+    }
   };
   probe.src = url;
 };
@@ -11749,7 +11849,8 @@ frameUploadRef.current = addFrameImage;
     const prev = framesLatestRef.current;
     const base = prev.find((f) => selectedIdsRef.current.includes(f.id)) ?? prev[prev.length - 1];
     const id = nextFrameIdRef.current++;
-    const blank = { ...cloneFrame(base, id), img: null, x: base.x + 0.03, y: base.y + 0.03 };
+    // fresh frame at the canvas center (the base's current pose can be an off-screen animation pose)
+    const blank = { ...cloneFrame(base, id), img: null, x: 0, y: 0, w: FRAME_DEFAULT_SIZE.w, h: FRAME_DEFAULT_SIZE.h, s: null, r: 0 };
     const next = [...prev, blank];
     framesLatestRef.current = next;
     setFrames(next);
@@ -13401,6 +13502,8 @@ useEffect(() => {
       const cctx = comp.getContext("2d");
 
       for (const fr of ov?.frames ?? frames) {
+        const fp = ov?.framePoses?.[fr.id];
+        if (fp === "hidden") continue; // outside its row
         const { left: sx, top: sy, width: sw, height: sh } = frameRect(fr, { w: outW, h: outH });
         const rs = cornersOf(fr).map((p) => (Math.min(sw, sh) * p) / 100); // [tl, tr, br, bl]
         const srcUrl = fr.img ? (fr.img.cropUrl ?? fr.img.url) : null;
@@ -13487,6 +13590,15 @@ if (!backFacing && (fr.statusBar || fr.homeIndicator)) {
         const rcx = sx + sw / 2, rcy = sy + sh / 2;
         cctx.save();
         if (blurTotal > 0) cctx.filter = `blur(${blurTotal}px)`;
+        if (fp) {
+          // this frame's own enter / exit pose
+          const { a = 1, x = 0, y = 0, s = 1, rx = 0, ry = 0 } = fp;
+          cctx.globalAlpha = vidClamp(a, 0, 1);
+          cctx.translate(x * outW, -y * outH);
+          cctx.translate(rcx, rcy);
+          cctx.scale(Math.max(0.001, Math.abs(s * Math.cos(ry))), Math.max(0.001, Math.abs(s * Math.cos(rx))));
+          cctx.translate(-rcx, -rcy);
+        }
         fr.effects
           .filter((e) => e.visible && e.type === "dropShadow")
           .forEach((e) => {
@@ -13870,6 +13982,47 @@ vidLive.current = {
       ? `translate(${(p.x ?? 0) * box.w}px, ${-(p.y ?? 0) * box.h}px) scale(${Math.max(0.001, p.s ?? 1)}) perspective(1400px) rotateX(${p.rx ?? 0}rad) rotateY(${p.ry ?? 0}rad)`
       : "";
   };
+
+  // Frame mode: each frame follows its own row. Outside its row (or with the row hidden) the frame is hidden,
+  // and the row's enter / exit animation moves only that frame.
+  // Result per frame id: "hidden" | pose | {} (resting). Frames without a row aren't listed (always shown).
+  const frameRowStates = (shots, frameIds, t) => {
+    const out = {};
+    frameIds.forEach((id) => {
+      const rows = shots.filter((s) => s.frameId === id);
+      if (!rows.length) return;
+      const row = [...rows].reverse().find((s) => !s.hidden && t >= s.start - 1e-6 && t <= s.start + s.len + 1e-6);
+      out[id] = row ? shotAnimPose(row, t) ?? {} : "hidden";
+    });
+    return out;
+  };
+  // t = null clears everything (used when leaving Video mode)
+  const applyFrameRowStatesAt = (t) => {
+    const stage = frameStageRef.current;
+    const box = frameSizeRef.current;
+    if (!stage || !box) return;
+    const st = t == null ? {} : frameRowStates(vidLive.current.shots, framesLatestRef.current.map((f) => f.id), t);
+    stage.querySelectorAll("[data-frame-id]").forEach((el) => {
+      const p = st[el.dataset.frameId];
+      if (p === "hidden") {
+        el.style.opacity = "0";
+        el.style.translate = "";
+        el.style.scale = "";
+      } else if (p) {
+        const { a = 1, x = 0, y = 0, s = 1, rx = 0, ry = 0 } = p;
+        el.style.opacity = String(vidClamp(a, 0, 1));
+        el.style.translate = `${x * box.w}px ${-y * box.h}px`;
+        el.style.scale = `${Math.max(0.001, Math.abs(s * Math.cos(ry)))} ${Math.max(0.001, Math.abs(s * Math.cos(rx)))}`;
+      } else {
+        el.style.opacity = "";
+        el.style.translate = "";
+        el.style.scale = "";
+      }
+      // off its row and not selected: clicks pass through to whatever is underneath
+      el.style.pointerEvents =
+        p === "hidden" && !selectedIdsRef.current.includes(Number(el.dataset.frameId)) ? "none" : "";
+    });
+  };
   const showFrameBgCanvas = (src) => {
     const c = frameBgCanvasRef.current;
     if (!c) return;
@@ -14071,13 +14224,16 @@ const applyBgAt = (t) => {
 const applyShotImgAt = (t) => {
   const sc = sceneRef.current;
   if (!sc) return;
-  const s = shotForImgAt(vidLive.current.shots, t);
+  // the selected shot wins when shots overlap, so its own image (or no image) is what shows
+  const { shots, sel } = vidLive.current;
+  const picked = shots.find((x) => x.id === sel.shot && !x.hidden && t >= x.start - 1e-6 && t <= x.start + x.len + 1e-6);
+  const s = picked ?? shotForImgAt(shots, t);
   const id = s?.img?.id ?? null;
   if (id === vidImgShown.current) return; // already showing
   vidImgShown.current = id;
   if (id) {
     const f = vidImgFiles.current.get(id);
-    if (f) sc.uploadFile(f);
+    if (f) sc.uploadFile(f, s.img.crop ?? undefined);
   } else if (uploadedFileRef.current) {
     sc.uploadFile(uploadedFileRef.current, uploadedCropRef.current ?? undefined);
   } else {
@@ -14110,7 +14266,9 @@ const applyAnimAt = (t) => {
   const pose = shots.length ? sampleDeviceAnim(shots, t) : null;
   if (toolbarModeRef.current === "frame") {
     applyFramePosesAt(t);
-    applyFrameAnim(pose);
+    // whole-canvas animation only for rows that aren't tied to a frame; frame rows animate their own frame
+    applyFrameAnim(shots.length ? sampleDeviceAnim(shots.filter((s) => s.frameId == null), t) : null);
+    applyFrameRowStatesAt(t);
     return;
   }
   applyShotImgAt(t);
@@ -14229,6 +14387,7 @@ const step = (now) => {
     vidBgExitKeyRef.current = JSON.stringify(bgSnapshot());
     sceneRef.current?.setDeviceAnim?.(null); // Image mode always shows the device at rest
     applyFrameAnim(null);
+    applyFrameRowStatesAt(null);
     if (bgAnimOnRef.current) {
       bgAnimOnRef.current = null;
       sceneRef.current?.setBackgroundCanvas?.(null);
@@ -14259,6 +14418,86 @@ const step = (now) => {
     setVidShots([{ id: sid, name: "Shot 1", start: 0, len: 5, ease: "smooth", keys: [{ id: kid, t: 0, ...vidLive.current.cam }] }]);
     setVidSel({ shot: sid, key: null, ids: [sid] });
   }, [videoOn, vidSwapTick]);
+
+  // Switching Mockup <-> Frame also swaps the scene look, camera and template highlights.
+  // Each mode remembers what it was left with; a mode that was never visited starts from defaults.
+  // (Defined before the timeline swap effect below, so the timeline's background / camera wins in Video mode.)
+  const sceneByModeRef = useRef({});
+  const sceneModeRef = useRef(toolbarMode);
+  useEffect(() => {
+    const prev = sceneModeRef.current;
+    if (prev === toolbarMode) return;
+    sceneModeRef.current = toolbarMode;
+
+    // these values are still the previous mode's, because only toolbarMode changed in this render
+    sceneByModeRef.current[prev] = {
+      bgType, bgHex, bgOpacity, gradientType, gradientAngle, gradientOpacity,
+      gradientStops, selectedStopId, gradientPreset, grainAmount,
+      customImagePreset, customBgImageUrl, customImageLabel, customImageThumb, customImageDims,
+      environment,
+      rotationX, rotationY, rotationZ, positionX, positionY, zoom, fov, activeCameraView,
+      activeTemplateId, vidTplId,
+    };
+
+    const d = {
+      bgType: "solid", bgHex: surfaceHex(darkMode), bgOpacity: 100,
+      gradientType: "Linear", gradientAngle: 90, gradientOpacity: 100,
+      gradientStops: [
+        { id: 1, hex: "FFFFFF", position: 0, opacity: 100 },
+        { id: 2, hex: "000000", position: 100, opacity: 100 },
+      ],
+      selectedStopId: 1, gradientPreset: "none", grainAmount: 0,
+      customImagePreset: "none", customBgImageUrl: null, customImageLabel: null, customImageThumb: null, customImageDims: null,
+      environment: "none",
+      rotationX: 0, rotationY: 0, rotationZ: 0, positionX: 0, positionY: 0, zoom: 70, fov: 27, activeCameraView: null,
+      activeTemplateId: null, vidTplId: null,
+    };
+    const s = sceneByModeRef.current[toolbarMode] ?? d;
+
+    // background
+    setBgType(s.bgType);
+    setBgHex(s.bgHex);
+    setBgOpacity(s.bgOpacity);
+    setGradientType(s.gradientType);
+    setGradientAngle(s.gradientAngle);
+    setGradientOpacity(s.gradientOpacity);
+    setGradientStops(s.gradientStops.map((st) => ({ ...st })));
+    setSelectedStopId(s.selectedStopId);
+    setGrainAmount(s.grainAmount);
+    setCustomImagePreset(s.customImagePreset);
+    setCustomBgImageUrl(s.customBgImageUrl);
+    setCustomImageLabel(s.customImageLabel);
+    setCustomImageThumb(s.customImageThumb);
+    setCustomImageDims(s.customImageDims);
+    // the gradient-edit effect resets the preset to "none", so put the saved preset back after it has run
+    setTimeout(() => setGradientPreset(s.gradientPreset), 60);
+    bgAppliedKeyRef.current = bgKey({
+      bgType: s.bgType, bgHex: s.bgHex, bgOpacity: s.bgOpacity, gradientType: s.gradientType,
+      gradientAngle: s.gradientAngle, gradientOpacity: s.gradientOpacity, gradientStops: s.gradientStops,
+      grainAmount: s.grainAmount, customBgImageUrl: s.customBgImageUrl,
+    });
+
+    // environment
+    setEnvironment(s.environment);
+
+    // camera (these also push the values into the 3D scene)
+    handleRotationChange(s.rotationX);
+    handleRotationYChange(s.rotationY);
+    handleRotationZChange(s.rotationZ);
+    handlePositionXChange(s.positionX);
+    handlePositionYChange(s.positionY);
+    handleZoomChange(s.zoom);
+    handleFovChange(s.fov);
+    setActiveCameraView(s.activeCameraView);
+
+    // which template card is highlighted
+    setActiveTemplateId(s.activeTemplateId);
+    setVidTplId(s.vidTplId);
+
+    // open pickers belong to the mode being left
+    setGradientPickerOpen(false);
+    setColorPickerOpen(false);
+  }, [toolbarMode]);
 
   // Switching Mockup <-> Frame swaps the whole timeline
   useEffect(() => {
@@ -14348,6 +14587,11 @@ const step = (now) => {
     setVidSel(next);
     setSelBg(null);
     setSelText(null);
+  }, [selectedIds, videoOn, toolbarMode]);
+
+  // Selecting / deselecting a frame changes whether an off-row frame can be clicked
+  useEffect(() => {
+    if (videoOn && toolbarMode === "frame") applyFrameRowStatesAt(vidTimeRef.current);
   }, [selectedIds, videoOn, toolbarMode]);
 
   const vidShotAt = (t) => {
@@ -14462,6 +14706,14 @@ const vidDelete = () => {
     }
     vidLive.current.shots = vidLive.current.shots.map((s) => (s.id === sid ? { ...s, img } : s)); // sync, so the apply below sees it
     vidPatchShot(sid, { img });
+    vidImgShown.current = undefined; // forces a reload even if the id matches
+    applyShotImgAt(vidTimeRef.current);
+  };
+  // Crops the shot's own image and reloads it on the device
+  const vidCropShotImg = (sid, crop) => {
+    const apply = (shots) => shots.map((s) => (s.id === sid && s.img ? { ...s, img: { ...s.img, crop } } : s));
+    vidLive.current.shots = apply(vidLive.current.shots); // sync, so the apply below sees it
+    setVidShots(apply);
     vidImgShown.current = undefined; // forces a reload even if the id matches
     applyShotImgAt(vidTimeRef.current);
   };
@@ -14676,7 +14928,13 @@ const vidSetBgAnim = (bid, kind, anim) => {
   // kind: "enter" | "exit". anim: { id, dur, delay } or null to remove.
   // seek = true parks the playhead mid-animation so the canvas shows the effect.
   const vidSetShotAnim = (sid, kind, anim, seek = true) => {
-    const apply = (shots) => shots.map((s) => (s.id === sid ? { ...s, [kind]: anim } : s));
+    // any shot / frame row that belongs to a group pulls the whole group in
+    const all = vidLive.current.shots;
+    const selIds = vidLive.current.sel.ids;
+    const base = selIds.includes(sid) ? selIds : [sid];
+    const gids = new Set(all.filter((x) => base.includes(x.id) && x.group).map((x) => x.group));
+    const ids = all.filter((x) => base.includes(x.id) || (x.group && gids.has(x.group))).map((x) => x.id);
+    const apply = (shots) => shots.map((s) => (ids.includes(s.id) ? { ...s, [kind]: anim } : s));
     vidLive.current.shots = apply(vidLive.current.shots); // sync, so the seek below sees it
     setVidShots(apply);
     const s = vidLive.current.shots.find((x) => x.id === sid);
@@ -15230,7 +15488,8 @@ const vidToggle = () => {
     return renderFrameCanvas(w, false, null, {
       frames: fr,
       cam: c ? { ...CAM_DEFAULT, rotationZ: c.rotationZ, positionX: c.positionX, positionY: c.positionY, zoom: c.zoom } : CAM_DEFAULT,
-      pose: sampleDeviceAnim(shots, t),
+      pose: sampleDeviceAnim(shots.filter((s) => s.frameId == null), t),
+      framePoses: frameRowStates(shots, fr.map((f) => f.id), t),
       ...(bgClip ? { bg: { snap: vtBgSnap(bgClip.bg, bgClip.grain) } } : {}),
     });
   };
@@ -15252,9 +15511,94 @@ const vidToggle = () => {
     return out.sort((a, b) => a.t - b.t);
   };
 
-  // Replaces the camera shots. Backgrounds and text stay; clips that spanned the whole timeline stretch to the new length.
+  // Replaces the camera shots. If a shot row is selected (Mockup mode), only that shot is replaced.
+  // Otherwise the whole timeline is replaced. Backgrounds and text stay; clips that spanned the whole timeline stretch to the new length.
   const handleApplyVideoTemplate = (tpl) => {
     const live = vidLive.current;
+
+    // ---- A shot is selected: swap only that shot for the template's camera move (and background, if it has one) ----
+    const picked = toolbarModeRef.current === "frame" ? [] : live.shots.filter((s) => live.sel.ids.includes(s.id));
+    if (picked.length) {
+      const anchor = Math.min(...picked.map((s) => s.start));
+      const span = Math.max(...picked.map((s) => s.start + s.len)) - anchor;
+      const end = anchor + span;
+      const f = span / tpl.duration; // template is squeezed / stretched to fit the selected shot
+      const firstPicked = picked[0];
+
+      const fresh = tpl.shots.map((s) => ({
+        id: vidId.current++,
+        name: s.name,
+        start: +(anchor + s.start * f).toFixed(3),
+        len: +(s.len * f).toFixed(3),
+        ease: "smooth",
+        ...(firstPicked.img ? { img: firstPicked.img } : {}),
+        ...(s.enter ? { enter: { ...s.enter } } : {}),
+        ...(s.exit ? { exit: { ...s.exit } } : {}),
+        keys: splitKeysPerProp(s.keys).map((k) => ({ ...k, id: vidId.current++, t: +(k.t * f).toFixed(3) })),
+      }));
+
+      // new shots take the place of the selected ones, every other shot stays untouched
+      const firstIdx = live.shots.findIndex((s) => live.sel.ids.includes(s.id));
+      const rest = live.shots.filter((s) => !live.sel.ids.includes(s.id));
+      const before = live.shots.slice(0, firstIdx).filter((s) => !live.sel.ids.includes(s.id)).length;
+      const shots = [...rest.slice(0, before), ...fresh, ...rest.slice(before)];
+      const sel = { shot: fresh[fresh.length - 1].id, key: null, ids: fresh.map((s) => s.id), prop: null };
+
+      // Template background: only covers the selected shot's time range.
+      // Existing background clips are cut around that range, everything outside it stays as it was.
+      let bgs = live.bgs;
+      if (tpl.bgs) {
+        const kept = [];
+        live.bgs.forEach((c) => {
+          const cs = c.start, ce = c.start + c.len;
+          if (ce <= anchor + 1e-6 || cs >= end - 1e-6) {
+            kept.push(c); // completely outside the range
+            return;
+          }
+          if (cs < anchor - 1e-6) {
+            // part before the range keeps its place (its exit animation would now end mid-clip, so drop it)
+            kept.push({ ...c, len: +(anchor - cs).toFixed(3), exit: undefined });
+          }
+          if (ce > end + 1e-6) {
+            // part after the range becomes its own clip (no enter animation, it isn't starting fresh)
+            kept.push({ ...c, id: vidId.current++, start: +end.toFixed(3), len: +(ce - end).toFixed(3), enter: undefined, anim: undefined });
+          }
+        });
+
+        const sortedBgs = [...tpl.bgs].sort((a, b) => a.at - b.at);
+        const inserted = sortedBgs.map((b, i) => {
+          const snap = vtBgSnap(b.bg, b.grain);
+          const s0 = anchor + b.at * f;
+          const s1 = i < sortedBgs.length - 1 ? anchor + sortedBgs[i + 1].at * f : end;
+          return {
+            id: vidId.current++,
+            start: +s0.toFixed(3),
+            len: +(s1 - s0).toFixed(3),
+            snap,
+            css: vtBgCss(snap),
+            ...(b.enter ? { enter: { ...b.enter } } : {}),
+          };
+        });
+        bgs = [...kept, ...inserted];
+      }
+
+      // sync first, so the seek below samples the new shots and backgrounds
+      vidLive.current.shots = shots;
+      vidLive.current.bgs = bgs;
+      vidLive.current.sel = sel;
+      vidBgActive.current = null; // forces the background to be re-applied at the playhead
+      setVidPlaying(false);
+      setVidShots(shots);
+      setVidBgs(bgs);
+      setSelBg(null);
+      setVidSel(sel);
+      setVidTplId(tpl.id);
+      setSidebarOpen(true);
+      vidSeek(anchor);
+      return;
+    }
+
+    // ---- Nothing selected (or Frame mode): replace the whole timeline ----
     const gids = {}; // template group key -> real group id
     const oldD = live.duration;
     const whole = (c) => c.start + c.len >= oldD - 1e-3;
@@ -15485,7 +15829,22 @@ onBgDelete: vidDeleteBg,
   const next = { shot: primary, key: additive ? null : key, ids, prop: additive ? null : prop };
   vidLive.current.sel = next; // sync, so a scrub in the same click uses the new range
   setVidSel(next);
-  if (ids.length) vidSeek(vidTimeRef.current);
+  if (ids.length) {
+    const frameMode = toolbarModeRef.current === "frame";
+    // Frame rows span the timeline, so selecting one must not yank the playhead back to its start.
+    // Mockup shots still jump to their initial state.
+    const target = !additive && !prop && !frameMode ? vidLive.current.shots.find((x) => x.id === primary) : null;
+    vidSeek(target ? target.start : vidTimeRef.current);
+    // clicking a frame track also selects those frames on the canvas
+    if (frameMode && !additive && !prop && key == null) {
+      const fids = vidLive.current.shots.filter((x) => ids.includes(x.id) && x.frameId != null).map((x) => x.frameId);
+      if (fids.length) {
+        // a single row selects only that frame, so the canvas-to-timeline sync doesn't expand it to the group
+        if (fids.length === 1) soloFrameRef.current = fids[0];
+        setSelectedIds(fids);
+      }
+    }
+  }
 },
     onShot: vidPatchShot,
     onKey: vidPatchKey,
@@ -15538,7 +15897,8 @@ onBgDelete: vidDeleteBg,
           return renderFrameCanvas(w, transparent, h, {
             frames: framesLatestRef.current, // already holds this frame's keyframed placement (set by applyAnimAt above)
             cam: cam ? { ...CAM_DEFAULT, rotationZ: cam.rotationZ, positionX: cam.positionX, positionY: cam.positionY, zoom: cam.zoom } : undefined,
-            pose: sampleDeviceAnim(vidLive.current.shots, t),
+            pose: sampleDeviceAnim(vidLive.current.shots.filter((s) => s.frameId == null), t),
+            framePoses: frameRowStates(vidLive.current.shots, framesLatestRef.current.map((f) => f.id), t),
             texts: textsAt(t, "frame"),
             bg: bgAnimOnRef.current
               ? { canvas: bgAnimCanvasRef.current }
@@ -15913,7 +16273,7 @@ if (s.vidShots) {
       devicesDisabled,
       shortcutsOpen,
       tourOpen,
-      cropOpen: cropModalOpen || customCropModalOpen || frameCropId !== null,
+      cropOpen: cropModalOpen || customCropModalOpen || frameCropId !== null || shotCrop !== null,
       frameMode: toolbarMode === "frame",
       mockupMode: toolbarMode === "mockup",
       deleteFrames: deleteSelected,
@@ -16038,11 +16398,23 @@ if (s.vidShots) {
 const vidTargetShot = videoMock
   ? vidShots.find((s) => s.id === vidSel.shot) ?? shotForImgAt(vidShots, vidHead)
   : null;
-const mediaThumb = videoMock ? vidTargetShot?.img?.thumb ?? null : uploadedMediaThumb;
-const mediaLabel = videoMock ? vidTargetShot?.img?.label ?? null : uploadedMediaLabel;
-const clearMedia = videoMock
-  ? () => vidTargetShot && vidSetShotImg(vidTargetShot.id, null)
+// a shot without its own image shows the Image-mode upload (that's what is on the device)
+const mediaThumb = videoMock ? vidTargetShot?.img?.thumb ?? uploadedMediaThumb : uploadedMediaThumb;
+const mediaLabel = videoMock ? vidTargetShot?.img?.label ?? uploadedMediaLabel : uploadedMediaLabel;
+const clearMedia = videoMock && vidTargetShot?.img
+  ? () => vidSetShotImg(vidTargetShot.id, null)
   : handleClearUpload;
+
+// Crop: the shot's own image if it has one, otherwise the Image-mode upload
+const [shotCrop, setShotCrop] = useState(null); // { id, url, width, height }
+const handleCropClick = () => {
+  const img = videoMock ? vidTargetShot?.img : null;
+  if (!img) return handleOpenCropModal();
+  const probe = new Image();
+  probe.onload = () =>
+    setShotCrop({ id: vidTargetShot.id, url: img.thumb, width: probe.naturalWidth, height: probe.naturalHeight });
+  probe.src = img.thumb;
+};
 const modeTexts = textItems.filter((t) => (t.mode ?? "mockup") === toolbarMode);
 const frameRatio = Math.max(1, frameWidth) / Math.max(1, frameHeight);
 const cornerPcts = frameCorners ?? [frameRadius, frameRadius, frameRadius, frameRadius];
@@ -16860,7 +17232,7 @@ body .shortcut-keys.shortcut-keys.shortcut-keys * {
                   </span>
                 </div>
               ) : videoTplMode && toolbarMode === "frame" ? (
-                <FadeScrollerY wrapClassName="w-full flex-1" className="grid grid-cols-2 gap-2 w-full">
+                <FadeScrollerY wrapClassName="w-full flex-1" className="grid grid-cols-1 gap-1 w-full">
                   {filteredTemplates.map((tpl, i) => (
                     <FrameVideoTemplateCard
                       key={tpl.id}
@@ -16875,13 +17247,13 @@ body .shortcut-keys.shortcut-keys.shortcut-keys * {
                   ))}
                 </FadeScrollerY>
               ) : videoTplMode ? (
-                <FadeScrollerY wrapClassName="w-full flex-1" className="grid grid-cols-2 gap-2 w-full">
+                <FadeScrollerY wrapClassName="w-full flex-1" className="grid grid-cols-1 gap-1 w-full">
                   {filteredTemplates.map((tpl, i) => (
                     <VideoTemplateCard
                       key={tpl.id}
                       tpl={tpl}
                       index={i}
-                      label={`${deviceType} ${tpl.no}`}
+                      label={tpl.label}
                       active={vidTplId === tpl.id}
                       renderKey={`${deviceType}|${finish}|${bodyHex}|${bodyOpacity}|${deviceOrientation}|${uploadedMediaThumb}`}
                       renderStills={renderVideoStills}
@@ -17440,9 +17812,9 @@ style={{ backgroundImage: `url(${mediaThumb})` }}
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-handleOpenCropModal();
-}}
-disabled={!uploadedMediaThumb || videoOn}
+                        handleCropClick();
+                      }}
+                      disabled={!mediaThumb}
                       className="group flex items-center justify-center w-6 h-6 shrink-0 rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                     >
                      <Crop size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
@@ -18755,7 +19127,20 @@ className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed borde
         />
       )}
 
-            {frameCropTarget?.img && (
+            {shotCrop && (
+        <CropModal
+          imageUrl={shotCrop.url}
+          imageWidth={shotCrop.width}
+          imageHeight={shotCrop.height}
+          onClose={() => setShotCrop(null)}
+          onApply={(rect) => {
+            vidCropShotImg(shotCrop.id, { x: rect.x, y: rect.y, width: rect.width, height: rect.height });
+            setShotCrop(null);
+          }}
+        />
+      )}
+
+      {frameCropTarget?.img && (
         <CropModal
           imageUrl={frameCropTarget.img.url}
           imageWidth={frameCropTarget.img.nw}
