@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { KeyCap } from "./KeyCap.jsx";
+import KeyCombo from "./KeyCombo.jsx";
 
 const GAP = 8; // space between trigger and tooltip
 const VIEWPORT_MARGIN = 8; // never sit closer than this to a viewport edge
@@ -110,19 +110,13 @@ export default function Tooltip({ label, shortcut, children, className = "", pla
         {show && label && createPortal(
           <span
             ref={bubbleRef}
-            className={`pointer-events-none fixed z-[10000] flex items-center gap-2 w-fit py-1 ${shortcut ? "pl-2 pr-1" : "px-2"} bg-white dark:bg-[#1F1F1F] border border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10 shadow-[0px_3px_13.4px_rgba(0,0,0,0.06)] dark:shadow-[0_4px_12px_rgba(0,0,0,0.25)] rounded-lg ${pos ? "tooltip-enter" : ""}`}
+            className={`pointer-events-none fixed z-[10000] flex items-center gap-2 w-fit py-1 px-2 bg-white dark:bg-[#1F1F1F] border border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10 shadow-[0px_3px_13.4px_rgba(0,0,0,0.06)] dark:shadow-[0_4px_12px_rgba(0,0,0,0.25)] rounded-lg ${pos ? "tooltip-enter" : ""}`}
             style={pos ? { left: pos.left, top: pos.top, visibility: "visible" } : { left: -9999, top: -9999, visibility: "hidden" }}
           >
             <span className="font-[Inter,'Helvetica_Neue',Arial,sans-serif] font-semibold text-[12px] leading-[18px] text-center text-[#3A3A3A] dark:text-[#FAF9FA] whitespace-nowrap">
               {label}
             </span>
-            {shortcut && (
-              <span className="flex items-center gap-1 shrink-0">
-                {shortcut.map((k) => (
-                  <KeyCap key={k}>{k}</KeyCap>
-                ))}
-              </span>
-            )}
+            {shortcut && <KeyCombo keys={shortcut} />}
           </span>,
           document.body
         )}

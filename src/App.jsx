@@ -1,15 +1,102 @@
 import React, { useRef, useState, useCallback, useEffect, useLayoutEffect } from "react";
-import MockupScene, { PRESETS, paintPhoneChrome, paintTextItem, getStrapStyles } from "./MockupScene.jsx";
+import MockupScene, { paintPhoneChrome, paintTextItem, getStrapStyles } from "./MockupScene.jsx";
 import ColorPicker from "./ColorPicker.jsx";
 import GradientPicker from "./GradientPicker.jsx";
 import CropModal from "./CropModal.jsx";
-import ShortcutsModal, { KeyCap, ALT } from "./ShortcutsModal.jsx";
+import ShortcutsModal, { ALT } from "./ShortcutsModal.jsx";
+import KeyCombo from "./KeyCombo.jsx";
 import Tooltip from "./Tooltip.jsx";
 import OptionRow from "./OptionRow.jsx";
 import ToolbarDropdown, { DROPDOWN_TRIGGER, DROPDOWN_CARET } from "./Dropdown.jsx";
-import DimensionInput from "./DimensionInput.jsx";
 import AppTour from "./AppTour.jsx";
 import { OffsetField, SizeLockRow } from "./SizeFields.jsx";
+import {
+  SOCIAL_OPTIONS,
+  platformOf,
+  modeOf,
+  socialDefaults,
+  DEFAULT_SOCIAL,
+  ICONS,
+  socialOps,
+} from "./lib/social.js";
+import {
+  makeGrainUrl,
+  EFFECT_TYPE_OPTIONS,
+  STROKE_POSITIONS,
+  CAM_DEFAULT,
+  isDefaultCamera,
+  getFrameCamera,
+  frameCameraCss,
+  drawWarped,
+  sheenCss,
+  paintSheen,
+  hexRgba,
+  isFrameBackFacing,
+  buildGradientCss,
+  makeCanvasGradient,
+  makeEffect,
+  DEFAULT_FRAME_EFFECTS,
+  DEFAULT_STROKE,
+} from "./lib/frameUtils.js";
+import { drawNoise, makeGrainTile } from "./lib/noise.js";
+import {
+  CAM_KEYS, smoothstep, VID_EASES, VID_EASE_PARAMS, VID_EASE_GROUPS, VID_EASE_PRESETS, VID_EASE_CUSTOM_DEFAULT,
+  vidEaseSpec, vidEaseFn, VID_FPS, VID_PPS, VID_PPS_MIN, VID_PPS_MAX, VID_LABEL_W, VID_PAD, VID_GRAY,
+  VID_H_MIN, VID_H_MAX, VID_GLIDE_MS, VID_GLIDE_EASE, VID_PROPS, vidClamp, vidSnap, fmtTC, sampleShots,
+} from "./lib/videoMath.js";
+import {
+  DEV_ANIM_GROUPS, DEV_ANIMS, devAnimLabel, devAnimPose, shotAnimPose, shotForImgAt, sampleDeviceAnim,
+} from "./lib/shotAnim.js";
+import {
+  BG_CUSTOM_REST, BG_ANIM_NONE, BG_ANIM_GROUPS, BG_ANIMS, BG_ANIM_BY_ID, bgProgress, bgDefaultEase,
+  BG_ANIM_PARAMS, bgAnimOf, bgKey, bgFallbackSnap, bgRand, bgTmp, paintBgSnap, drawBgTransition, drawBgAnimPreview,
+} from "./lib/bgAnim.js";
+import {
+  FRAME_DEFAULT_SIZE, makeFrame, cornersOf, backFillOf, backOpacityOf, frameAppearanceOf, frameRect, cloneFrame,
+} from "./lib/frameModel.js";
+import { framePoseMap, sampleShotFrames, changedCamProps, keyStateAt, vidShotAtTime } from "./lib/frameKeys.js";
+import {
+  chromeKey,
+  sampleChromeColors,
+  chromeOps,
+  ChromeCanvas,
+  SocialOverlay,
+  paintSocial,
+} from "./components/SocialOverlay.jsx";
+import { SOCIAL_FULL_WIDTH, SocialField, ImageUploadField } from "./components/SocialFields.jsx";
+import {
+  SEG_ON, SEG_OFF, SearchField, Scrubber, ToggleRow, FinishDropdown, GradientPresetDropdown,
+  ImagePresetDropdown, GradientCanvasHandles, ColorOpacityField, PopupDropdown, AppearanceHeader,
+  CornerRadiusFields, FadeScroller, FadeScrollerY, SectionHeader,
+} from "./components/controls.jsx";
+import {
+  CUSTOM_FINISH,
+  WATCH_STRAPS,
+  DEVICE_FINISHES,
+  DEFAULT_FINISHES,
+  getStrapStyleOptions,
+  getFinishesForDevice,
+} from "./constants/finishes.js";
+import { TEMPLATE_LIBRARY, FRAME_TEMPLATE_LIBRARY, FRAME_LAYOUTS, layoutOf } from "./constants/templates.js";
+import { GRADIENT_PRESETS, IMAGE_PRESETS } from "./constants/presets.js";
+import { CAMERA_VIEW_PRESETS, TEMPLATE_CAMERAS, templatePreviewCam } from "./constants/camera.js";
+import {
+  TEMPLATE_DEVICE_SHAPE,
+  CANVAS_SIZE_OPTIONS,
+  EXPORT_SIZES,
+  EXPORT_FORMATS,
+  formatBytes,
+  DEVICE_TYPE_OPTIONS,
+  CATEGORY_DEVICE_OPTIONS,
+} from "./constants/options.js";
+import {
+  LIGHTING_OPTIONS,
+  THEME_OPTIONS,
+  BROWSER_OPTIONS,
+  SAFARI_TABS_OPTIONS,
+  ENVIRONMENT_OPTIONS,
+} from "./constants/uiOptions.js";
+import { VIDEO_TEMPLATES, FRAME_VIDEO_TEMPLATES, vtBgSnap, vtBgCss } from "./constants/videoTemplates.js";
 import { createPortal } from "react-dom";
 import {
   VIDEO_FORMATS, VIDEO_RESOLUTIONS, VIDEO_SPEEDS, VIDEO_FPS_OPTIONS,
@@ -20,11 +107,8 @@ import {
   UploadSimple,
   DownloadSimple,
   ArrowCounterClockwise,
-  Moon,
-  Sun,
   CaretDown,
   CaretUp,
-  MagnifyingGlass,
   CaretRight,
   CaretLeft,
   Plus,
@@ -37,7 +121,6 @@ import {
   Trash,
   X,
   Devices,
-  Desktop,
   Minus,
   Eye,
   EyeSlash,
@@ -94,189 +177,6 @@ const DEVICE_CATEGORIES = [
   { key: "tablet", label: "Tablet", enabled: true },
   { key: "watch", label: "Watch", enabled: true },
 ];
-// zoom 70 / fov 27 match the camera's starting framing (fov slider 27 = 32°).
-// Tune zoom per preset if one should sit closer or farther.
-const CAMERA_VIEW_PRESETS = [
-  { key: "hero", label: "Hero", rotationX: -15, rotationY: 25, rotationZ: 0, positionX: 0, positionY: 0, zoom: 70, fov: 27 },
-  { key: "right-angled", label: "Right-angled", rotationX: -10, rotationY: 45, rotationZ: 0, positionX: 0, positionY: 0, zoom: 70, fov: 27 },
-  { key: "front", label: "Front", rotationX: 0, rotationY: 0, rotationZ: 0, positionX: 0, positionY: 0, zoom: 70, fov: 27 },
-  { key: "bottom", label: "Bottom", rotationX: 45, rotationY: 0, rotationZ: 0, positionX: 0, positionY: 0, zoom: 70, fov: 27 },
-];
-
-// Extra angles used only by templates. Key must match a template's cameraKey.
-const EXTRA_CAMERA_VIEWS = [
-  { key: "isometric", label: "Isometric", rotationX: -35, rotationY: 45, rotationZ: 0, positionX: 0, positionY: 0, zoom: 68, fov: 27 },
-  { key: "dutch", label: "Dutch tilt", rotationX: -12, rotationY: 28, rotationZ: -16, positionX: 0, positionY: 0, zoom: 70, fov: 27 },
-  { key: "overhead", label: "Overhead", rotationX: -75, rotationY: 25, rotationZ: 0, positionX: 0, positionY: 0, zoom: 66, fov: 27 },
-  { key: "low-angle", label: "Low angle", rotationX: 28, rotationY: -28, rotationZ: 0, positionX: 0, positionY: 0, zoom: 78, fov: 40 },
-  { key: "macro", label: "Macro", rotationX: -22, rotationY: 38, rotationZ: 0, positionX: 18, positionY: -42, zoom: 100, fov: 22 },
-  { key: "wide", label: "Fisheye", rotationX: -18, rotationY: 52, rotationZ: 0, positionX: 0, positionY: 0, zoom: 88, fov: 105 },
-  { key: "profile", label: "Profile", rotationX: -6, rotationY: 78, rotationZ: 0, positionX: 0, positionY: 0, zoom: 70, fov: 27 },
-  { key: "back", label: "Back", rotationX: -12, rotationY: 150, rotationZ: 0, positionX: 0, positionY: 0, zoom: 70, fov: 27 },
-  { key: "sideways", label: "Sideways", rotationX: -10, rotationY: 22, rotationZ: 90, positionX: 0, positionY: 0, zoom: 62, fov: 27 },
-  { key: "far", label: "Far", rotationX: -15, rotationY: -30, rotationZ: 0, positionX: 0, positionY: 0, zoom: 28, fov: 20 },
-  { key: "tumble", label: "Tumble", rotationX: -30, rotationY: -60, rotationZ: 25, positionX: 0, positionY: 0, zoom: 64, fov: 27 },
-];
-const TEMPLATE_CAMERAS = [...CAMERA_VIEW_PRESETS, ...EXTRA_CAMERA_VIEWS];
-
-// Thumbnails pull the camera back a little so tilted / rotated devices don't clip the card.
-const templatePreviewCam = (t) => {
-  const cam = TEMPLATE_CAMERAS.find((p) => p.key === t.cameraKey) ?? CAMERA_VIEW_PRESETS[0];
-  return { ...cam, zoom: Math.max(0, cam.zoom - 15) };
-};
-
-// Device-agnostic looks. Applied to whichever device is currently selected.
-// bg.preset values refer to GRADIENT_PRESETS / IMAGE_PRESETS; lighting / environment
-// values refer to PRESETS (MockupScene) and ENVIRONMENT_OPTIONS.
-const TEMPLATE_LIBRARY = [
-  { id: "clean-studio", label: "Clean Studio", tags: "light minimal soft", cameraKey: "front",
-    bg: { type: "solid", hex: "EDEBE7" }, environment: "studio", lighting: "softbox", lightingIntensity: 55 },
-  { id: "ocean-hero", label: "Ocean Hero", tags: "blue clean product", cameraKey: "hero",
-    bg: { type: "gradient", preset: "ocean-blue" }, environment: "clouds", lighting: "studio", lightingIntensity: 60 },
-  { id: "golden-hour", label: "Golden Hour", tags: "warm orange sunset", cameraKey: "right-angled",
-    bg: { type: "gradient", preset: "sunset-orange" }, grain: 12, environment: "city", lighting: "golden-hour", lightingIntensity: 70 },
-  { id: "neon-night", label: "Neon Night", tags: "dark purple cyberpunk", cameraKey: "hero",
-    bg: { type: "gradient", preset: "violet-noir" }, grain: 8, environment: "city", lighting: "neon", lightingIntensity: 75 },
-  { id: "moody-noir", label: "Moody Noir", tags: "dark dramatic", cameraKey: "right-angled",
-    bg: { type: "solid", hex: "0C0D10" }, environment: "studio", lighting: "moody", lightingIntensity: 65 },
-  { id: "forest-mist", label: "Forest Mist", tags: "green natural", cameraKey: "hero",
-    bg: { type: "gradient", preset: "forest-green" }, environment: "forest", lighting: "overcast", lightingIntensity: 55 },
-  { id: "warm-editorial", label: "Warm Editorial", tags: "photo warm soft", cameraKey: "front",
-    bg: { type: "custom", preset: "warm-gradient" }, environment: "studio", lighting: "softbox", lightingIntensity: 50 },
-  { id: "iridescent", label: "Iridescent", tags: "photo metallic bold", cameraKey: "bottom",
-    bg: { type: "custom", preset: "iridescent-metallic-art" }, environment: "city", lighting: "studio", lightingIntensity: 60 },
-    { id: "isometric-pop", label: "Isometric Pop", tags: "isometric warm orange angle", cameraKey: "isometric",
-    bg: { type: "gradient", preset: "amber-sky" }, environment: "studio", lighting: "softbox", lightingIntensity: 55 },
-  { id: "dutch-tilt", label: "Dutch Tilt", tags: "tilted dramatic blue bold", cameraKey: "dutch",
-    bg: { type: "gradient", preset: "cobalt-flare" }, environment: "city", lighting: "neon", lightingIntensity: 70 },
-  { id: "overhead-flatlay", label: "Overhead", tags: "top down flat lay light", cameraKey: "overhead",
-    bg: { type: "solid", hex: "F4EFE6" }, environment: "studio", lighting: "softbox", lightingIntensity: 50 },
-  { id: "sky-low", label: "Sky Low", tags: "low angle sky clouds photo", cameraKey: "low-angle",
-    bg: { type: "custom", preset: "blue-sky-scene" }, environment: "clouds", lighting: "studio", lightingIntensity: 60 },
-  { id: "macro-edge", label: "Macro Edge", tags: "close up detail dark", cameraKey: "macro",
-    bg: { type: "solid", hex: "0A0A0C" }, environment: "studio", lighting: "moody", lightingIntensity: 70 },
-  { id: "fisheye-glow", label: "Fisheye Glow", tags: "wide lens glow distortion photo", cameraKey: "wide",
-    bg: { type: "custom", preset: "abstract-glowing-object" }, environment: "city", lighting: "neon", lightingIntensity: 75 },
-  { id: "razor-profile", label: "Razor Profile", tags: "side thin edge steel", cameraKey: "profile",
-    bg: { type: "gradient", preset: "steel-blue" }, environment: "studio", lighting: "overcast", lightingIntensity: 55 },
-  { id: "back-glass", label: "Back Glass", tags: "back camera ethereal soft photo", cameraKey: "back",
-    bg: { type: "custom", preset: "ethereal-gradient-abstraction" }, environment: "clouds", lighting: "softbox", lightingIntensity: 55 },
-  { id: "sideways-bars", label: "Sideways Bars", tags: "rotated landscape graphic photo", cameraKey: "sideways",
-    bg: { type: "custom", preset: "gradient-bars" }, environment: "studio", lighting: "studio", lightingIntensity: 60 },
-  { id: "distant-float", label: "Distant Float", tags: "far small minimal dusk", cameraKey: "far",
-    bg: { type: "gradient", preset: "dusk-horizon" }, grain: 10, environment: "clouds", lighting: "golden-hour", lightingIntensity: 55 },
-  { id: "red-tumble", label: "Red Tumble", tags: "tumble spin red texture photo bold", cameraKey: "tumble",
-    bg: { type: "custom", preset: "textured-red-surface" }, environment: "city", lighting: "studio", lightingIntensity: 65 },
-  { id: "submerged", label: "Submerged", tags: "surreal low moody photo", cameraKey: "low-angle",
-    bg: { type: "custom", preset: "submerged-surreal-form" }, environment: "clouds", lighting: "moody", lightingIntensity: 55 },
-  { id: "golden-dome", label: "Golden Dome", tags: "yellow overhead warm photo", cameraKey: "overhead",
-    bg: { type: "custom", preset: "textured-yellow-dome" }, environment: "studio", lighting: "softbox", lightingIntensity: 55 },
-  { id: "amber-dusk-low", label: "Amber Dusk", tags: "dusk warm low grain", cameraKey: "low-angle",
-    bg: { type: "gradient", preset: "amber-dusk" }, grain: 12, environment: "city", lighting: "golden-hour", lightingIntensity: 75 },
-  { id: "teal-macro", label: "Teal Macro", tags: "teal green close up", cameraKey: "macro",
-    bg: { type: "gradient", preset: "deep-teal" }, grain: 6, environment: "studio", lighting: "moody", lightingIntensity: 65 },
-  { id: "magenta-tumble", label: "Magenta Tumble", tags: "pink neon spin dark", cameraKey: "tumble",
-    bg: { type: "gradient", preset: "midnight-magenta" }, grain: 8, environment: "city", lighting: "neon", lightingIntensity: 75 },
-  { id: "fluid-fisheye", label: "Fluid Fisheye", tags: "abstract fluid wide photo", cameraKey: "wide",
-    bg: { type: "custom", preset: "abstract-fluid-forms" }, environment: "studio", lighting: "studio", lightingIntensity: 60 },
-  { id: "meadow-iso", label: "Meadow Iso", tags: "green spring isometric natural", cameraKey: "isometric",
-    bg: { type: "gradient", preset: "spring-meadow" }, environment: "forest", lighting: "overcast", lightingIntensity: 55 },
-];
-
-// Frame-mode looks. Applied to the selected frames: background, sheen, radius, stroke, shadow.
-const FRAME_TEMPLATE_LIBRARY = [
-  { id: "f-clean-studio", label: "Clean Studio", tags: "light minimal soft", note: "Soft shadow",
-    bg: { type: "solid", hex: "EDEBE7" }, environment: "studio", radius: 8,
-    shadow: { x: 0, y: 40, blur: 80, spread: 0, hex: "000000", opacity: 22 } },
-  { id: "f-ocean", label: "Ocean", tags: "blue clean product", note: "Rounded",
-    bg: { type: "gradient", preset: "ocean-blue" }, environment: "clouds", radius: 12,
-    shadow: { x: 0, y: 50, blur: 90, spread: -10, hex: "02304F", opacity: 35 } },
-  { id: "f-golden", label: "Golden Hour", tags: "warm orange sunset", note: "Warm glow", grain: 12,
-    bg: { type: "gradient", preset: "sunset-orange" }, environment: "city", radius: 10,
-    shadow: { x: 0, y: 40, blur: 100, spread: 0, hex: "5A1E00", opacity: 40 } },
-  { id: "f-neon", label: "Neon Night", tags: "dark purple cyberpunk", note: "Outline", grain: 8,
-    bg: { type: "gradient", preset: "violet-noir" }, environment: "city", radius: 10,
-    stroke: { hex: "3DD1FF", opacity: 80, width: 2, position: "outside" },
-    shadow: { x: 0, y: 0, blur: 80, spread: 0, hex: "6A2EE8", opacity: 55 } },
-  { id: "f-noir", label: "Moody Noir", tags: "dark dramatic", note: "Hairline",
-    bg: { type: "solid", hex: "0C0D10" }, environment: "studio", radius: 6,
-    stroke: { hex: "FFFFFF", opacity: 18, width: 1, position: "inside" },
-    shadow: { x: 0, y: 30, blur: 70, spread: 0, hex: "000000", opacity: 70 } },
-  { id: "f-forest", label: "Forest Mist", tags: "green natural", note: "Soft",
-    bg: { type: "gradient", preset: "forest-green" }, environment: "forest", radius: 14,
-    shadow: { x: 0, y: 40, blur: 80, spread: 0, hex: "0B2A0E", opacity: 40 } },
-  { id: "f-editorial", label: "Warm Editorial", tags: "photo warm soft", note: "Photo bg",
-    bg: { type: "custom", preset: "warm-gradient" }, environment: "studio", radius: 4,
-    shadow: { x: 0, y: 30, blur: 60, spread: 0, hex: "000000", opacity: 25 } },
-  { id: "f-iridescent", label: "Iridescent", tags: "photo metallic bold", note: "Photo bg",
-    bg: { type: "custom", preset: "iridescent-metallic-art" }, environment: "city", radius: 12,
-    stroke: { hex: "FFFFFF", opacity: 60, width: 2, position: "inside" },
-    shadow: { x: 0, y: 40, blur: 90, spread: 0, hex: "000000", opacity: 35 } },
-  { id: "f-flat", label: "Flat Paper", tags: "flat light minimal print", note: "No shadow",
-    bg: { type: "solid", hex: "F4EFE6" }, environment: "none", radius: 2,
-    stroke: { hex: "000000", opacity: 12, width: 1, position: "inside" } },
-  { id: "f-sky", label: "Sky", tags: "sky clouds photo", note: "Photo bg",
-    bg: { type: "custom", preset: "blue-sky-scene" }, environment: "clouds", radius: 16,
-    shadow: { x: 0, y: 50, blur: 100, spread: -10, hex: "0A2A5A", opacity: 35 } },
-  { id: "f-dusk", label: "Amber Dusk", tags: "dusk warm grain", note: "Grain", grain: 12,
-    bg: { type: "gradient", preset: "amber-dusk" }, environment: "city", radius: 10,
-    shadow: { x: 0, y: 40, blur: 90, spread: 0, hex: "000000", opacity: 50 } },
-  { id: "f-teal", label: "Deep Teal", tags: "teal green dark", note: "Sharp", grain: 6,
-    bg: { type: "gradient", preset: "deep-teal" }, environment: "studio", radius: 3,
-    shadow: { x: 0, y: 30, blur: 70, spread: 0, hex: "000000", opacity: 55 } },
-  { id: "f-magenta", label: "Magenta", tags: "pink neon dark", note: "Glow", grain: 8,
-    bg: { type: "gradient", preset: "midnight-magenta" }, environment: "city", radius: 12,
-    shadow: { x: 0, y: 0, blur: 90, spread: 0, hex: "FF6FB5", opacity: 45 } },
-  { id: "f-meadow", label: "Spring Meadow", tags: "green spring natural", note: "Rounded",
-    bg: { type: "gradient", preset: "spring-meadow" }, environment: "forest", radius: 18,
-    shadow: { x: 0, y: 40, blur: 80, spread: 0, hex: "1F3A1F", opacity: 30 } },
-];
-
-// Template card thumbnail for Frame mode: draws the selected frame itself (its image, or the placeholder).
-// Frame-mode layouts. x / y = frame center as a fraction of canvas width / height (0 = middle, ±0.5 = edge).
-// h = height as a fraction of canvas height, r = width / height. Later entries draw on top.
-const FL = (x, y, h, r) => ({ x, y, h, r });
-const FRAME_LAYOUTS = {
-  single: [FL(0, 0, 0.8, 0.46)],
-  // three phones side by side
-  triple: [FL(-0.28, 0, 0.78, 0.46), FL(0, 0, 0.78, 0.46), FL(0.28, 0, 0.78, 0.46)],
-  // two cards, third one half cut off by the right edge
-  bleed: [FL(-0.24, 0, 0.8, 0.62), FL(0.14, 0, 0.8, 0.62), FL(0.52, 0, 0.8, 0.62)],
-  // four overlapping, staggered cards
-  overlap: [FL(-0.27, -0.06, 0.62, 0.78), FL(-0.09, 0.08, 0.62, 0.78), FL(0.09, -0.08, 0.62, 0.78), FL(0.27, 0.06, 0.62, 0.78)],
-  // big frame + narrow frame, wide panel underneath
-  hero: [FL(-0.155, -0.12, 0.62, 0.95), FL(0.195, -0.12, 0.62, 0.75), FL(0.02, 0.34, 0.3, 3.5)],
-  // two tall cards, stepped vertically
-  duo: [FL(-0.17, -0.1, 0.7, 0.58), FL(0.17, 0.1, 0.7, 0.58)],
-  // three small stepped cards
-  trio: [FL(-0.24, 0.05, 0.6, 0.58), FL(0, -0.05, 0.6, 0.58), FL(0.24, 0.05, 0.6, 0.58)],
-  // 2 x 2 grid
-  grid: [FL(-0.1, -0.22, 0.4, 0.7), FL(0.1, -0.22, 0.4, 0.7), FL(-0.1, 0.22, 0.4, 0.7), FL(0.1, 0.22, 0.4, 0.7)],
-  // single frame rising from the bottom edge (about half visible)
-  peek: [FL(0, 0.5, 1.1, 0.5)],
-  // single frame, half cut off by the right / left edge
-  sideHalf: [FL(0.5, 0, 0.9, 0.5)],
-  sideHalfL: [FL(-0.5, 0, 0.9, 0.5)],
-  // four cards in a row (carousel)
-  strip: [FL(-0.33, 0, 0.7, 0.46), FL(-0.11, 0, 0.7, 0.46), FL(0.11, 0, 0.7, 0.46), FL(0.33, 0, 0.7, 0.46)],
-};
-
-// template id -> layout key. Anything not listed uses "single".
-const FRAME_TEMPLATE_LAYOUT = {
-  "f-ocean": "triple",
-  "f-golden": "peek",
-  "f-neon": "overlap",
-  "f-noir": "bleed",
-  "f-forest": "trio",
-  "f-editorial": "hero",
-  "f-iridescent": "duo",
-  "f-flat": "grid",
-  "f-sky": "sideHalf",
-  "f-dusk": "peek",
-  "f-magenta": "sideHalfL",
-  "f-meadow": "bleed",
-};
-const layoutOf = (tpl) => FRAME_LAYOUTS[FRAME_TEMPLATE_LAYOUT[tpl.id]] ?? FRAME_LAYOUTS.single;
 
 // Template card thumbnail for Frame mode: draws the layout using the current frames' images.
 function FrameTemplateThumb({ tpl, frames }) {
@@ -311,507 +211,6 @@ function FrameTemplateThumb({ tpl, frames }) {
     </div>
   );
 }
-
-// Silhouette size (px) inside the 117px-high card preview, per device family
-const TEMPLATE_DEVICE_SHAPE = {
-  phone: { w: 30, h: 62, r: 7 },
-  tablet: { w: 46, h: 62, r: 6 },
-  desktop: { w: 78, h: 50, r: 4 },
-  watch: { w: 34, h: 40, r: 10 },
-};
-
-const CANVAS_SIZE_OPTIONS = [
-  { value: "Fill", label: "Fill", ratio: null },
-  { value: "3:4", label: "3:4", sublabel: "1080×1440", ratio: 3 / 4, w: 1080, h: 1440 },
-  { value: "3:2", label: "3:2", sublabel: "1620×1080", ratio: 3 / 2, w: 1620, h: 1080 },
-  { value: "9:16", label: "9:16", sublabel: "1080×1920", ratio: 9 / 16, w: 1080, h: 1920 },
-  { value: "1:1", label: "1:1", sublabel: "1080×1080", ratio: 1, w: 1080, h: 1080 },
-  { value: "4:3", label: "4:3", sublabel: "1440×1080", ratio: 4 / 3, w: 1440, h: 1080 },
-  { value: "2:3", label: "2:3", sublabel: "1080×1620", ratio: 2 / 3, w: 1080, h: 1620 },
-  { value: "16:9", label: "16:9", sublabel: "1920×1080", ratio: 16 / 9, w: 1920, h: 1080 },
-];
-
-const EXPORT_SIZES = [
-  { label: "2K", width: 1920 },
-  { label: "4K", width: 3840 },
-  { label: "8K", width: 7680, warn: true },
-];
-
-// bpp = rough bytes per pixel, only used for the size estimate
-const EXPORT_FORMATS = [
-  { value: "png", label: "PNG", mime: "image/png", ext: "png", bpp: 1.5 },
-  { value: "jpg", label: "JPG", mime: "image/jpeg", ext: "jpg", bpp: 0.25 },
-  { value: "webp", label: "WebP", mime: "image/webp", ext: "webp", bpp: 0.15 },
-];
-
-const formatBytes = (n) => (n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(n / 1e6))} MB`);
-
-const DEVICE_TYPE_OPTIONS = [
-  { value: "iPhone 17 Pro Max", label: "iPhone 17 Pro Max" },
-  { value: "iPhone 17 Pro", label: "iPhone 17 Pro" },
-  { value: "iPhone 17", label: "iPhone 17" },
-  { value: "iPhone Air", label: "iPhone Air" },
-  { value: "iPhone 16 Pro Max", label: "iPhone 16 Pro Max" },
-  { value: "iPhone 16 Pro", label: "iPhone 16 Pro" },
-  { value: "iPhone 15 Pro Max", label: "iPhone 15 Pro Max" },
-  { value: "iPhone 15 Pro", label: "iPhone 15 Pro" },
-  { value: "iPhone 14 Pro Max", label: "iPhone 14 Pro Max" },
-  { value: "iPhone 14 Pro", label: "iPhone 14 Pro" },
-  { value: "iPhone 14 Plus", label: "iPhone 14 Plus" },
-  { value: "iPhone 14", label: "iPhone 14" },
-];
-
-const CATEGORY_DEVICE_OPTIONS = {
-  phone: DEVICE_TYPE_OPTIONS,
-  tablet: [
-    { value: "iPad Air", label: "iPad Air" },
-    { value: "iPad mini", label: "iPad mini" },
-    { value: "iPad Pro 11-inch", label: "iPad Pro 11\"" },
-    { value: "iPad Pro 12.9-inch", label: "iPad Pro 12.9\"" },
-  ],
-  desktop: [
-    { value: 'MacBook Pro 14"', label: 'MacBook Pro 14"' },
-    { value: "MacBook Air", label: "MacBook Air" },
-    { value: 'MacBook Pro 16"', label: 'MacBook Pro 16"' },
-    { value: "Pro Display XDR", label: "Pro Display XDR" },
-  ],
-  watch: [
-    { value: "Apple Watch Ultra", label: "Apple Watch Ultra" },
-    { value: "Apple Watch Series 9", label: "Apple Watch Series 9" },
-    { value: "Apple Watch Series 7", label: "Apple Watch Series 7" },
-  ],
-};
-
-const CUSTOM_FINISH = { value: "Custom", label: "Custom", hex: null };
-
-const TITANIUM_FINISHES = [
-  { value: "Desert titanium", label: "Desert titanium", hex: "BFA18A", roughness: 0.12, metalness: 1 },
-  { value: "Natural titanium", label: "Natural titanium", hex: "B8B0A3", roughness: 0.1, metalness: 1 },
-  { value: "White titanium", label: "White titanium", hex: "E4E2DD", roughness: 0.35, metalness: 0.7 },
-  { value: "Black titanium", label: "Black titanium", hex: "454545", roughness: 0.45, metalness: 0.6 },
-];
-
-// iPhone 15 Pro / 15 Pro Max's real launch palette — hexes from research
-// (Natural/Blue/White/Black Titanium). Brushed-titanium frame: moderate
-// roughness so it doesn't read as polished chrome like the generic set above.
-const IPHONE_15_PRO_FINISHES = [
-  { value: "Natural titanium", label: "Natural titanium", hex: "B8B0A3", roughness: 0.3, metalness: 0.9 },
-  { value: "Blue titanium", label: "Blue titanium", hex: "5D6B7D", roughness: 0.3, metalness: 0.9 },
-  { value: "White titanium", label: "White titanium", hex: "E3E2DE", roughness: 0.32, metalness: 0.75 },
-  { value: "Black titanium", label: "Black titanium", hex: "454545", roughness: 0.32, metalness: 0.85 },
-];
-const ALUMINUM_FINISHES_17 = [
-  { value: "Black", label: "Black", hex: "252525", roughness: 0.1, metalness: 0.9 },
-  { value: "White", label: "White", hex: "F2F1ED", roughness: 0.1, metalness: 0.9 },
-  { value: "Sage", label: "Sage", hex: "B5C5A8", roughness: 0.1, metalness: 0.9 },
-  { value: "Lavender", label: "Lavender", hex: "D5C8E9", roughness: 0.1, metalness: 0.9 },
-  { value: "Mist blue", label: "Mist blue", hex: "B9D6E8", roughness: 0.1, metalness: 0.9 },
-];
-
-// Back-glass (frosted matte) hexes from research; frame/plateau/ring colors live in
-// DEVICE_FINISH_PART_COLORS in MockupScene.jsx, keyed by these same value strings.
-const IPHONE_16_PLUS_FINISHES = [
-  { value: "Ultramarine", label: "Ultramarine", hex: "5265C8", roughness: 0.42, metalness: 0.9 },
-  { value: "Teal", label: "Teal", hex: "A3C9BE", roughness: 0.42, metalness: 0.9 },
-  { value: "Pink", label: "Pink", hex: "E98DAF", roughness: 0.42, metalness: 0.9 },
-  { value: "Black", label: "Black", hex: "222222", roughness: 0.42, metalness: 0.9 },
-  { value: "White", label: "White", hex: "F2F0EB", roughness: 0.42, metalness: 0.9 },
-];
-
-const IPHONE_AIR_FINISHES = [
-  { value: "Space black", label: "Space black", hex: "343434", roughness: 0.1, metalness: 0.9 },
-  { value: "Cloud white", label: "Cloud white", hex: "EAE9E5", roughness: 0.1, metalness: 0.9 },
-  { value: "Light gold", label: "Light gold", hex: "E4D5B9", roughness: 0.1, metalness: 0.9 },
-  { value: "Sky blue", label: "Sky blue", hex: "C4D8E8", roughness: 0.1, metalness: 0.9 },
-];
-
-// Kept as-is — this set is actually shared with the iPhone 14 series
-// (DEVICE_FINISHES below), whose swatches weren't part of this research pass.
-const ALUMINUM_FINISHES_13 = [
-  { value: "Midnight", label: "Midnight", hex: "242424", roughness: 0.1, metalness: 0.9 },
-  { value: "Starlight", label: "Starlight", hex: "F1EFE8", roughness: 0.1, metalness: 0.9 },
-  { value: "Blue", label: "Blue", hex: "A9C5E4", roughness: 0.1, metalness: 0.9 },
-  { value: "Purple", label: "Purple", hex: "C9B8E7", roughness: 0.1, metalness: 0.9 },
-  { value: "Yellow", label: "Yellow", hex: "F3E5A7", roughness: 0.1, metalness: 0.9 },
-  { value: "Product Red", label: "(PRODUCT)RED", hex: "A91E32", roughness: 0.1, metalness: 0.9 },
-];
-
-// Hexes from research: Space Black is a deep matte charcoal with anti-fingerprint
-// anodization, Silver is classic metallic aluminum. Both are satin anodized,
-// so roughness sits well above the glossy phone-frame values.
-const MACBOOK_PRO_FINISHES = [
-  { value: "Space black", label: "Space black", hex: "2E3033", roughness: 0.45, metalness: 0.9 },
-  { value: "Silver", label: "Silver", hex: "E3E4E5", roughness: 0.45, metalness: 0.9 },
-];
-
-const MACBOOK_AIR_FINISHES = [
-  { value: "Midnight", label: "Midnight", hex: "2C343E", roughness: 0.45, metalness: 0.9 },
-  { value: "Starlight", label: "Starlight", hex: "E6DFD5", roughness: 0.45, metalness: 0.9 },
-  { value: "Space gray", label: "Space gray", hex: "7D7E80", roughness: 0.45, metalness: 0.9 },
-  { value: "Silver", label: "Silver", hex: "E3E4E5", roughness: 0.45, metalness: 0.9 },
-];
-
-const IPAD_AIR_FINISHES = [
-  { value: "Space Gray", label: "Space Gray", hex: "68696E", roughness: 0.45, metalness: 0.9 },
-  { value: "Starlight", label: "Starlight", hex: "E6DFD5", roughness: 0.45, metalness: 0.9 },
-  { value: "Purple", label: "Purple", hex: "D1CCE0", roughness: 0.45, metalness: 0.9 },
-  { value: "Blue", label: "Blue", hex: "C2D0D6", roughness: 0.45, metalness: 0.9 },
-];
-
-// iPad mini 6 launch palette. Hexes are approximations; tune by eye.
-const IPAD_MINI_FINISHES = [
-  { value: "Space Gray", label: "Space Gray", hex: "68696E", roughness: 0.45, metalness: 0.9 },
-  { value: "Pink", label: "Pink", hex: "EBCDCB", roughness: 0.45, metalness: 0.9 },
-  { value: "Purple", label: "Purple", hex: "C3BCD8", roughness: 0.45, metalness: 0.9 },
-  { value: "Starlight", label: "Starlight", hex: "E6DFD5", roughness: 0.45, metalness: 0.9 },
-];
-
-// iPad Pro only ships in two finishes — no glass back, bare anodized aluminum unibody.
-const IPAD_PRO_FINISHES = [
-  { value: "Space Gray", label: "Space Gray", hex: "68696E", roughness: 0.45, metalness: 0.9 },
-  { value: "Silver", label: "Silver", hex: "E3E4E5", roughness: 0.45, metalness: 0.9 },
-];
-
-const IPHONE_17_PRO_FINISHES = [
-  { value: "Silver", label: "Silver", hex: "D9D9D6", roughness: 0.35, metalness: 0.8 },
-  { value: "Cosmic Orange", label: "Cosmic Orange", hex: "D98245", roughness: 0.35, metalness: 0.78 },
-  { value: "Deep Blue", label: "Deep Blue", hex: "344B70", roughness: 0.35, metalness: 0.78 },
-];
-
-// Extracted so "Pro" and "Pro Max" of the same generation can share a finish set
-const IPHONE_14_PRO_FINISHES = [
-  { value: "Space Black", label: "Space Black", hex: "3A3A3C", roughness: 0.15, metalness: 1 },
-  { value: "Silver", label: "Silver", hex: "E3E3E1", roughness: 0.15, metalness: 1 },
-  { value: "Gold", label: "Gold", hex: "E3D3B8", roughness: 0.15, metalness: 1 },
-  { value: "Deep Purple", label: "Deep Purple", hex: "51415E", roughness: 0.15, metalness: 1 },
-];
-
-const getStrapStyleOptions = (device) => Object.entries(getStrapStyles(device)).map(([value, { label }]) => ({ value, label }));
-
-const STRAP_ORIGINAL = { value: "original", label: "Original", hex: null };
-
-const WATCH_STRAPS = [
-  STRAP_ORIGINAL,
-  { value: "sport-black", label: "Sport band · Black", pattern: "solid", hex: "1C1C1E", roughness: 0.4, metalness: 0 },
-  { value: "sport-blue", label: "Sport band · Blue", pattern: "solid", hex: "2F5D8C", roughness: 0.4, metalness: 0 },
-  { value: "sport-pink", label: "Sport band · Pink", pattern: "solid", hex: "E8B7B8", roughness: 0.4, metalness: 0 },
-  { value: "sport-red", label: "Sport band · Red", pattern: "solid", hex: "C8102E", roughness: 0.4, metalness: 0 },
-  { value: "ocean-orange", label: "Ocean band · Orange", pattern: "rib", hex: "F26B1D", roughness: 0.35, metalness: 0 },
-  { value: "ocean-navy", label: "Ocean band · Navy", pattern: "rib", hex: "1F2A44", roughness: 0.35, metalness: 0 },
-  { value: "vent-black", label: "Vented sport · Black", pattern: "dots", hex: "202022", roughness: 0.45, metalness: 0 },
-  { value: "nylon-gray", label: "Nylon weave · Gray", pattern: "weave", hex: "8A8D91", roughness: 0.85, metalness: 0 },
-  { value: "nylon-green", label: "Nylon weave · Green", pattern: "weave", hex: "465A4F", roughness: 0.85, metalness: 0 },
-  { value: "canvas-tan", label: "Canvas · Tan", pattern: "canvas", hex: "B08A55", roughness: 0.9, metalness: 0 },
-  { value: "canvas-olive", label: "Canvas · Olive", pattern: "canvas", hex: "5B6446", roughness: 0.9, metalness: 0 },
-  { value: "perlon-black", label: "Perlon · Black", pattern: "braid", hex: "202022", roughness: 0.8, metalness: 0 },
-  { value: "perlon-gray", label: "Perlon · Gray", pattern: "braid", hex: "8A8D91", roughness: 0.8, metalness: 0 },
-  { value: "stripe-blue", label: "Nylon stripe · Blue/White", pattern: "stripes", hex: "2F5D8C", hex2: "F2F2F2", roughness: 0.85, metalness: 0 },
-  { value: "stripe-red", label: "Nylon stripe · Red/Cream", pattern: "stripes", hex: "C8102E", hex2: "F3E9D2", roughness: 0.85, metalness: 0 },
-  { value: "leather-brown", label: "Leather · Saddle brown", pattern: "leather", hex: "7A4A2B", hex2: "E9D7B5", roughness: 0.6, metalness: 0 },
-  { value: "leather-black", label: "Leather · Black", pattern: "leather", hex: "1A1A1A", hex2: "8C8C8C", roughness: 0.55, metalness: 0 },
-  { value: "milanese-silver", label: "Milanese · Silver", pattern: "mesh", hex: "C8C8C8", roughness: 0.3, metalness: 1, metal: true },
-  { value: "milanese-graphite", label: "Milanese · Graphite", pattern: "mesh", hex: "4A4A4D", roughness: 0.3, metalness: 1, metal: true },
-  { value: "milanese-gold", label: "Milanese · Gold", pattern: "mesh", hex: "D4AF6A", roughness: 0.3, metalness: 1, metal: true },
-];
-
-const APPLE_WATCH_ULTRA_FINISHES = [
-  { value: "Natural titanium", label: "Natural titanium", hex: "A6A6A1", roughness: 0.42, metalness: 1 },
-  { value: "Black titanium", label: "Black titanium", hex: "252525", roughness: 0.42, metalness: 1 },
-];
-
-const APPLE_WATCH_SERIES_9_FINISHES = [
-  { value: "Pink", label: "Pink", hex: "E8B7B8", roughness: 0.4, metalness: 0.9 },
-  { value: "Starlight", label: "Starlight", hex: "D8D3C8", roughness: 0.4, metalness: 0.9 },
-  { value: "Midnight", label: "Midnight", hex: "202124", roughness: 0.4, metalness: 0.9 },
-  { value: "Silver", label: "Silver", hex: "D9D9D9", roughness: 0.4, metalness: 0.9 },
-  { value: "Product Red", label: "(PRODUCT)RED", hex: "C8102E", roughness: 0.4, metalness: 0.9 },
-  { value: "Silver SS", label: "Silver stainless steel", hex: "C7C7C7", roughness: 0.18, metalness: 1 },
-  { value: "Graphite SS", label: "Graphite stainless steel", hex: "454545", roughness: 0.18, metalness: 1 },
-  { value: "Gold SS", label: "Gold stainless steel", hex: "D4AF6A", roughness: 0.18, metalness: 1 },
-];
-
-const APPLE_WATCH_SERIES_7_FINISHES = [
-  { value: "Midnight", label: "Midnight", hex: "1D1D1F", roughness: 0.4, metalness: 0.9 },
-  { value: "Starlight", label: "Starlight", hex: "D6D1C4", roughness: 0.4, metalness: 0.9 },
-  { value: "Green", label: "Green", hex: "465A4F", roughness: 0.4, metalness: 0.9 },
-  { value: "Blue", label: "Blue", hex: "3D5C78", roughness: 0.4, metalness: 0.9 },
-  { value: "Product Red", label: "(PRODUCT)RED", hex: "C8102E", roughness: 0.4, metalness: 0.9 },
-  { value: "Silver SS", label: "Silver stainless steel", hex: "C8C8C8", roughness: 0.18, metalness: 1 },
-  { value: "Graphite SS", label: "Graphite stainless steel", hex: "414141", roughness: 0.18, metalness: 1 },
-  { value: "Gold SS", label: "Gold stainless steel", hex: "D4AF6A", roughness: 0.18, metalness: 1 },
-];
-
-const DEVICE_FINISHES = {
-  "Apple Watch Ultra": [...APPLE_WATCH_ULTRA_FINISHES, CUSTOM_FINISH],
-  "Apple Watch Series 9": [...APPLE_WATCH_SERIES_9_FINISHES, CUSTOM_FINISH],
-  "Apple Watch Series 7": [...APPLE_WATCH_SERIES_7_FINISHES, CUSTOM_FINISH],
-  "iPhone 17 Pro Max": [...IPHONE_17_PRO_FINISHES, CUSTOM_FINISH],
-  "iPhone 17 Pro": [...IPHONE_17_PRO_FINISHES, CUSTOM_FINISH],
-  "iPhone 17": [...ALUMINUM_FINISHES_17, CUSTOM_FINISH],
-  "iPhone Air": [...IPHONE_AIR_FINISHES, CUSTOM_FINISH],
-  "iPhone 16 Pro Max": [...TITANIUM_FINISHES, CUSTOM_FINISH],
-  "iPhone 16 Pro": [...TITANIUM_FINISHES, CUSTOM_FINISH],
-  "iPhone 15 Pro Max": [...IPHONE_15_PRO_FINISHES, CUSTOM_FINISH],
-  "iPhone 15 Pro": [...IPHONE_15_PRO_FINISHES, CUSTOM_FINISH],
-  "iPhone 14 Pro Max": [...IPHONE_14_PRO_FINISHES, CUSTOM_FINISH],
-  "iPhone 14 Pro": [...IPHONE_14_PRO_FINISHES, CUSTOM_FINISH],
-  "iPhone 14 Plus": [...ALUMINUM_FINISHES_13, CUSTOM_FINISH],
-  "iPhone 14": [...ALUMINUM_FINISHES_13, CUSTOM_FINISH],
-  'MacBook Pro 16"': [...MACBOOK_PRO_FINISHES, CUSTOM_FINISH],
-  'MacBook Pro 14"': [...MACBOOK_PRO_FINISHES, CUSTOM_FINISH],
-  "MacBook Air": [...MACBOOK_AIR_FINISHES, CUSTOM_FINISH],
-  "Pro Display XDR": [{ value: "Silver", label: "Silver", hex: "E3E4E5", roughness: 0.45, metalness: 0.9 }, CUSTOM_FINISH],
-  "iPad Air": [...IPAD_AIR_FINISHES, CUSTOM_FINISH],
-  "iPad mini": [...IPAD_MINI_FINISHES, CUSTOM_FINISH],
-  "iPad Pro 11-inch": [...IPAD_PRO_FINISHES, CUSTOM_FINISH],
-  "iPad Pro 12.9-inch": [...IPAD_PRO_FINISHES, CUSTOM_FINISH],
-};
-
-const DEFAULT_FINISHES = [...TITANIUM_FINISHES, CUSTOM_FINISH];
-
-function getFinishesForDevice(deviceType) {
-  return DEVICE_FINISHES[deviceType] || DEFAULT_FINISHES;
-}
-
-const LIGHTING_OPTIONS = Object.keys(PRESETS).map((key) => ({ value: key, label: PRESETS[key].label }));
-
-const THEME_OPTIONS = [
-  { value: "system", label: "System", Icon: Desktop },
-  { value: "light", label: "Light", Icon: Sun },
-  { value: "dark", label: "Dark", Icon: Moon },
-];
-
-const BROWSER_OPTIONS = [
-  { value: "safari", label: "Safari" },
-  { value: "chrome", label: "Google Chrome" },
-  { value: "arc", label: "Arc" },
-  { value: "edge", label: "Microsoft Edge" },
-];
-
-const SAFARI_TABS_OPTIONS = [
-  { value: "top", label: "Top" },
-  { value: "bottom", label: "Bottom" },
-];
-
-const ENVIRONMENT_OPTIONS = [
-  { value: "none", label: "None" },
-  { value: "studio", label: "Studio" },
-  { value: "city", label: "City" },
-  { value: "forest", label: "Forest" },
-  { value: "clouds", label: "Clouds" },
-];
-
-const GRADIENT_PRESETS = [
-  {
-    value: "none",
-    label: "None",
-    swatch: null,
-    type: null,
-    angle: null,
-    stops: null,
-  },
-  {
-    value: "forest-green",
-    label: "Forest Green",
-    swatch: "linear-gradient(180deg, #59D261 0%, #52BB59 25%, #3B8E41 50%, #317B36 74.52%, #28692C 100%)",
-    type: "Linear",
-    angle: 180,
-    stops: [
-      { id: 1, hex: "59D261", position: 0, opacity: 100 },
-      { id: 2, hex: "52BB59", position: 25, opacity: 100 },
-      { id: 3, hex: "3B8E41", position: 50, opacity: 100 },
-      { id: 4, hex: "317B36", position: 74.52, opacity: 100 },
-      { id: 5, hex: "28692C", position: 100, opacity: 100 },
-    ],
-  },
-  {
-    value: "sunset-orange",
-    label: "Sunset Orange",
-    swatch: "linear-gradient(180deg, #FFB56B 0%, #FF8A4C 50%, #E85D3D 100%)",
-    type: "Linear",
-    angle: 180,
-    stops: [
-      { id: 1, hex: "FFB56B", position: 0, opacity: 100 },
-      { id: 2, hex: "FF8A4C", position: 50, opacity: 100 },
-      { id: 3, hex: "E85D3D", position: 100, opacity: 100 },
-    ],
-  },
-  {
-    value: "ocean-blue",
-    label: "Ocean Blue",
-    swatch: "linear-gradient(180deg, #7DD3FC 0%, #38BDF8 50%, #0284C7 100%)",
-    type: "Linear",
-    angle: 180,
-    stops: [
-      { id: 1, hex: "7DD3FC", position: 0, opacity: 100 },
-      { id: 2, hex: "38BDF8", position: 50, opacity: 100 },
-      { id: 3, hex: "0284C7", position: 100, opacity: 100 },
-    ],
-  },
-  {
-    value: "midnight-magenta",
-    label: "Midnight Magenta",
-    swatch: "linear-gradient(180deg, #FF6FB5 0%, #E23D8A 30%, #6B1F4A 65%, #1A0E14 100%)",
-    type: "Linear",
-    angle: 180,
-    stops: [
-      { id: 1, hex: "FF6FB5", position: 0, opacity: 100 },
-      { id: 2, hex: "E23D8A", position: 30, opacity: 100 },
-      { id: 3, hex: "6B1F4A", position: 65, opacity: 100 },
-      { id: 4, hex: "1A0E14", position: 100, opacity: 100 },
-    ],
-  },
-  {
-    value: "amber-dusk",
-    label: "Amber Dusk",
-    swatch: "linear-gradient(180deg, #FFD08A 0%, #FF9A4C 25%, #8A3B2E 60%, #14100E 100%)",
-    type: "Linear",
-    angle: 180,
-    stops: [
-      { id: 1, hex: "FFD08A", position: 0, opacity: 100 },
-      { id: 2, hex: "FF9A4C", position: 25, opacity: 100 },
-      { id: 3, hex: "8A3B2E", position: 60, opacity: 100 },
-      { id: 4, hex: "14100E", position: 100, opacity: 100 },
-    ],
-  },
-  {
-    value: "deep-teal",
-    label: "Deep Teal",
-    swatch: "linear-gradient(180deg, #7FE8D4 0%, #2FA98F 30%, #14524A 65%, #0A1414 100%)",
-    type: "Linear",
-    angle: 180,
-    stops: [
-      { id: 1, hex: "7FE8D4", position: 0, opacity: 100 },
-      { id: 2, hex: "2FA98F", position: 30, opacity: 100 },
-      { id: 3, hex: "14524A", position: 65, opacity: 100 },
-      { id: 4, hex: "0A1414", position: 100, opacity: 100 },
-    ],
-  },
-  {
-    value: "amber-sky",
-    label: "Amber Sky",
-    swatch: "linear-gradient(135deg, #E8531F 0%, #FFC96B 45%, #FFE8B8 70%, #A9CBD4 100%)",
-    type: "Linear",
-    angle: 135,
-    stops: [
-      { id: 1, hex: "E8531F", position: 0, opacity: 100 },
-      { id: 2, hex: "FFC96B", position: 45, opacity: 100 },
-      { id: 3, hex: "FFE8B8", position: 70, opacity: 100 },
-      { id: 4, hex: "A9CBD4", position: 100, opacity: 100 },
-    ],
-  },
-  {
-    value: "steel-blue",
-    label: "Steel Blue",
-    swatch: "linear-gradient(180deg, #1F3C6E 0%, #4A7FB5 45%, #B9D3E0 75%, #E6EEF0 100%)",
-    type: "Linear",
-    angle: 180,
-    stops: [
-      { id: 1, hex: "1F3C6E", position: 0, opacity: 100 },
-      { id: 2, hex: "4A7FB5", position: 45, opacity: 100 },
-      { id: 3, hex: "B9D3E0", position: 75, opacity: 100 },
-      { id: 4, hex: "E6EEF0", position: 100, opacity: 100 },
-    ],
-  },
-  {
-    value: "cobalt-flare",
-    label: "Cobalt Flare",
-    swatch: "radial-gradient(circle at 30% 70%, #E8EEF7 0%, #1B2E8C 40%, #050810 80%)",
-    type: "Radial",
-    angle: 0,
-    stops: [
-      { id: 1, hex: "E8EEF7", position: 0, opacity: 100 },
-      { id: 2, hex: "1B2E8C", position: 40, opacity: 100 },
-      { id: 3, hex: "050810", position: 80, opacity: 100 },
-    ],
-  },
-  {
-    value: "violet-noir",
-    label: "Violet Noir",
-    swatch: "radial-gradient(circle at 15% 30%, #3DD1FF 0%, #6A2EE8 35%, #0A0612 75%)",
-    type: "Radial",
-    angle: 0,
-    stops: [
-      { id: 1, hex: "3DD1FF", position: 0, opacity: 100 },
-      { id: 2, hex: "6A2EE8", position: 35, opacity: 100 },
-      { id: 3, hex: "0A0612", position: 75, opacity: 100 },
-    ],
-  },
-  {
-    value: "burnt-clay",
-    label: "Burnt Clay",
-    swatch: "linear-gradient(160deg, #C9C4A8 0%, #B57A3C 55%, #4A2E1A 80%, #1A0F08 100%)",
-    type: "Linear",
-    angle: 160,
-    stops: [
-      { id: 1, hex: "C9C4A8", position: 0, opacity: 100 },
-      { id: 2, hex: "B57A3C", position: 55, opacity: 100 },
-      { id: 3, hex: "4A2E1A", position: 80, opacity: 100 },
-      { id: 4, hex: "1A0F08", position: 100, opacity: 100 },
-    ],
-  },
-  {
-    value: "spring-meadow",
-    label: "Spring Meadow",
-    swatch: "linear-gradient(160deg, #EAF2E0 0%, #C9DB8F 40%, #7FA5C9 70%, #3E6B3E 100%)",
-    type: "Linear",
-    angle: 160,
-    stops: [
-      { id: 1, hex: "EAF2E0", position: 0, opacity: 100 },
-      { id: 2, hex: "C9DB8F", position: 40, opacity: 100 },
-      { id: 3, hex: "7FA5C9", position: 70, opacity: 100 },
-      { id: 4, hex: "3E6B3E", position: 100, opacity: 100 },
-    ],
-  },
-  {
-    value: "dusk-horizon",
-    label: "Dusk Horizon",
-    swatch: "linear-gradient(180deg, #0E1E3D 0%, #4A7FB0 40%, #E8E4D8 55%, #A8C0D4 100%)",
-    type: "Linear",
-    angle: 180,
-    stops: [
-      { id: 1, hex: "0E1E3D", position: 0, opacity: 100 },
-      { id: 2, hex: "4A7FB0", position: 40, opacity: 100 },
-      { id: 3, hex: "E8E4D8", position: 55, opacity: 100 },
-      { id: 4, hex: "A8C0D4", position: 100, opacity: 100 },
-    ],
-  },
-];
-
-// Preset background images live in /public/presets (full size) and
-// /public/presets/thumbs (128px previews). BASE_URL keeps paths working
-// if the app is ever deployed under a subpath.
-const PRESET_BASE = `${import.meta.env.BASE_URL}presets/`;
-const PRESET_EXT = "png"; // change if your files are png / webp
-const presetImage = (value, label) => ({
-  value,
-  label,
-  thumb: `${PRESET_BASE}thumbs/${value}.${PRESET_EXT}`,
-  url: `${PRESET_BASE}${value}.${PRESET_EXT}`,
-});
-
-const IMAGE_PRESETS = [
-  presetImage("abstract-fluid-forms", "Fluid Forms"),
-  presetImage("abstract-glowing-object", "Glowing Object"),
-  presetImage("abstract-green-gradient", "Green Gradient"),
-  presetImage("abstract-motion-portrait", "Motion Portrait"),
-  presetImage("abstract-red-flower-petal", "Red Flower Petal"),
-  presetImage("blue-sky-scene", "Blue Sky"),
-  presetImage("blurred-silhouette-art", "Blurred Silhouette"),
-  presetImage("butterflies-in-flight", "Butterflies"),
-  presetImage("ethereal-gradient-abstraction", "Ethereal Gradient"),
-  presetImage("gradient-bars", "Gradient Bars"),
-  presetImage("ice-cream-delight", "Ice Cream Delight"),
-  presetImage("iridescent-metallic-art", "Iridescent Metallic"),
-  presetImage("radiant-smiling", "Radiant Smiling"),
-  presetImage("serene-green-landscape", "Green Landscape"),
-  presetImage("serene-landscape-view", "Landscape View"),
-  presetImage("serene-rolling-hills", "Rolling Hills"),
-  presetImage("submerged-surreal-form", "Submerged Form"),
-  presetImage("textured-red-surface", "Red Surface"),
-  presetImage("textured-yellow-dome", "Yellow Dome"),
-  presetImage("warm-gradient", "Warm Gradient"),
-];
 
 // CSS background for a template card preview
 function templateBackground(t) {
@@ -855,3312 +254,6 @@ function formatEditedAt(date) {
   return `Edited at ${time}`;
 }
 
-const SEG_ON = "bg-white dark:bg-[#1F1F1F] shadow-[0_4px_2px_rgba(0,0,0,0.03)] text-[#FF47BC]";
-const SEG_OFF = "text-[#8C8C8C] dark:text-[#9A9A9A]";
-
-function SearchField({ value, onChange, placeholder }) {
-  return (
-    <label className="flex items-center gap-2 w-full h-[33px] p-2 box-border shrink-0 cursor-text bg-white dark:bg-[#292929] border border-[#3A3A3A]/5 dark:border-[#FAF9FA]/5 focus-within:border-[#FF47BC] dark:focus-within:border-[#FF47BC] rounded-[10px] transition-colors duration-150">
-      <MagnifyingGlass size={14} weight="regular" className="shrink-0 text-[#8C8C8C] dark:text-[#707070]" />
-      <input
-        value={value}
-        onChange={onChange}
-        placeholder={placeholder}
-        className="w-full min-w-0 bg-transparent outline-none text-[12px] leading-[15px] font-medium tracking-[-0.005em] text-[#3A3A3A] dark:text-[#FAF9FA] placeholder:text-[#8C8C8C] dark:placeholder:text-[#707070]"
-      />
-    </label>
-  );
-}
-
-function Scrubber({ label, value, onChange, min = 0, max = 100, hardMax, mixed = false, compact = false, autoLabel }) {
-  const cap = hardMax ?? max; // typed / wheel / arrow values clamp to this; the slider still uses max
-  const pct = Math.min(100, Math.max(0, ((value - min) / (max - min)) * 100));
-  const [focused, setFocused] = useState(false);
-  const display = mixed ? "-" : autoLabel && value === 0 ? autoLabel : String(value);
-  const [inputText, setInputText] = useState(display);
-  const numberInputRef = useRef(null);
-
-  useEffect(() => {
-    if (focused) return;
-    setInputText(display);
-  }, [value, mixed, focused, autoLabel]);
-
-  useEffect(() => {
-    const el = numberInputRef.current;
-    if (!el) return;
-    const onWheelNative = (e) => {
-      e.preventDefault();
-      const step = e.shiftKey ? 10 : 1;
-      const delta = e.deltaY < 0 ? step : -step;
-      const current = Number.isNaN(Number(el.value)) ? value : Number(el.value);
-      const next = Math.min(cap, Math.max(min, current + delta));
-      setInputText(String(next));
-      onChange(next);
-    };
-    el.addEventListener("wheel", onWheelNative, { passive: false });
-    return () => el.removeEventListener("wheel", onWheelNative);
-  }, [value, min, cap, onChange]);
-
-  const handleInputChange = (e) => {
-    const raw = e.target.value;
-    if (raw === "" || raw === "-") {
-      setInputText(raw);
-      return;
-    }
-    const num = Number(raw);
-    if (Number.isNaN(num)) return;
-    setInputText(raw);
-    onChange(Math.min(cap, Math.max(min, num)));
-  };
-
-  const handleInputFocus = () => {
-    setFocused(true);
-    if (mixed || (autoLabel && value === 0)) setInputText("");
-  };
-
-  const handleInputBlur = () => {
-    setFocused(false);
-    if (mixed && (inputText === "" || inputText === "-")) {
-      setInputText("-");
-      return;
-    }
-    if (inputText === "" || inputText === "-" || Number.isNaN(Number(inputText))) {
-      setInputText(String(Math.min(max, Math.max(min, 0))));
-      onChange(Math.min(max, Math.max(min, 0)));
-    } else {
-      setInputText(String(value));
-    }
-  };
-
-  const handleInputKeyDown = (e) => {
-    if (e.key === "Enter") {
-      e.currentTarget.blur();
-      return;
-    }
-    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
-    e.preventDefault();
-    const step = e.shiftKey ? 10 : 1;
-    const delta = e.key === "ArrowUp" ? step : -step;
-    const current = Number.isNaN(Number(inputText)) ? value : Number(inputText);
-    const next = Math.min(cap, Math.max(min, current + delta));
-    setInputText(String(next));
-    onChange(next);
-  };
-
-  return (
-    <div className="group flex items-center gap-1">
-      <div className={`relative flex-1 ${compact ? "h-8" : "h-9"} rounded-[10px] bg-[#EDEDED] dark:bg-[#292929] border border-transparent transition-colors overflow-hidden`}>
-        <div
-          className="absolute inset-y-0 left-0 bg-[#E3E3E3] dark:bg-[#333333] group-hover:bg-[#D9D9D9] dark:group-hover:bg-[#3D3D3D] rounded-[10px] transition-colors"
-          style={{ width: `${pct}%` }}
-        />
-        <div
-          className="absolute top-1/2 -translate-y-1/2 w-0.5 h-4 bg-black/20 dark:bg-white/25 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
-          style={{ left: `calc(${pct}% - 9px)` }}
-        />
-        <span className="absolute inset-0 flex items-center px-2.5 text-[13px] leading-4 font-medium tracking-[-0.005em] text-[#3A3A3A] dark:text-[#FAF9FA] pointer-events-none">
-          {label}
-        </span>
-        <input
-          type="range"
-          min={min}
-          max={max}
-          value={value}
-          onChange={(e) => onChange(Number(e.target.value))}
-          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-        />
-      </div>
-      <input
-        ref={numberInputRef}
-        type="text"
-        inputMode="numeric"
-        value={inputText}
-        onChange={handleInputChange}
-        onFocus={handleInputFocus}
-        onBlur={handleInputBlur}
-        onKeyDown={handleInputKeyDown}
-        className={`w-11 ${compact ? "h-8" : "h-9"} bg-[#EDEDED] dark:bg-[#292929] hover:bg-[#E3E3E3] dark:hover:bg-[#333333] focus:bg-[#E3E3E3] dark:focus:bg-[#333333] rounded-[10px] shrink-0 text-center text-[13px] leading-4 font-medium tracking-[-0.005em] text-[#3A3A3A] dark:text-[#FAF9FA] hover:text-[#3A3A3A] dark:hover:text-[#FAF9FA] focus:text-[#3A3A3A] dark:focus:text-white outline-none border border-transparent focus:border-[#FF47BC] transition-colors`}
-      />
-    </div>
-  );
-}
-
-function ToggleRow({ label, checked, onChange, muted = false, disabled = false, heading = false }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-disabled={disabled}
-      disabled={disabled}
-      onClick={() => !disabled && onChange(!checked)}
-      className={`group w-full h-9 flex items-center justify-between rounded-[10px] transition-[colors,opacity] duration-200 ease-in-out ${
-        disabled ? "opacity-40 cursor-not-allowed" : ""
-      }`}
-    >
-      <span
-        className={`${heading ? "section-title " : ""}text-[13px] font-medium tracking-[-0.005em] text-[#8C8C8C] dark:text-[#9A9A9A]`}
-      >
-        {label}
-      </span>
-      <span
-        className={`relative w-8 h-5 rounded-full shrink-0 transition-colors duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] ${
-          checked
-            ? "bg-[#FF47BC]"
-            : `bg-[#D0D0D0] dark:bg-[#45454C] ${disabled ? "" : "group-hover:bg-[#C4C4C4] dark:group-hover:bg-[#50505A]"}`
-        }`}
-      >
-        <span
-          className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] ${
-            checked ? "translate-x-3" : "translate-x-0"
-          }`}
-        />
-      </span>
-    </button>
-  );
-}
-
-function FinishDropdown({ value, options, onChange }) {
-  const [open, setOpen] = useState(false);
-  const [popupRect, setPopupRect] = useState(null);
-  const ref = useRef(null);
-  const popupRef = useRef(null);
-  const selected = options.find((o) => o.value === value);
-
-  // Fixed-position popup measured from the trigger, flips up if there isn't room below.
-  useLayoutEffect(() => {
-    if (!open) return;
-    const update = () => {
-      if (!ref.current) return;
-      const r = ref.current.getBoundingClientRect();
-      const listH = Math.min(popupRef.current?.offsetHeight ?? 288, 288);
-      const spaceBelow = window.innerHeight - r.bottom;
-      const up = spaceBelow < listH + 12 && r.top > spaceBelow;
-      setPopupRect({ left: r.left, width: r.width, top: r.bottom + 4, bottom: window.innerHeight - r.top + 4, up });
-    };
-    update();
-    window.addEventListener("scroll", update, true);
-    window.addEventListener("resize", update);
-    return () => {
-      window.removeEventListener("scroll", update, true);
-      window.removeEventListener("resize", update);
-    };
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e) => {
-      if (ref.current?.contains(e.target) || popupRef.current?.contains(e.target)) return;
-      setOpen(false);
-    };
-    window.addEventListener("pointerdown", onDown);
-    return () => window.removeEventListener("pointerdown", onDown);
-  }, [open]);
-
-  const darkenSwatchHex = (hex, amount = 0.18) => {
-    const n = parseInt(hex || "000000", 16);
-    const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
-    return [r, g, b]
-      .map((v) => Math.round(v * (1 - amount)).toString(16).padStart(2, "0"))
-      .join("")
-      .toUpperCase();
-  };
-
-  const renderSwatch = (opt, size = "w-3.5 h-3.5") =>
-    opt?.hex ? (
-      <div
-        className={`${size} rounded-full shrink-0 border border-[#3A3A3A]/10`}
-        style={{
-          backgroundImage: [
-            `radial-gradient(circle at 32% 28%, rgba(255,255,255,${(0.95 - (opt.roughness ?? 0.1) * 0.6).toFixed(2)}) 0%, rgba(255,255,255,0) ${18 + (opt.roughness ?? 0.1) * 45}%)`,
-            `radial-gradient(circle at 68% 78%, rgba(0,0,0,${(0.4 + (1 - (opt.metalness ?? 0.9)) * 0.15).toFixed(2)}) 0%, rgba(0,0,0,0) 55%)`,
-            `radial-gradient(circle at 50% 50%, #${opt.hex} 40%, #${darkenSwatchHex(opt.hex)} 100%)`,
-          ].join(", "),
-        }}
-      />
-    ) : (
-      <div
-        className={`${size} rounded-full shrink-0 border border-[#3A3A3A]/10`}
-        style={{
-          backgroundImage:
-            "linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%)",
-          backgroundSize: "5px 5px",
-          backgroundPosition: "0 0, 0 2.5px, 2.5px -2.5px, -2.5px 0px",
-        }}
-      />
-    );
-
-  const renderOption = (opt) => (
-    <OptionRow
-      key={opt.value}
-      label={opt.label}
-      leading={renderSwatch(opt)}
-      selected={value === opt.value}
-      onClick={() => {
-        onChange(opt.value);
-        setOpen(false);
-      }}
-    />
-  );
-
-  return (
-    <div className="relative w-full" ref={ref}>
-      <button type="button" onClick={() => setOpen((v) => !v)} className={`${DROPDOWN_TRIGGER} w-full`}>
-        <span className="flex items-center gap-2 min-w-0">
-          {renderSwatch(selected, "w-4 h-4")}
-          <span className="truncate text-[13px] font-medium tracking-[-0.005em] text-[#3A3A3A] dark:text-[#FAF9FA]">{selected?.label ?? value}</span>
-        </span>
-        <CaretDown size={16} weight="regular" style={{ transform: open ? "rotate(180deg)" : "rotate(0deg)" }} className={DROPDOWN_CARET} />
-      </button>
-
-      {open && popupRect && createPortal(
-        <div
-          ref={popupRef}
-          data-popup-dropdown
-          className={`${popupRect.up ? "pop-enter-up" : "pop-enter"} fixed p-2 gap-1 [&>*]:shrink-0 bg-[#FAF9FA] dark:bg-[#171717] border border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10 shadow-[0_4px_8px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_12px_rgba(0,0,0,0.4)] rounded-2xl flex flex-col items-start z-[9999] max-h-72 overflow-y-auto custom-scroll`}
-          style={{
-            left: popupRect.left,
-            width: popupRect.width,
-            ...(popupRect.up ? { bottom: popupRect.bottom } : { top: popupRect.top }),
-          }}
-        >
-          {options.map(renderOption)}
-        </div>,
-        document.body
-      )}
-    </div>
-  );
-}
-
-function GradientPresetDropdown({ value, options, onChange, dropUp = false }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef(null);
-  const selected = options.find((o) => o.value === value);
-
-    const [popupRect, setPopupRect] = useState(null);
-
-useLayoutEffect(() => {
-  if (!open) return;
-  const update = () => ref.current && setPopupRect(ref.current.getBoundingClientRect());
-  update();
-  window.addEventListener("scroll", update, true); // capture:true catches scroll on the toolbar's overflow-y-auto ancestor
-  window.addEventListener("resize", update);
-  return () => {
-    window.removeEventListener("scroll", update, true);
-    window.removeEventListener("resize", update);
-  };
-}, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e) => {
-      if (!ref.current?.contains(e.target)) setOpen(false);
-    };
-    window.addEventListener("pointerdown", onDown);
-    return () => window.removeEventListener("pointerdown", onDown);
-  }, [open]);
-
-  const renderOption = (opt) => {
-    const isSelected = value === opt.value;
-    return (
-      <button
-        key={opt.value}
-        type="button"
-        onClick={() => {
-          onChange(opt.value);
-          setOpen(false);
-        }}
-        className={`group flex items-center justify-between w-full h-[30px] py-2 ${
-          isSelected ? "pl-1.5" : "pl-1"
-        } pr-2 gap-2 rounded-lg transition-colors duration-100 ease-in-out ${
-          isSelected ? "bg-[#FF47BC]/10 hover:bg-[#FF47BC]/10" : "hover:bg-[#F1F1F1] dark:hover:bg-white/5"
-        }`}
-      >
-        <div className="flex items-center gap-2">
-          <Check
-            size={16}
-            weight="regular"
-            className={`transition-colors duration-100 ${
-              isSelected ? "text-[#FF47BC]" : "text-[#8C8C8C] dark:text-[#9A9A9A] opacity-0"
-            }`}
-          />
-          <span
-            className={`text-[12px] font-medium tracking-[-0.005em] transition-colors duration-100 ${
-              isSelected
-                ? "text-[#FF47BC]"
-                : "text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
-            }`}
-          >
-            {opt.label}
-          </span>
-        </div>
-        {opt.swatch && (
-          <div className="w-3.5 h-3.5 rounded shrink-0" style={{ background: opt.swatch }} />
-        )}
-      </button>
-    );
-  };
-
-  return (
-<div className="relative w-full" ref={ref}>
-  <button type="button" onClick={() => setOpen((v) => !v)} className={`${DROPDOWN_TRIGGER} w-full`}>
-    <span className="truncate text-[13px] font-medium tracking-[-0.005em] text-[#3A3A3A] dark:text-[#FAF9FA]">
-      {selected?.label ?? value}
-    </span>
-    <CaretDown size={16} weight="regular" style={{ transform: open ? "rotate(180deg)" : "rotate(0deg)" }} className={DROPDOWN_CARET} />
-  </button>
-            {open && popupRect && (
-        <div
-          className={`${dropUp ? "pop-enter-up" : "pop-enter"} fixed p-2 gap-1 bg-[#FAF9FA] dark:bg-[#171717] border border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10 shadow-[0_4px_8px_rgba(0,0,0,0.05)] rounded-2xl flex flex-col items-start z-[9999] max-h-72 overflow-y-auto custom-scroll`}
-          style={{
-            left: popupRect.left,
-            width: popupRect.width,
-            ...(dropUp
-              ? { bottom: window.innerHeight - popupRect.top + 4 }
-              : { top: popupRect.bottom + 4 }),
-          }}
-        >
-          {options.map(renderOption)}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ImagePresetDropdown({ value, options, onChange, dropUp = false }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef(null);
-  const selected = options.find((o) => o.value === value);
-
-  // Same fixed-position technique as ToolbarDropdown/GradientPresetDropdown
-  // — escapes the toolbar's overflow-y-auto and the collapsible section's
-  // overflow-hidden instead of being clipped when opening upward.
-  const [popupRect, setPopupRect] = useState(null);
-
-  useLayoutEffect(() => {
-    if (!open) return;
-    const update = () => ref.current && setPopupRect(ref.current.getBoundingClientRect());
-    update();
-    window.addEventListener("scroll", update, true);
-    window.addEventListener("resize", update);
-    return () => {
-      window.removeEventListener("scroll", update, true);
-      window.removeEventListener("resize", update);
-    };
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e) => {
-      if (!ref.current?.contains(e.target)) setOpen(false);
-    };
-    window.addEventListener("pointerdown", onDown);
-    return () => window.removeEventListener("pointerdown", onDown);
-  }, [open]);
-
-  return (
-<div className="relative w-full" ref={ref}>
-  <button type="button" onClick={() => setOpen((v) => !v)} className={`${DROPDOWN_TRIGGER} w-full`}>
-    <span className="truncate text-[12px] font-medium tracking-[-0.005em] text-[#3A3A3A] dark:text-[#FAF9FA]">
-      {selected?.label ?? "Select preset"}
-    </span>
-    <span className="flex items-center gap-2 shrink-0">
-      {selected?.thumb && (
-        <span className="w-4 h-4 rounded shrink-0 bg-cover bg-center" style={{ backgroundImage: `url(${selected.thumb})` }} />
-      )}
-      <CaretDown size={16} weight="regular" style={{ transform: open ? "rotate(180deg)" : "rotate(0deg)" }} className={DROPDOWN_CARET} />
-    </span>
-  </button>
-      {open && popupRect && (
-        <div
-  className={`${dropUp ? "pop-enter-up" : "pop-enter"} fixed p-2 bg-[#FAF9FA] dark:bg-[#171717] border border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10 rounded-xl shadow-[0_4px_8px_rgba(0,0,0,0.05)] z-[9999] max-h-72 overflow-y-auto custom-scroll`}
-          style={{
-            left: popupRect.left,
-            width: popupRect.width,
-            ...(dropUp
-              ? { bottom: window.innerHeight - popupRect.top + 4 }
-              : { top: popupRect.bottom + 4 }),
-          }}
-        >
-          <div className="grid grid-cols-4 gap-2">
-            {options.map((opt) => {
-  const isSelected = value === opt.value;
-  return (
-    <Tooltip key={opt.value} label={opt.label}>
-      <button
-        type="button"
-        onClick={() => {
-          onChange(opt.value);
-          setOpen(false);
-        }}
-        className={`relative aspect-square rounded-lg overflow-hidden border transition-colors duration-100 ease-in-out w-full ${
-          isSelected ? "border-[#FF47BC]" : "border-transparent hover:border-[#3A3A3A]/10 dark:hover:border-white/15"
-        }`}
-      >
-        {opt.thumb ? (
-          <div
-            className="absolute inset-0 bg-cover bg-center"
-            style={{ backgroundImage: `url(${opt.thumb})` }}
-          />
-        ) : (
-          <div className="absolute inset-0 bg-[#EDEDED] dark:bg-white/5 flex items-center justify-center">
-            <span className="text-[10px] font-medium tracking-[-0.005em] text-[#8C8C8C] dark:text-[#9A9A9A]">
-              None
-            </span>
-          </div>
-        )}
-        {isSelected && (
-          <div className="absolute top-1 right-1 flex items-center justify-center w-4 h-4 rounded-full bg-[#FF47BC]">
-            <Check size={10} weight="regular" className="text-[#FAF9FA]" />
-          </div>
-        )}
-      </button>
-    </Tooltip>
-  );
-})}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function GradientCanvasHandles({ gradientType, gradientAngle, gradientStops, selectedStopId, onSelectStop, onStopPositionChange }) {
-  const wrapRef = useRef(null);
-  const [rect, setRect] = useState(null);
-
-  useLayoutEffect(() => {
-    const update = () => wrapRef.current && setRect(wrapRef.current.getBoundingClientRect());
-    update();
-    window.addEventListener("resize", update);
-    return () => window.removeEventListener("resize", update);
-  }, []);
-
-  const getAxis = (r) => {
-    const cx = r.width / 2, cy = r.height / 2;
-    const rad = ((gradientAngle - 90) * Math.PI) / 180;
-    const len = Math.min(r.width, r.height) * 0.4;
-    return { cx, cy, dx: Math.cos(rad), dy: Math.sin(rad), len };
-  };
-
-  const getHandlePos = (r, stop) => {
-    const cx = r.width / 2, cy = r.height / 2;
-    if (gradientType === "Radial") {
-      const radius = (stop.position / 100) * Math.min(r.width, r.height) * 0.4;
-      return { x: cx + radius, y: cy };
-    }
-    if (gradientType === "Angular" || gradientType === "Diamond") {
-      const offset = gradientType === "Diamond" ? 45 : 0;
-      const deg = gradientAngle + offset + (stop.position / 100) * 360;
-      const rad = (deg * Math.PI) / 180;
-      const radius = Math.min(r.width, r.height) * 0.35;
-      return { x: cx + Math.cos(rad) * radius, y: cy + Math.sin(rad) * radius };
-    }
-    const { dx, dy, len } = getAxis(r);
-    const t = (stop.position / 100) * 2 - 1;
-    return { x: cx + dx * t * len, y: cy + dy * t * len };
-  };
-
-  const handlePointerDown = (stop) => (e) => {
-    e.stopPropagation();
-    e.preventDefault();
-    onSelectStop(stop.id);
-    const r = wrapRef.current.getBoundingClientRect();
-
-    const updateFromEvent = (ev) => {
-      const px = ev.clientX - r.left, py = ev.clientY - r.top;
-      let position;
-      if (gradientType === "Radial") {
-        const cx = r.width / 2, cy = r.height / 2;
-        const dist = Math.hypot(px - cx, py - cy);
-        position = Math.round((dist / (Math.min(r.width, r.height) * 0.4)) * 100);
-      } else if (gradientType === "Angular" || gradientType === "Diamond") {
-        const cx = r.width / 2, cy = r.height / 2;
-        const offset = gradientType === "Diamond" ? 45 : 0;
-        let deg = (Math.atan2(py - cy, px - cx) * 180) / Math.PI - gradientAngle - offset;
-        deg = ((deg % 360) + 360) % 360;
-        position = Math.round((deg / 360) * 100);
-      } else {
-        const { cx, cy, dx, dy, len } = getAxis(r);
-        const t = ((px - cx) * dx + (py - cy) * dy) / len;
-        position = Math.round(((t + 1) / 2) * 100);
-      }
-      onStopPositionChange(stop.id, Math.min(100, Math.max(0, position)));
-    };
-
-    updateFromEvent(e);
-    const onMove = (ev) => updateFromEvent(ev);
-    const onUp = () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-  };
-
-  return (
-    <div ref={wrapRef} className="absolute inset-0 pointer-events-none">
-      {rect &&
-        gradientStops.map((stop) => {
-          const { x, y } = getHandlePos(rect, stop);
-          const isSelected = selectedStopId === stop.id;
-          return (
-            <button
-              key={stop.id}
-              onPointerDown={handlePointerDown(stop)}
-              className="absolute w-4 h-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 pointer-events-auto cursor-pointer shadow"
-              style={{
-                left: x,
-                top: y,
-                backgroundColor: `#${stop.hex}`,
-                borderColor: isSelected ? "#FF47BC" : "#FFFFFF",
-              }}
-            />
-          );
-        })}
-    </div>
-  );
-}
-
-const GRAIN_BG = `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>")`;
-
-// Noise effect: larger "size" = lower turbulence frequency = bigger grains.
-const makeGrainUrl = (size) =>
-  `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='${(1.4 / (1 + size * 0.5)).toFixed(3)}' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>")`;
-
-const EFFECT_TYPE_OPTIONS = [
-  { value: "dropShadow", label: "Drop shadow" },
-  { value: "layerBlur", label: "Layer blur" },
-  { value: "noise", label: "Grain" },
-];
-
-const STROKE_POSITIONS = [
-  { value: "inside", label: "Inside" },
-  { value: "center", label: "Center" },
-  { value: "outside", label: "Outside" },
-];
-
-// ---------- Frame-mode camera (mirrors MockupScene's zoom / fov / rotation mapping) ----------
-const CAM_DIST = (zoom) => 22 - (zoom / 100) * 17;
-const CAM_FOV_DEG = (fov) => 15 + (fov / 120) * 75;
-const CAM_DEFAULT = { rotationX: 0, rotationY: 0, rotationZ: 0, positionX: 0, positionY: 0, zoom: 70, fov: 27 };
-const isDefaultCamera = (c) => Object.keys(CAM_DEFAULT).every((k) => c[k] === CAM_DEFAULT[k]);
-
-function getFrameCamera(cam, H) {
-  const dRef = CAM_DIST(CAM_DEFAULT.zoom);
-  const tRef = Math.tan((CAM_FOV_DEG(CAM_DEFAULT.fov) * Math.PI) / 360);
-  const d = CAM_DIST(cam.zoom);
-  const t = Math.tan((CAM_FOV_DEG(cam.fov) * Math.PI) / 360);
-  const k = H / (2 * dRef * tRef); // px per world unit, so the default view is 1:1
-  return {
-    p: d * k,
-    s: (dRef * tRef) / (d * t),
-    tx: (cam.positionX / 25) * k,
-    ty: (-cam.positionY / 25) * k,
-    a: -cam.rotationX, // three.js and CSS disagree on X/Z direction
-    b: cam.rotationY,
-    c: -cam.rotationZ,
-  };
-}
-
-const frameCameraCss = (g) =>
-  `scale(${g.s}) perspective(${g.p}px) translate3d(${g.tx}px, ${g.ty}px, 0) rotateX(${g.a}deg) rotateY(${g.b}deg) rotateZ(${g.c}deg)`;
-
-// Same transform as the CSS above, for export.
-function projectFramePoint(g, W, H, x, y) {
-  const r = Math.PI / 180;
-  let X = x - W / 2, Y = y - H / 2, Z = 0;
-  const cz = Math.cos(g.c * r), sz = Math.sin(g.c * r);
-  [X, Y] = [X * cz - Y * sz, X * sz + Y * cz];
-  const cy = Math.cos(g.b * r), sy = Math.sin(g.b * r);
-  [X, Z] = [X * cy + Z * sy, -X * sy + Z * cy];
-  const cx = Math.cos(g.a * r), sx = Math.sin(g.a * r);
-  [Y, Z] = [Y * cx - Z * sx, Y * sx + Z * cx];
-  X += g.tx;
-  Y += g.ty;
-  const f = g.p / Math.max(1, g.p - Z);
-  return [W / 2 + X * f * g.s, H / 2 + Y * f * g.s];
-}
-
-// Canvas 2D has no perspective, so the layer is drawn as a grid of affine triangles.
-function drawWarped(ctx, src, g, W, H, n = 16) {
-  const tri = (s0, s1, s2, d0, d1, d2) => {
-    const cx = (d0[0] + d1[0] + d2[0]) / 3, cy = (d0[1] + d1[1] + d2[1]) / 3;
-    const grow = (pt) => {
-      const vx = pt[0] - cx, vy = pt[1] - cy, len = Math.hypot(vx, vy) || 1;
-      return [pt[0] + (vx / len) * 0.6, pt[1] + (vy / len) * 0.6]; // hides hairline seams
-    };
-    const [e0, e1, e2] = [grow(d0), grow(d1), grow(d2)];
-    const u1x = s1[0] - s0[0], u1y = s1[1] - s0[1], u2x = s2[0] - s0[0], u2y = s2[1] - s0[1];
-    const v1x = d1[0] - d0[0], v1y = d1[1] - d0[1], v2x = d2[0] - d0[0], v2y = d2[1] - d0[1];
-    const det = u1x * u2y - u2x * u1y;
-    if (!det) return;
-    const a = (v1x * u2y - v2x * u1y) / det;
-    const c = (v2x * u1x - v1x * u2x) / det;
-    const b = (v1y * u2y - v2y * u1y) / det;
-    const d = (v2y * u1x - v1y * u2x) / det;
-    ctx.save();
-    ctx.beginPath();
-    ctx.moveTo(e0[0], e0[1]);
-    ctx.lineTo(e1[0], e1[1]);
-    ctx.lineTo(e2[0], e2[1]);
-    ctx.closePath();
-    ctx.clip();
-    ctx.transform(a, b, c, d, d0[0] - a * s0[0] - c * s0[1], d0[1] - b * s0[0] - d * s0[1]);
-    ctx.drawImage(src, 0, 0);
-    ctx.restore();
-  };
-  const S = (i, j) => [(i / n) * W, (j / n) * H];
-  const D = (i, j) => projectFramePoint(g, W, H, (i / n) * W, (j / n) * H);
-  for (let i = 0; i < n; i++) {
-    for (let j = 0; j < n; j++) {
-      tri(S(i, j), S(i + 1, j), S(i, j + 1), D(i, j), D(i + 1, j), D(i, j + 1));
-      tri(S(i + 1, j), S(i + 1, j + 1), S(i, j + 1), D(i + 1, j), D(i + 1, j + 1), D(i, j + 1));
-    }
-  }
-}
-
-// ---------- Frame-mode environment: a 2D glare that shifts with the camera ----------
-const FRAME_ENV_SHEEN = {
-  none: null,
-  studio: { angle: 120, stops: [[0, "rgba(255,255,255,0.28)"], [0.35, "rgba(255,255,255,0.06)"], [0.6, "rgba(255,255,255,0)"], [1, "rgba(255,255,255,0.10)"]] },
-  city: { angle: 150, stops: [[0, "rgba(120,170,255,0.26)"], [0.5, "rgba(255,255,255,0)"], [1, "rgba(255,150,90,0.22)"]] },
-  forest: { angle: 160, stops: [[0, "rgba(190,255,190,0.22)"], [0.5, "rgba(255,255,255,0)"], [1, "rgba(30,90,40,0.28)"]] },
-  clouds: { angle: 135, stops: [[0, "rgba(255,255,255,0.34)"], [0.5, "rgba(220,235,255,0.10)"], [1, "rgba(255,255,255,0.20)"]] },
-};
-const sheenAngle = (env, rx, ry) => (FRAME_ENV_SHEEN[env]?.angle ?? 0) + ry * 0.4 - rx * 0.4;
-const sheenCss = (env, rx, ry) => {
-  const s = FRAME_ENV_SHEEN[env];
-  if (!s) return null;
-  return `linear-gradient(${sheenAngle(env, rx, ry)}deg, ${s.stops.map(([p, c]) => `${c} ${p * 100}%`).join(", ")})`;
-};
-function paintSheen(ctx, x, y, w, h, env, rx, ry) {
-  const s = FRAME_ENV_SHEEN[env];
-  if (!s) return;
-  const rad = (sheenAngle(env, rx, ry) * Math.PI) / 180;
-  const dx = Math.sin(rad), dy = -Math.cos(rad);
-  const len = Math.abs(w * dx) + Math.abs(h * dy);
-  const cx = x + w / 2, cy = y + h / 2;
-  const g = ctx.createLinearGradient(cx - (dx * len) / 2, cy - (dy * len) / 2, cx + (dx * len) / 2, cy + (dy * len) / 2);
-  s.stops.forEach(([p, c]) => g.addColorStop(p, c));
-  ctx.fillStyle = g;
-  ctx.fillRect(x, y, w, h);
-}
-
-// ---------- Frame back ----------
-const hexRgba = (hex, pct) => {
-  const n = parseInt(hex || "000000", 16);
-  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${pct / 100})`;
-};
-
-// True when the frame's normal points away from the camera (same rotation order as frameCameraCss).
-const isFrameBackFacing = (c) =>
-  Math.cos((c.rotationX * Math.PI) / 180) * Math.cos((c.rotationY * Math.PI) / 180) < -1e-6;
-
-function buildGradientCss(type, angle, stops) {
-  const items = [...stops]
-    .sort((a, b) => a.position - b.position)
-    .map((s) => `${hexRgba(s.hex, s.opacity)} ${s.position}%`);
-  const list = (items.length === 1 ? [items[0], items[0]] : items).join(", ");
-  switch (type) {
-    case "Radial":
-      return `radial-gradient(circle, ${list})`;
-    case "Angular":
-      return `conic-gradient(from ${angle}deg, ${list})`;
-    case "Diamond":
-      return `conic-gradient(from ${(angle + 45) % 360}deg, ${list})`;
-    default:
-      return `linear-gradient(${angle}deg, ${list})`;
-  }
-}
-
-// Canvas twin of buildGradientCss, for export.
-function makeCanvasGradient(ctx, type, angle, stops, x, y, w, h) {
-  const cx = x + w / 2, cy = y + h / 2;
-  let g;
-  if (type === "Radial") {
-    g = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.hypot(w, h) / 2);
-  } else if (type === "Angular" || type === "Diamond") {
-    const from = (type === "Diamond" ? angle + 45 : angle) - 90;
-    g = ctx.createConicGradient((from * Math.PI) / 180, cx, cy);
-  } else {
-    const rad = (angle * Math.PI) / 180;
-    const dx = Math.sin(rad), dy = -Math.cos(rad);
-    const len = Math.abs(w * dx) + Math.abs(h * dy);
-    g = ctx.createLinearGradient(cx - (dx * len) / 2, cy - (dy * len) / 2, cx + (dx * len) / 2, cy + (dy * len) / 2);
-  }
-  [...stops]
-    .sort((a, b) => a.position - b.position)
-    .forEach((s) => g.addColorStop(Math.min(1, Math.max(0, s.position / 100)), hexRgba(s.hex, s.opacity)));
-  return g;
-}
-
-function makeEffect(type, id) {
-  switch (type) {
-    case "layerBlur":
-      return { id, type, visible: true, blur: 8 };
-    case "noise":
-      return { id, type, visible: true, amount: 20, size: 2 };
-    default:
-      return { id, type: "dropShadow", visible: true, x: 0, y: 24, blur: 60, spread: 0, hex: "000000", opacity: 25 };
-  }
-}
-
-// Same shadow the frame used to have hardcoded, now editable.
-const DEFAULT_FRAME_EFFECTS = () => [];
-const DEFAULT_STROKE = { on: false, hex: "FFFFFF", opacity: 100, width: 2, position: "inside" };
-
-// Same hex + opacity field the Body / Background rows use, made reusable.
-function ColorOpacityField({ hex, opacity, onHexChange, onOpacityChange, onSwatchClick, makePercentDrag, swatchFill, labelText, active = false }) {
-  const opacityRef = useRef(null);
-  return (
-    <div className="flex items-center gap-2">
-      <button
-        type="button"
-        onClick={onSwatchClick}
-        data-color-picker-trigger
-        aria-label="Open color picker"
-        className="w-8 h-8 rounded-[10px] shrink-0 relative overflow-hidden border border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10"
-      >
-        <div
-          className="absolute inset-0"
-          style={{
-            backgroundImage:
-              "linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%)",
-            backgroundSize: "8px 8px",
-            backgroundPosition: "0 0, 0 4px, 4px -4px, -4px 0px",
-          }}
-        />
-        <div
-          className="absolute inset-0"
-          style={swatchFill ? { background: swatchFill } : { backgroundColor: `#${hex || "000000"}`, opacity: opacity / 100 }}
-        />
-      </button>
-
-      <div
-        className={`flex flex-1 min-w-0 items-center h-8 px-2.5 gap-2 hover:bg-[#E3E3E3] dark:hover:bg-[#333333] focus-within:bg-[#E3E3E3] dark:focus-within:bg-[#333333] rounded-[10px] border focus-within:border-[#FF47BC] transition-colors ${
-          active ? "bg-[#E3E3E3] dark:bg-[#333333] border-[#FF47BC]" : "bg-[#EDEDED] dark:bg-[#292929] border-transparent"
-        }`}
-      >
-        {labelText ? (
-          <button
-            type="button"
-            onClick={onSwatchClick}
-            className="flex-1 min-w-0 text-left text-[13px] font-medium tracking-[-0.005em] text-[#8C8C8C] dark:text-[#9A9A9A]"
-          >
-            {labelText}
-          </button>
-        ) : (
-          <input
-            value={hex}
-            onChange={(e) => onHexChange(e.target.value.replace(/[^0-9a-fA-F]/g, "").slice(0, 6).toUpperCase())}
-            className="flex-1 min-w-0 bg-transparent text-[13px] font-medium tracking-[-0.005em] text-[#3A3A3A] dark:text-[#FAF9FA] outline-none"
-          />
-        )}
-        <div className="w-px h-4 bg-[#3A3A3A]/10 dark:bg-[#FAF9FA]/10 shrink-0" />
-        <div className="flex items-center gap-1 shrink-0 select-none">
-          <input
-            ref={opacityRef}
-            type="number"
-            min={0}
-            max={100}
-            value={opacity}
-            onChange={(e) => {
-              const num = Math.min(100, Math.max(0, Number(e.target.value)));
-              if (!Number.isNaN(num)) onOpacityChange(num);
-            }}
-            className="w-6 bg-transparent text-[13px] font-medium tracking-[-0.005em] text-[#3A3A3A] dark:text-[#FAF9FA] outline-none text-right cursor-text [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-          />
-          <span
-            className="text-[13px] font-medium tracking-[-0.005em] text-[#8C8C8C] dark:text-[#9A9A9A] cursor-ew-resize"
-            onPointerDown={makePercentDrag(opacity, onOpacityChange, opacityRef)}
-          >
-            %
-          </span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Export-time noise: random gray cells blended with "overlay". cell = grain size in output px.
-function drawNoise(ctx, x, y, w, h, amount, cell) {
-  const c = Math.max(1, cell);
-  const cols = Math.max(1, Math.ceil(w / c));
-  const rows = Math.max(1, Math.ceil(h / c));
-  const n = document.createElement("canvas");
-  n.width = cols;
-  n.height = rows;
-  const nctx = n.getContext("2d");
-  const img = nctx.createImageData(cols, rows);
-  for (let i = 0; i < img.data.length; i += 4) {
-    const v = Math.random() * 255;
-    img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
-    img.data[i + 3] = 255;
-  }
-  nctx.putImageData(img, 0, 0);
-  ctx.save();
-  ctx.globalCompositeOperation = "overlay";
-  ctx.globalAlpha = (amount / 100) * 0.6;
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(n, 0, 0, cols, rows, x, y, cols * c, rows * c);
-  ctx.restore();
-}
-
-// Same per-pixel noise as MockupScene's applyGrain (amount = intensity * 0.9),
-// baked onto mid-gray so it can be laid over the gradient with "overlay" —
-// CSS/canvas can't add noise per-pixel to a gradient directly.
-function makeGrainTile(size, intensity) {
-  const c = document.createElement("canvas");
-  c.width = size;
-  c.height = size;
-  const ctx = c.getContext("2d");
-  const img = ctx.createImageData(size, size);
-  const amp = intensity * 0.9 * 2; // ×2: overlay only carries ~half the delta on average
-  for (let i = 0; i < img.data.length; i += 4) {
-    const v = 128 + (Math.random() - 0.5) * amp; // Uint8ClampedArray clamps for us
-    img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
-    img.data[i + 3] = 255;
-  }
-  ctx.putImageData(img, 0, 0);
-  return c;
-}
-
-function PopupDropdown({ value, options, onChange }) {
-  const [open, setOpen] = useState(false);
-  const [popupRect, setPopupRect] = useState(null);
-  const ref = useRef(null);
-  const popupRef = useRef(null);
-  const selected = options.find((o) => o.value === value);
-
-  // Measure the trigger, then the popup, and only flip up if it doesn't fit below.
-  useLayoutEffect(() => {
-    if (!open) return;
-    const update = () => {
-      if (!ref.current) return;
-      const r = ref.current.getBoundingClientRect();
-      const listH = popupRef.current?.offsetHeight ?? options.length * 34 + 12;
-      const spaceBelow = window.innerHeight - r.bottom;
-      const spaceAbove = r.top;
-      const up = spaceBelow < listH + 12 && spaceAbove > spaceBelow;
-      setPopupRect({ left: r.left, width: r.width, top: r.bottom + 4, bottom: window.innerHeight - r.top + 4, up });
-    };
-    update();
-    window.addEventListener("scroll", update, true);
-    window.addEventListener("resize", update);
-    return () => {
-      window.removeEventListener("scroll", update, true);
-      window.removeEventListener("resize", update);
-    };
-  }, [open, options.length]);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e) => {
-      if (ref.current?.contains(e.target) || popupRef.current?.contains(e.target)) return;
-      setOpen(false);
-    };
-    window.addEventListener("pointerdown", onDown);
-    return () => window.removeEventListener("pointerdown", onDown);
-  }, [open]);
-
-  return (
-    <div className="relative w-full" ref={ref}>
-<button type="button" onClick={() => setOpen((v) => !v)} className={`${DROPDOWN_TRIGGER} w-full`}>
-  <span className="truncate text-[13px] font-medium tracking-[-0.005em] text-[#3A3A3A] dark:text-[#FAF9FA]">{selected?.label ?? value}</span>
-  <CaretDown size={16} weight="regular" style={{ transform: open ? "rotate(180deg)" : "rotate(0deg)" }} className={DROPDOWN_CARET} />
-</button>
-      {open && popupRect && createPortal(
-        <div
-          ref={popupRef}
-          data-popup-dropdown
-          className={`${popupRect.up ? "pop-enter-up" : "pop-enter"} fixed p-2 gap-1 [&>*]:shrink-0 bg-[#FAF9FA] dark:bg-[#171717] border border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10 rounded-xl shadow-[0_4px_8px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_12px_rgba(0,0,0,0.4)] flex flex-col z-[9999] max-h-72 overflow-y-auto custom-scroll`}
-          style={{
-            left: popupRect.left,
-            width: popupRect.width,
-            ...(popupRect.up ? { bottom: popupRect.bottom } : { top: popupRect.top }),
-          }}
-        >
-          {options.map((opt) => (
-            <OptionRow
-              key={opt.value}
-              label={opt.label}
-              selected={value === opt.value}
-              onClick={() => {
-                onChange(opt.value);
-                setOpen(false);
-              }}
-            />
-          ))}
-        </div>,
-        document.body
-      )}
-    </div>
-  );
-}
-
-// Whole row is the click target; the plus/minus chip shows hover/active for any hover on the row.
-function AppearanceHeader({ label, onClick, children }) {
-  return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={onClick}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onClick();
-        }
-      }}
-      className="group/hdr flex items-center justify-between h-8 -my-1 cursor-pointer select-none"
-    >
-      <span className="text-[13px] font-medium tracking-[0.01em] text-[#8C8C8C] dark:text-[#9A9A9A]">{label}</span>
-      <span
-        aria-hidden
-        className="flex items-center justify-center w-6 h-6 rounded-lg text-[#8C8C8C] dark:text-[#9A9A9A] transition-[background-color,color,transform] duration-150 group-hover/hdr:bg-black/5 dark:group-hover/hdr:bg-white/5 group-hover/hdr:text-[#3A3A3A] dark:group-hover/hdr:text-white group-active/hdr:scale-[0.94]"
-      >
-        {children}
-      </span>
-    </div>
-  );
-}
-
-// Corner order in state is [tl, tr, br, bl]; the grid displays TL TR / BL BR.
-const CORNER_FIELDS = [["TL", 0], ["TR", 1], ["BL", 3], ["BR", 2]];
-function CornerRadiusFields({ values, onChange }) {
-  return (
-    <div className="fx-enter grid grid-cols-2 gap-2">
-      {CORNER_FIELDS.map(([label, i]) => (
-        <DimensionInput
-          key={label}
-          label={label}
-          value={values[i]}
-          min={0}
-          max={Infinity}
-          onChange={(v) => onChange(i, v)}
-        />
-      ))}
-    </div>
-  );
-}
-
-// ---------- Social media overlay (Frame mode) ----------
-// fields: [label shown in the panel, default text]. `extra` is likes / status / reply placeholder depending on platform.
-// Each platform has one or more modes. `themed` = mode supports light/dark chrome (stories are always dark chrome over the image).
-const SOCIAL_PLATFORMS = [
-  {
-    value: "instagram", label: "Instagram",
-    modes: [
-      { value: "post", label: "Post", themed: true, fields: {
-        name: ["Username", "yourname"], artist: ["Artist", "yourname"], song: ["Song title", "Original audio"], caption: ["Caption", "Golden hour in the city"],
-        extra: ["Likes", "621K"], comments: ["Comments", "4,388"], reposts: ["Reposts", "207"], shares: ["Shares", "5,884"],
-        likedBy: ["Liked by", "alex"], likedOthers: ["Liked by (others)", "others"], time: ["Posted", "2 days ago"],
-      } },
-      { value: "reels", label: "Reels", themed: false, fields: {
-        name: ["Username", "yourname"], artist: ["Artist", "yourname"], song: ["Song title", "Original audio"], caption: ["Caption", "Comment “Portfolio” and I’ll send the link"],
-        extra: ["Likes", "7,194"], comments: ["Comments", "4,388"], reposts: ["Reposts", "207"], shares: ["Shares", "5,884"], saves: ["Saves", "8,886"],
-        likedBy: ["Liked by", "alex"], likedOthers: ["Liked by (others)", "7,193 others"],
-      } },
-      { value: "story", label: "Stories", themed: false, fields: { name: ["Username", "yourname"], extra: ["Time", "21h"] } },
-    ],
-  },
-  {
-    value: "whatsapp", label: "WhatsApp",
-    modes: [
-      { value: "status", label: "Status", themed: false, fields: { name: ["Contact name", "Alex"], caption: ["Status text", "Sunday reset 🌿"], extra: ["Time", "5:43 AM"] } },
-    ],
-  },
-  {
-    value: "tiktok", label: "TikTok",
-    modes: [
-      { value: "post", label: "Post", themed: false, fields: {
-  name: ["Username", "yourname"], caption: ["Caption", "Wait for it... #fyp"], sound: ["Sound", "Original sound - yourname"],
-  extra: ["Likes", "269.8K"], comments: ["Comments", "4,108"], saves: ["Saves", "10.8K"], shares: ["Shares", "25.9K"],
-  friendsBadge: ["Friends badge", "7"], inboxBadge: ["Inbox badge", "1"],
-} },
-      { value: "story", label: "Stories", themed: false, fields: { name: ["Username", "yourname"], extra: ["Time", "13h ago"] } },
-    ],
-  },
-  {
-    value: "linkedin", label: "LinkedIn",
-    modes: [
-      { value: "post", label: "Post", themed: true, fields: {
-        name: ["Name", "Your Name"], headline: ["Headline", "Product Designer | Founder"],
-        caption: ["Post text", "I have been working on this for months, and I am finally ready to share it. It started as a small experiment and turned into something I'm really proud of. A huge thank you to everyone who gave feedback along the way. Here is what I learned, what I would do differently, and what comes next for the project."],
-        time: ["Posted", "2d"], extra: ["Reactions", "700"], comments: ["Comments", "32 comments"], reposts: ["Reposts", "9 reposts"],
-        badge: ["Notifications badge", "20+"],
-      } },
-    ],
-  },
-  {
-    value: "facebook", label: "Facebook",
-    modes: [
-      { value: "post", label: "Post", themed: true, fields: {
-        name: ["Name", "Your Name"], time: ["Posted", "4d"],
-        caption: ["Post text", "Weekend well spent. Grateful for everyone who made it happen, and for a little time away to reset."],
-        extra: ["Reactions", "11.3K"], comments: ["Comments", "1.6K comments"], shares: ["Shares", "230 shares"],
-        reelsBadge: ["Reels badge", "1"], notifBadge: ["Notifications badge", "1"],
-      } },
-      { value: "reels", label: "Reels", themed: false, fields: {
-        name: ["Name", "Your Name"], sound: ["Audio", "Original audio"], caption: ["Caption", "Behind the scenes from this week"],
-        extra: ["Likes", "33.6K"], comments: ["Comments", "752"], shares: ["Shares", "221"], saves: ["Saves", "216"],
-      } },
-            { value: "story", label: "Stories", themed: false, fields: {
-        name: ["Name", "Your Name"], extra: ["Time", "23h"], artist: ["Artist", "Kendrick Lamar"], song: ["Song", "HUMBLE."],
-      } },
-    ],
-  },
-];
-const SOCIAL_OPTIONS = SOCIAL_PLATFORMS.map(({ value, label }) => ({ value, label }));
-const platformOf = (p) => SOCIAL_PLATFORMS.find((x) => x.value === p) ?? SOCIAL_PLATFORMS[0];
-const modeOf = (platform, mode) => {
-  const pl = platformOf(platform);
-  return pl.modes.find((m) => m.value === mode) ?? pl.modes[0];
-};
-const socialDefaults = (platform, mode) => {
-  const f = modeOf(platform, mode).fields;
-  return Object.fromEntries(Object.entries(f).map(([key, [, def]]) => [key, def]));
-};
-const DEFAULT_SOCIAL = { on: false, platform: "instagram", mode: "post", theme: "light", avatar: null, avatarName: null, soundAvatar: null, ...socialDefaults("instagram", "post") };
-
-// 24x24 icon paths. Stroked by default, filled when `fill: true`. Shared by the DOM overlay and the canvas export.
-const ICONS = {
-  heart: { fill: true, rule: "evenodd", d: ["M11.9513 21.0026C11.6913 21.0026 11.4313 20.9426 11.2113 20.7726C8.55131 18.8326 5.78131 16.6926 3.73131 13.7526C3.01131 12.7126 2.04131 11.1026 2.00131 9.06261C1.95131 6.61261 3.34131 4.36261 5.46131 3.44261C7.59131 2.52261 10.1213 3.06261 11.9113 4.82261L11.9913 4.90261C12.0713 4.82261 12.1513 4.74261 12.2313 4.67261C14.2313 2.85261 17.0213 2.49261 19.1513 3.77261C21.3613 5.10261 22.4413 7.84261 21.8013 10.4526C21.2313 12.7426 19.8313 14.4826 18.5313 15.8926C16.7513 17.8126 14.6713 19.4126 12.8713 20.7226C12.6513 20.8826 12.3013 21.0126 11.9413 21.0126L11.9513 21.0026ZM7.62131 5.00261C7.15131 5.00261 6.69131 5.09261 6.26131 5.28261C4.88131 5.88261 3.97131 7.38261 4.00131 9.02261C4.02131 10.1726 4.45131 11.2826 5.37131 12.6126C7.14131 15.1626 9.60131 17.1126 12.0013 18.8826C13.7213 17.6226 15.5113 16.2226 17.0713 14.5326C18.2513 13.2526 19.4113 11.8126 19.8713 9.97261C20.3113 8.21261 19.5913 6.37261 18.1313 5.49261C16.7413 4.65261 14.9513 4.91261 13.5813 6.16261C13.3913 6.33261 13.2113 6.53261 13.0413 6.72261L12.0513 7.76261L10.5113 6.26261C9.68131 5.45261 8.63131 5.01261 7.61131 5.01261L7.62131 5.00261Z"] },
-  comment: { fill: true, rule: "evenodd", d: ["M12 5C8.13401 5 5 8.13401 5 12C5 15.866 8.13401 19 12 19C13.3137 19 14.54 18.6391 15.5886 18.0116C15.8209 17.8726 16.0995 17.8337 16.361 17.9037L18.4741 18.4699L17.9074 16.3548C17.8374 16.0937 17.8762 15.8153 18.0148 15.5833C18.6403 14.5358 19 13.3114 19 12C19 8.13401 15.866 5 12 5ZM3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12C21 13.528 20.6184 14.9694 19.9449 16.2316L20.8543 19.6253C20.9468 19.9704 20.8481 20.3386 20.5955 20.5913C20.3428 20.8439 19.9746 20.9426 19.6295 20.8501L16.2382 19.9414C14.9745 20.6171 13.5307 21 12 21C7.02944 21 3 16.9706 3 12Z"] },
-  bookmark: { fill: true, rule: "evenodd", d: ["M12 15.1111L19.271 21.1702C19.5605 21.4115 20 21.2056 20 20.8288V2.22217H4V20.8288C4 21.2056 4.43949 21.4115 4.72897 21.1702L12 15.1111ZM6 17.5076L10.7196 13.5746C11.4613 12.9565 12.5387 12.9565 13.2804 13.5746L18 17.5076V4.22217H6V17.5076Z"] },
-  home: { fill: true, rule: "evenodd", d: ["M12.6901 2.27629C12.3038 1.9079 11.6962 1.9079 11.3099 2.27629L2.30989 10.8585C2.11199 11.0472 2 11.3087 2 11.5822V21C2 21.5523 2.44772 22 3 22H9V17C9 15.8954 9.5 14 12 14C14.5 14 15 15.8954 15 17V22H21C21.5523 22 22 21.5523 22 21V11.5822C22 11.3087 21.888 11.0472 21.6901 10.8585L12.6901 2.27629Z"] },
-  reels: { fill: true, rule: "evenodd", d: [
-    "M14.8 14.1322C15.0667 14.2957 15.0667 14.7043 14.8 14.8678L10.6 17.4425C10.3333 17.6059 10 17.4016 10 17.0747L10 11.9253C10 11.5984 10.3333 11.3941 10.6 11.5575L14.8 14.1322Z",
-    "M8 2C4.68629 2 2 4.68629 2 8V16C2 19.3137 4.68629 22 8 22H16C19.3137 22 22 19.3137 22 16V8C22 4.68629 19.3137 2 16 2H8ZM16 4H14.7663L16.5663 7H19.874C19.4299 5.27477 17.8638 4 16 4ZM20 9H4V16C4 18.2091 5.79086 20 8 20H16C18.2091 20 20 18.2091 20 16V9ZM4.12602 7H8.23381L6.58769 4.25647C5.3805 4.71213 4.45161 5.73497 4.12602 7ZM10.5662 7H14.2339L12.4339 4H8.76619L10.5662 7Z",
-  ] },
-  search: { fill: true, rule: "evenodd", d: ["M15.7618 17.176C14.3145 18.3183 12.4869 19 10.5 19C5.80558 19 2 15.1944 2 10.5C2 5.80558 5.80558 2 10.5 2C15.1944 2 19 5.80558 19 10.5C19 12.4869 18.3183 14.3145 17.176 15.7618L21.6569 20.2426C22.0474 20.6332 22.0474 21.2663 21.6569 21.6569C21.2663 22.0474 20.6332 22.0474 20.2426 21.6569L15.7618 17.176ZM17 10.5C17 14.0899 14.0899 17 10.5 17C6.91015 17 4 14.0899 4 10.5C4 6.91015 6.91015 4 10.5 4C14.0899 4 17 6.91015 17 10.5Z"] },
-  dots: { fill: true, rule: "evenodd", d: [
-    "M7 13.5C7.82843 13.5 8.5 12.8284 8.5 12C8.5 11.1716 7.82843 10.5 7 10.5C6.17157 10.5 5.5 11.1716 5.5 12C5.5 12.8284 6.17157 13.5 7 13.5Z",
-    "M13.5 12C13.5 12.8284 12.8284 13.5 12 13.5C11.1716 13.5 10.5 12.8284 10.5 12C10.5 11.1716 11.1716 10.5 12 10.5C12.8284 10.5 13.5 11.1716 13.5 12Z",
-    "M18.5 12C18.5 12.8284 17.8284 13.5 17 13.5C16.1716 13.5 15.5 12.8284 15.5 12C15.5 11.1716 16.1716 10.5 17 10.5C17.8284 10.5 18.5 11.1716 18.5 12Z",
-  ] },
-  close: { fill: true, rule: "evenodd", d: ["M3.31828 19.2676C2.92776 19.6581 2.92776 20.2913 3.31828 20.6818C3.70881 21.0723 4.34197 21.0723 4.7325 20.6818L12.0001 13.4142L19.2677 20.6818C19.6583 21.0723 20.2914 21.0723 20.682 20.6818C21.0725 20.2913 21.0725 19.6581 20.682 19.2676L13.4143 12L20.6819 4.73238C21.0724 4.34185 21.0724 3.70869 20.6819 3.31816C20.2914 2.92764 19.6582 2.92764 19.2677 3.31816L12.0001 10.5857L4.73255 3.31816C4.34202 2.92764 3.70886 2.92764 3.31833 3.31816C2.92781 3.70869 2.92781 4.34185 3.31833 4.73238L10.5859 12L3.31828 19.2676Z"] },
-  back: { fill: true, rule: "evenodd", d: ["M6.29289 11.312C5.90237 11.7025 5.90237 12.3356 6.29289 12.7262C6.32736 12.7606 6.36373 12.7921 6.40165 12.8205C6.42838 12.8554 6.45774 12.889 6.48971 12.921L13.2928 19.726C13.6833 20.1166 14.3164 20.1167 14.707 19.7263C15.0976 19.3358 15.0977 18.7026 14.7072 18.312L8.41512 12.0181L14.9762 5.45711C15.3667 5.06658 15.3667 4.43342 14.9762 4.04289C14.5856 3.65237 13.9525 3.65237 13.562 4.04289L6.29289 11.312Z"] },
-
-  moreCircle: { fill: true, rule: "evenodd", d: [
-    "M12 2a10 10 0 1 1 0 20a10 10 0 1 1 0-20ZM12 3.5a8.5 8.5 0 1 1 0 17a8.5 8.5 0 1 1 0-17Z",
-    "M6.3 10.6a1.4 1.4 0 1 1 0 2.8a1.4 1.4 0 1 1 0-2.8Z",
-    "M12 10.6a1.4 1.4 0 1 1 0 2.8a1.4 1.4 0 1 1 0-2.8Z",
-    "M17.7 10.6a1.4 1.4 0 1 1 0 2.8a1.4 1.4 0 1 1 0-2.8Z",
-  ] },
-
-  music: { fill: true, d: ["M18 4.5L8.25 6V14.5026C7.90903 14.3406 7.5276 14.25 7.125 14.25C5.67525 14.25 4.5 15.4253 4.5 16.875C4.5 18.3247 5.67525 19.5 7.125 19.5C8.57475 19.5 9.75 18.3247 9.75 16.875V10.2692L16.5 9.23077V13.0026C16.159 12.8406 15.7776 12.75 15.375 12.75C13.9253 12.75 12.75 13.9253 12.75 15.375C12.75 16.8247 13.9253 18 15.375 18C16.8247 18 18 16.8247 18 15.375V4.5Z"] },
-
-  send: { fill: true, rule: "evenodd", d: ["M2.32435 5.09454C1.64037 4.33808 2.10065 3 3.2445 3L21 3C21.3548 3 21.6831 3.18803 21.8626 3.49409C22.0421 3.80016 22.0459 4.17843 21.8728 4.48811L12.9951 20.3621C12.4461 21.3437 11.0257 21.1444 10.7185 20.1049L8.20479 11.5981L2.32435 5.09454ZM10.2783 11.5575L12.1276 17.8158L18.304 6.77187L10.2783 11.5575ZM17.3704 5L4.93521 5L9.29121 9.81757L17.3704 5Z"] },
-  sliders: { fill: true, d: ["M21 16.0001H18.862C18.6445 15.1418 18.147 14.3806 17.4482 13.8369C16.7495 13.2931 15.8894 12.9979 15.004 12.9979C14.1186 12.9979 13.2585 13.2931 12.5598 13.8369C11.861 14.3806 11.3635 15.1418 11.146 16.0001H3C2.73478 16.0001 2.48043 16.1054 2.29289 16.2929C2.10536 16.4805 2 16.7348 2 17.0001C2 17.2653 2.10536 17.5196 2.29289 17.7072C2.48043 17.8947 2.73478 18.0001 3 18.0001H11.146C11.3635 18.8583 11.861 19.6195 12.5598 20.1632C13.2585 20.707 14.1186 21.0022 15.004 21.0022C15.8894 21.0022 16.7495 20.707 17.4482 20.1632C18.147 19.6195 18.6445 18.8583 18.862 18.0001H21C21.2652 18.0001 21.5196 17.8947 21.7071 17.7072C21.8946 17.5196 22 17.2653 22 17.0001C22 16.7348 21.8946 16.4805 21.7071 16.2929C21.5196 16.1054 21.2652 16.0001 21 16.0001ZM15.004 19.0011C14.6084 19.0011 14.2218 18.8838 13.8929 18.664C13.564 18.4442 13.3076 18.1319 13.1562 17.7664C13.0049 17.401 12.9653 16.9988 13.0424 16.6109C13.1196 16.2229 13.3101 15.8665 13.5898 15.5868C13.8695 15.3071 14.2259 15.1167 14.6138 15.0395C15.0018 14.9623 15.4039 15.0019 15.7694 15.1533C16.1348 15.3047 16.4472 15.561 16.6669 15.8899C16.8867 16.2188 17.004 16.6055 17.004 17.0011C17.0032 17.5312 16.7922 18.0395 16.4173 18.4144C16.0424 18.7893 15.5342 19.0003 15.004 19.0011ZM3 8.00005H5.139C5.35653 8.85829 5.85403 9.61949 6.55278 10.1632C7.25152 10.707 8.11162 11.0022 8.997 11.0022C9.88238 11.0022 10.7425 10.707 11.4412 10.1632C12.14 9.61949 12.6375 8.85829 12.855 8.00005H21C21.2652 8.00005 21.5196 7.89469 21.7071 7.70716C21.8946 7.51962 22 7.26527 22 7.00005C22 6.73483 21.8946 6.48048 21.7071 6.29294C21.5196 6.10541 21.2652 6.00005 21 6.00005H12.855C12.6375 5.14181 12.14 4.38061 11.4412 3.83688C10.7425 3.29315 9.88238 2.99792 8.997 2.99792C8.11162 2.99792 7.25152 3.29315 6.55278 3.83688C5.85403 4.38061 5.35653 5.14181 5.139 6.00005H3C2.73478 6.00005 2.48043 6.10541 2.29289 6.29294C2.10536 6.48048 2 6.73483 2 7.00005C2 7.26527 2.10536 7.51962 2.29289 7.70716C2.48043 7.89469 2.73478 8.00005 3 8.00005ZM8.997 5.00105C9.39256 5.00105 9.77924 5.11835 10.1081 5.33811C10.437 5.55788 10.6934 5.87023 10.8448 6.23568C10.9961 6.60114 11.0357 7.00327 10.9586 7.39123C10.8814 7.77919 10.6909 8.13556 10.4112 8.41527C10.1315 8.69497 9.77514 8.88545 9.38718 8.96262C8.99922 9.03979 8.59709 9.00019 8.23163 8.84881C7.86618 8.69743 7.55382 8.44109 7.33406 8.11219C7.1143 7.78329 6.997 7.39661 6.997 7.00105C6.99779 6.47086 7.20876 5.96262 7.58366 5.58771C7.95856 5.21281 8.46681 5.00184 8.997 5.00105Z"] },
-
-  menu: { fill: true, rule: "evenodd", d: [
-    "M7 13.5C7.82843 13.5 8.5 12.8284 8.5 12C8.5 11.1716 7.82843 10.5 7 10.5C6.17157 10.5 5.5 11.1716 5.5 12C5.5 12.8284 6.17157 13.5 7 13.5Z",
-    "M13.5 12C13.5 12.8284 12.8284 13.5 12 13.5C11.1716 13.5 10.5 12.8284 10.5 12C10.5 11.1716 11.1716 10.5 12 10.5C12.8284 10.5 13.5 11.1716 13.5 12Z",
-    "M18.5 12C18.5 12.8284 17.8284 13.5 17 13.5C16.1716 13.5 15.5 12.8284 15.5 12C15.5 11.1716 16.1716 10.5 17 10.5C17.8284 10.5 18.5 11.1716 18.5 12Z",
-  ] },
-
-  repost: { d: ["M12.5 2L16.8527 5.125L12.5 8.24999", "M3 14V9C3 6.79086 4.79086 5 7 5H16", "M11.3527 22.1079L6.99999 18.9829L11.3527 15.8579", "M21 11L21 15C21 17.2091 19.2091 19 17 19L8 19"] },
-
-  tkHome: { fill: true, rule: "evenodd", vb: [20, 20], d: ["M10.8737 0.931953C10.5595 0.674373 10.1071 0.674373 9.793 0.931964L0.645447 8.43179C0.367004 8.66008 0.262069 9.03876 0.383294 9.37779C0.504513 9.71681 0.825727 9.94312 1.18579 9.94312H2.51054L3.18786 17.3451C3.25473 18.0764 3.86801 18.6361 4.60237 18.6361H8.91319C9.22699 18.6361 9.48136 18.3817 9.48136 18.0679V12.5654C9.48136 12.2516 9.73573 11.9972 10.0495 11.9972H10.6177C10.9315 11.9972 11.1859 12.2516 11.1859 12.5654V18.0679C11.1859 18.3817 11.4402 18.6361 11.754 18.6361H16.065C16.7993 18.6361 17.4126 18.0764 17.4795 17.3451L18.1568 9.94312H19.4812C19.8413 9.94312 20.1625 9.71681 20.2837 9.37779C20.4049 9.0387 20.3 8.66008 20.0215 8.43179L10.8737 0.931953Z"] },
-  tkFriends: { fill: true, rule: "evenodd", vb: [20, 20], d: [
-    "M6.34979 3.93512C4.99591 3.93512 3.8698 5.05955 3.8698 6.48219C3.8698 7.90482 4.99591 9.02925 6.34979 9.02925C7.70368 9.02925 8.82979 7.90482 8.82979 6.48219C8.82979 5.05955 7.70368 3.93512 6.34979 3.93512ZM2.18467 6.48219C2.18467 4.16076 4.03365 2.25 6.34979 2.25C8.66594 2.25 10.5149 4.16076 10.5149 6.48219C10.5149 8.80361 8.66594 10.7144 6.34979 10.7144C4.03365 10.7144 2.18467 8.80361 2.18467 6.48219ZM6.34979 13.6972C4.14795 13.6972 2.27196 15.2039 1.68592 17.2854C1.60185 17.584 1.31595 17.7929 1.00985 17.7425L0.455581 17.6514C0.149472 17.601 -0.0602074 17.3111 0.0155557 17.0103C0.736828 14.1463 3.28899 12.0121 6.34979 12.0121C9.41054 12.0121 11.9628 14.1463 12.684 17.0103C12.7598 17.3111 12.5501 17.601 12.244 17.6514L11.6897 17.7425C11.3836 17.7929 11.0977 17.584 11.0137 17.2854C10.4276 15.2039 8.55163 13.6972 6.34979 13.6972Z",
-    "M14.7754 14.628C14.351 14.628 13.9439 14.7015 13.5647 14.8371C13.2726 14.9414 12.9323 14.8455 12.7841 14.573L12.5156 14.0796C12.3673 13.8071 12.4671 13.463 12.7537 13.3442C13.3784 13.0855 14.0612 12.9429 14.7754 12.9429C17.278 12.9429 19.3586 14.6803 19.9827 17.0119C20.063 17.3116 19.8524 17.6015 19.5462 17.6514L18.9918 17.7417C18.6856 17.7916 18.401 17.5817 18.3082 17.2857C17.8208 15.7306 16.4099 14.628 14.7754 14.628Z",
-    "M14.7751 7.30524C13.9995 7.30524 13.3708 7.93396 13.3708 8.70951C13.3708 9.48506 13.9995 10.1138 14.7751 10.1138C15.5506 10.1138 16.1793 9.48506 16.1793 8.70951C16.1793 7.93396 15.5506 7.30524 14.7751 7.30524ZM11.6857 8.70951C11.6857 7.00327 13.0688 5.62012 14.7751 5.62012C16.4813 5.62012 17.8645 7.00327 17.8645 8.70951C17.8645 10.4158 16.4813 11.7989 14.7751 11.7989C13.0688 11.7989 11.6857 10.4158 11.6857 8.70951Z",
-  ] },
-  tkInbox: { fill: true, rule: "evenodd", vb: [20, 20], d: ["M16.6393 13.983H11.9723L9.83345 16.5972L7.69447 13.983H3.02767L3.05739 2.69344H16.6094L16.6393 13.983ZM16.9223 15.6764H12.7748L10.9257 17.9366C10.3611 18.6266 9.30595 18.6266 8.74127 17.9366L6.89195 15.6764H2.74469C1.96386 15.6764 1.33144 15.0424 1.3335 14.2616L1.36471 2.40748C1.36675 1.62955 1.99796 1 2.7759 1H16.8909C17.6688 1 18.3 1.62954 18.3021 2.40745L18.3335 14.2615C18.3356 15.0423 17.7032 15.6764 16.9223 15.6764ZM7.01083 7.77375C6.69907 7.77375 6.44633 8.02649 6.44633 8.33825V8.90268C6.44633 9.21444 6.69907 9.46718 7.01083 9.46718H12.6556C12.9673 9.46718 13.2201 9.21444 13.2201 8.90268V8.33825C13.2201 8.02649 12.9673 7.77375 12.6556 7.77375H7.01083Z"] },
-  tkProfile: { fill: true, rule: "evenodd", vb: [20, 20], d: ["M10.1666 3.63647C8.50965 3.63647 7.16643 4.97968 7.16643 6.63666C7.16643 8.29364 8.50965 9.63686 10.1666 9.63686C11.8236 9.63686 13.1668 8.29364 13.1668 6.63666C13.1668 4.97968 11.8236 3.63647 10.1666 3.63647ZM5.52996 6.63666C5.52996 4.07592 7.60588 2 10.1666 2C12.7274 2 14.8033 4.07592 14.8033 6.63666C14.8033 9.19741 12.7274 11.2733 10.1666 11.2733C7.60588 11.2733 5.52996 9.19741 5.52996 6.63666ZM10.1666 14.0008C7.51865 14.0008 5.28913 15.7984 4.6341 18.2399C4.55604 18.5308 4.27735 18.7324 3.98023 18.6826L3.44226 18.5923C3.14514 18.5425 2.9427 18.2602 3.01454 17.9677C3.80409 14.7507 6.70593 12.3643 10.1666 12.3643C13.6273 12.3643 16.5292 14.7507 17.3187 17.9677C17.3905 18.2602 17.1881 18.5425 16.891 18.5923L16.353 18.6826C16.0559 18.7324 15.7772 18.5308 15.6991 18.2399C15.0441 15.7984 12.8146 14.0008 10.1666 14.0008Z"] },
-  tkSearch: { fill: true, rule: "evenodd", vb: [21, 21], d: ["M8.85093 2C5.08433 2 2 5.11467 2 8.99533C2 12.876 5.08433 15.9907 8.85093 15.9907C10.667 15.9907 12.3188 15.2703 13.5481 14.0876C14.8731 12.8127 15.7018 11.0053 15.7018 8.99533C15.7018 5.11467 12.6175 2 8.85093 2ZM0 8.99533C0 4.0446 3.9456 0 8.85093 0C13.7563 0 17.7018 4.0446 17.7018 8.99533C17.7018 11.1995 16.9207 13.2219 15.6228 14.7878L19.9131 19.157C20.1711 19.4197 20.1672 19.8418 19.9045 20.0998L19.4288 20.5669C19.1661 20.8249 18.744 20.821 18.4861 20.5583L14.1828 16.1759C12.7015 17.3134 10.8543 17.9907 8.85093 17.9907C3.9456 17.9907 0 13.9461 0 8.99533Z"] },
-  tkLive: { fill: true, rule: "evenodd", vb: [23, 24], d: ["M8.20711 0.292893C7.81658 -0.0976311 7.18342 -0.0976311 6.79289 0.292893C6.40237 0.683417 6.40237 1.31658 6.79289 1.70711L9.08579 4H3.5C1.567 4 0 5.567 0 7.5C0 8.05228 0.447715 8.5 1 8.5C1.55228 8.5 2 8.05228 2 7.5C2 6.67157 2.67157 6 3.5 6H11.5H19.5C20.3284 6 21 6.67157 21 7.5C21 8.05228 21.4477 8.5 22 8.5C22.5523 8.5 23 8.05228 23 7.5C23 5.567 21.433 4 19.5 4H13.9142L16.2071 1.70711C16.5976 1.31658 16.5976 0.683417 16.2071 0.292893C15.8166 -0.0976311 15.1834 -0.0976311 14.7929 0.292893L11.5 3.58579L8.20711 0.292893ZM2 20C2 19.4477 1.55228 19 1 19C0.447715 19 0 19.4477 0 20C0 22.2091 1.79086 24 4 24H19C21.2091 24 23 22.2091 23 20C23 19.4477 22.5523 19 22 19C21.4477 19 21 19.4477 21 20C21 21.1046 20.1046 22 19 22H4C2.89543 22 2 21.1046 2 20ZM11.4231 10.6154C11.2107 10.1056 10.6252 9.8645 10.1154 10.0769C9.60558 10.2893 9.36451 10.8748 9.57692 11.3846L12.0769 17.3846C12.2322 17.7573 12.5963 18 13 18C13.4037 18 13.7678 17.7573 13.9231 17.3846L16.4231 11.3846C16.6355 10.8748 16.3944 10.2893 15.8846 10.0769C15.3748 9.8645 14.7893 10.1056 14.5769 10.6154L13 14.4L11.4231 10.6154ZM2 11C2 10.4477 1.55228 10 1 10C0.447715 10 0 10.4477 0 11V17C0 17.5523 0.447715 18 1 18H4C4.55228 18 5 17.5523 5 17C5 16.4477 4.55228 16 4 16H2V11ZM8 11C8 10.4477 7.55228 10 7 10C6.44772 10 6 10.4477 6 11V17C6 17.5523 6.44772 18 7 18C7.55228 18 8 17.5523 8 17V11ZM19 10C18.4477 10 18 10.4477 18 11V14V17C18 17.5523 18.4477 18 19 18H22C22.5523 18 23 17.5523 23 17C23 16.4477 22.5523 16 22 16H20V15H22C22.5523 15 23 14.5523 23 14C23 13.4477 22.5523 13 22 13H20V12H22C22.5523 12 23 11.5523 23 11C23 10.4477 22.5523 10 22 10H19Z"] },
-  tkPlus: { fill: true, rule: "evenodd", vb: [22, 22], d: ["M12 7C12 6.44772 11.5523 6 11 6C10.4477 6 10 6.44772 10 7V10H7C6.44772 10 6 10.4477 6 11C6 11.5523 6.44772 12 7 12H10V15C10 15.5523 10.4477 16 11 16C11.5523 16 12 15.5523 12 15V12H15C15.5523 12 16 11.5523 16 11C16 10.4477 15.5523 10 15 10H12V7Z"] },
-  tkHeart: { fill: true, rule: "evenodd", vb: [34, 34], d: ["M10.625 3.1875C14.875 3.1875 17 6.02083 17 6.02083C17 6.02083 19.125 3.1875 23.375 3.1875C28.3333 3.1875 31.875 7.08333 31.875 12.0417C31.875 17.7083 27.2425 22.7588 23.0208 26.5625C20.4142 28.9071 18.4167 30.4583 17 30.4583C15.5833 30.4583 13.5292 28.9 10.9792 26.5625C6.82833 22.7588 2.125 17.7083 2.125 12.0417C2.125 7.08333 5.66667 3.1875 10.625 3.1875Z"] },
-  tkComment: { fill: true, rule: "evenodd", vb: [34, 34], d: ["M27.2709 25.0113C30.175 22.1 31.875 19.0613 31.875 15.5338C31.875 8.35838 25.3088 2.55005 17.2125 2.55005C9.1163 2.55005 2.55005 8.35838 2.55005 15.5338C2.55005 22.7021 9.3288 27.625 17.425 27.625V30.005C17.425 30.7559 18.2042 31.2375 18.87 30.8834C20.9384 29.7571 24.7705 27.5117 27.2638 25.0113H27.2709ZM10.0796 13.7842C10.6326 13.7823 11.1638 13.9997 11.5568 14.3887C11.9498 14.7777 12.1726 15.3067 12.1763 15.8596C12.1754 16.134 12.1204 16.4056 12.0145 16.6587C11.9087 16.9119 11.754 17.1417 11.5593 17.3351C11.3646 17.5285 11.1337 17.6816 10.8798 17.7858C10.6259 17.8899 10.354 17.9431 10.0796 17.9421C9.52666 17.9421 8.99624 17.723 8.60457 17.3326C8.2129 16.9423 7.99192 16.4126 7.99005 15.8596C7.99379 15.3079 8.21559 14.78 8.60706 14.3912C8.99853 14.0024 9.52789 13.7842 10.0796 13.7842ZM19.3021 15.8596C19.2984 15.3067 19.0756 14.7777 18.6826 14.3887C18.2896 13.9997 17.7584 13.7823 17.2055 13.7842C16.6525 13.7823 16.1213 13.9997 15.7283 14.3887C15.3353 14.7777 15.1125 15.3067 15.1088 15.8596C15.1097 16.134 15.1647 16.4056 15.2706 16.6587C15.3764 16.9119 15.5311 17.1417 15.7258 17.3351C15.9205 17.5285 16.1514 17.6816 16.4053 17.7858C16.6592 17.8899 16.9311 17.9431 17.2055 17.9421C17.4799 17.9431 17.7518 17.8899 18.0057 17.7858C18.2595 17.6816 18.4904 17.5285 18.6851 17.3351C18.8798 17.1417 19.0345 16.9119 19.1404 16.6587C19.2462 16.4056 19.3012 16.134 19.3021 15.8596ZM24.3313 13.7842C24.883 13.7842 25.4124 14.0024 25.8039 14.3912C26.1953 14.78 26.4171 15.3079 26.4209 15.8596C26.42 16.134 26.365 16.4056 26.2591 16.6587C26.1532 16.9119 25.9985 17.1417 25.8039 17.3351C25.6092 17.5285 25.3783 17.6816 25.1244 17.7858C24.8705 17.8899 24.5986 17.9431 24.3242 17.9421C23.7712 17.9421 23.2408 17.723 22.8492 17.3326C22.4575 16.9423 22.2365 16.4126 22.2346 15.8596C22.2384 15.3079 22.4602 14.78 22.8516 14.3912C23.2431 14.0024 23.7725 13.7842 24.3242 13.7842H24.3313Z"] },
-  tkBookmark: { fill: true, vb: [34, 34], d: ["M9.5 3.75415C7.84315 3.75415 6.5 5.0973 6.5 6.75415V27.9488C6.5 28.8055 7.19448 29.4999 8.05117 29.4999C8.34438 29.4999 8.63158 29.4168 8.87948 29.2603L18 23.4999L27.1205 29.2603C27.3684 29.4168 27.6556 29.4999 27.9488 29.4999C28.8055 29.4999 29.5 28.8055 29.5 27.9488V6.75415C29.5 5.0973 28.1569 3.75415 26.5 3.75415H9.5Z"] },
-  tkShare: { fill: true, rule: "evenodd", vb: [34, 34], d: ["M18.105 2.88296C17.9086 2.68901 17.6593 2.55733 17.3884 2.50441C17.1175 2.45149 16.837 2.47969 16.5821 2.58546C16.329 2.68925 16.1125 2.86582 15.9599 3.09281C15.8073 3.31979 15.7256 3.58696 15.725 3.86046V9.76796C11.9 10.0159 8.61333 11.3263 6.21208 13.7913C3.52042 16.5396 2.125 20.563 2.125 25.6346C2.125 26.1942 2.465 26.6971 2.98917 26.9096C3.50625 27.1221 4.10833 27.0017 4.505 26.6121C6.87083 24.2675 9.92375 23.3821 12.4738 23.1059C13.7487 22.9642 14.8608 22.9784 15.6613 23.035H15.725V29.4313C15.725 29.9838 16.0508 30.4796 16.5608 30.6992C17.0708 30.9117 17.6658 30.8125 18.0696 30.4371L31.4358 18.0484C31.5714 17.922 31.68 17.7696 31.7551 17.6002C31.8302 17.4308 31.8703 17.248 31.8729 17.0628C31.8756 16.8775 31.8407 16.6936 31.7705 16.5221C31.7002 16.3507 31.596 16.1952 31.4642 16.065L18.105 2.88296Z"] },
-  tkMusic: { fill: true, rule: "evenodd", vb: [20, 22], d: ["M17.7191 2.90724C17.7191 2.53422 17.3794 2.2578 17.0228 2.3405L7.91095 4.45353C7.65152 4.51368 7.46739 4.74895 7.46739 5.02026V18.7383H7.46682C7.48192 19.9979 6.20805 21.3082 4.38992 21.805C2.36043 22.3596 0.421329 21.6907 0.058803 20.3108C-0.303729 18.931 1.04759 17.363 3.07706 16.8084C3.81659 16.6063 4.54414 16.5667 5.18774 16.6647V5.02026C5.18774 3.66361 6.10826 2.48743 7.40549 2.1866L16.5173 0.0735664C18.3005 -0.339971 19.9987 1.04225 19.9987 2.90724V15.9032C20.0465 17.177 18.7637 18.5138 16.923 19.0168C14.8934 19.5714 12.9544 18.9024 12.5919 17.5226C12.2293 16.1428 13.5807 14.5747 15.6101 14.0201C16.349 13.8183 17.0759 13.7785 17.7191 13.8762V2.90724Z"] },
-  tkClose: { fill: true, rule: "evenodd", vb: [20, 20], d: ["M16.061 2.97194C15.9754 2.88642 15.8595 2.83838 15.7385 2.83838C15.6176 2.83838 15.5016 2.88642 15.4161 2.97194L10 8.38802L4.58393 2.97194C4.49841 2.88642 4.38243 2.83838 4.26149 2.83838C4.14055 2.83838 4.02457 2.88642 3.93905 2.97194L2.97175 3.93925C2.88623 4.02476 2.83819 4.14074 2.83819 4.26168C2.83819 4.38262 2.88623 4.4986 2.97175 4.58412L8.38783 10.0002L2.97175 15.4163C2.88623 15.5018 2.83819 15.6178 2.83819 15.7387C2.83819 15.8597 2.88623 15.9756 2.97175 16.0612L3.93905 17.0285C4.02457 17.114 4.14055 17.162 4.26149 17.162C4.38243 17.162 4.49841 17.114 4.58393 17.0285L10 11.6124L15.4161 17.0285C15.5016 17.114 15.6176 17.162 15.7385 17.162C15.8595 17.162 15.9754 17.114 16.061 17.0285L17.0283 16.0612C17.1138 15.9756 17.1618 15.8597 17.1618 15.7387C17.1618 15.6178 17.1138 15.5018 17.0283 15.4163L11.6122 10.0002L17.0283 4.58412C17.1138 4.4986 17.1618 4.38262 17.1618 4.26168C17.1618 4.14074 17.1138 4.02476 17.0283 3.93925L16.061 2.97194Z"] },
-
-  menuV: { fill: true, rule: "evenodd", d: [
-    "M13.5 7C13.5 7.82843 12.8284 8.5 12 8.5C11.1716 8.5 10.5 7.82843 10.5 7C10.5 6.17157 11.1716 5.5 12 5.5C12.8284 5.5 13.5 6.17157 13.5 7Z",
-    "M12 13.5C12.8284 13.5 13.5 12.8284 13.5 12C13.5 11.1716 12.8284 10.5 12 10.5C11.1716 10.5 10.5 11.1716 10.5 12C10.5 12.8284 11.1716 13.5 12 13.5Z",
-    "M12 18.5C12.8284 18.5 13.5 17.8284 13.5 17C13.5 16.1716 12.8284 15.5 12 15.5C11.1716 15.5 10.5 16.1716 10.5 17C10.5 17.8284 11.1716 18.5 12 18.5Z",
-  ] },
-
-    stClose: { fill: true, rule: "evenodd", vb: [20, 20], d: ["M16.061 2.97194C15.9754 2.88642 15.8595 2.83838 15.7385 2.83838C15.6176 2.83838 15.5016 2.88642 15.4161 2.97194L10 8.38802L4.58393 2.97194C4.49841 2.88642 4.38243 2.83838 4.26149 2.83838C4.14055 2.83838 4.02457 2.88642 3.93905 2.97194L2.97175 3.93925C2.88623 4.02476 2.83819 4.14074 2.83819 4.26168C2.83819 4.38262 2.88623 4.4986 2.97175 4.58412L8.38783 10.0002L2.97175 15.4163C2.88623 15.5018 2.83819 15.6178 2.83819 15.7387C2.83819 15.8597 2.88623 15.9756 2.97175 16.0612L3.93905 17.0285C4.02457 17.114 4.14055 17.162 4.26149 17.162C4.38243 17.162 4.49841 17.114 4.58393 17.0285L10 11.6124L15.4161 17.0285C15.5016 17.114 15.6176 17.162 15.7385 17.162C15.8595 17.162 15.9754 17.114 16.061 17.0285L17.0283 16.0612C17.1138 15.9756 17.1618 15.8597 17.1618 15.7387C17.1618 15.6178 17.1138 15.5018 17.0283 15.4163L11.6122 10.0002L17.0283 4.58412C17.1138 4.4986 17.1618 4.38262 17.1618 4.26168C17.1618 4.14074 17.1138 4.02476 17.0283 3.93925L16.061 2.97194Z"] },
-  stHeart: { sw: 2, vb: [30, 30], d: ["M19.0557 2.83984C20.5112 2.37267 22.0728 2.38737 23.5195 2.88281C24.9665 3.37842 26.2273 4.33084 27.1221 5.60645C28.017 6.88223 28.5 8.4166 28.5 9.99219C28.4999 14.0493 26.4702 17.6812 23.9248 20.6357C21.383 23.5859 18.3697 25.8105 16.5039 27.043C15.5798 27.6533 14.4207 27.6524 13.4971 27.041C11.6314 25.8061 8.61831 23.5773 6.07617 20.626C3.53017 17.6701 1.50012 14.0403 1.5 9.99219C1.5 8.4166 1.98304 6.88223 2.87793 5.60645C3.77271 4.33084 5.03348 3.37842 6.48047 2.88281C7.92719 2.38737 9.48884 2.37267 10.9443 2.83984C12.3998 3.30709 13.6777 4.23372 14.5957 5.49121L15 6.04492L15.4043 5.49121C16.3223 4.23372 17.6002 3.30709 19.0557 2.83984Z"] },
-  stShare: { sw: 2, vb: [30, 30], d: ["M14.9127 3.00201C14.9127 2.11111 15.9897 1.66502 16.6197 2.29498L27.4976 13.1739C28.2787 13.9549 28.2787 15.221 27.4976 16.002L16.6197 26.8809C15.9898 27.5108 14.9129 27.0646 14.9127 26.1739V20.2452C8.25093 20.2452 5.21339 22.0849 3.56991 23.6807C2.91941 24.3124 1.93557 23.9599 2.0035 23.0557C2.82764 12.0868 9.09623 9.49344 14.9127 8.58795V3.00201Z"] },
-    chevDown: { sw: 2.5, d: ["M6 9l6 6 6-6"] },
-  speakerOff: { fill: true, rule: "evenodd", d: [
-    "M4 9v6h4l5 4V5L8 9H4z",
-    "M16 9.4L17.4 8l2.1 2.1L21.6 8L23 9.4l-2.1 2.1L23 13.6l-1.4 1.4-2.1-2.1L17.4 15 16 13.6l2.1-2.1z",
-  ] },
-
-  liLike: { fill: true, rule: "evenodd", d: ["M19.4604 11L15.5504 7.09002C14.7818 6.32038 14.2032 5.38224 13.8604 4.35002L13.3704 2.88002C13.1864 2.33317 12.8357 1.85772 12.3676 1.5205C11.8994 1.18329 11.3373 1.00126 10.7604 1.00002C10.3992 0.998703 10.0414 1.06853 9.70724 1.20552C9.37309 1.3425 9.06919 1.54397 8.8129 1.7984C8.55661 2.05283 8.35294 2.35525 8.21353 2.6884C8.07412 3.02154 8.00169 3.37888 8.00038 3.74002V4.86002C8.00261 5.82832 8.15786 6.79018 8.46038 7.71002L8.89038 9.00002H4.12038C3.55812 9.00002 3.01889 9.22337 2.62131 9.62095C2.22373 10.0185 2.00038 10.5578 2.00038 11.12C2.00176 11.4656 2.08603 11.8058 2.24611 12.112C2.4062 12.4183 2.63743 12.6816 2.92038 12.88C2.63717 13.0734 2.40537 13.333 2.24506 13.6362C2.08476 13.9394 2.00077 14.2771 2.00038 14.62C1.99243 15.0425 2.10975 15.4579 2.33754 15.8138C2.56533 16.1698 2.8934 16.4503 3.28038 16.62C3.10063 16.9229 3.00404 17.2678 3.00038 17.62C2.99951 18.1621 3.20632 18.6839 3.5783 19.0782C3.95028 19.4725 4.45917 19.7093 5.00038 19.74V19.88C5.00038 20.4423 5.22374 20.9815 5.62131 21.3791C6.01889 21.7767 6.55812 22 7.12038 22H14.6104C15.8524 21.9989 17.0775 21.7115 18.1904 21.16L18.5004 21H21.0004V11H19.4604ZM19.0004 19H18.0004L17.2704 19.37C16.4332 19.7816 15.5133 19.9971 14.5804 20H7.72038C7.49723 20.0089 7.27754 19.9428 7.0963 19.8123C6.91507 19.6819 6.78273 19.4945 6.72038 19.28L6.47038 18.41L5.62038 18C5.4246 17.9203 5.25914 17.7805 5.14774 17.6009C5.03635 17.4212 4.98476 17.2108 5.00038 17L5.17038 16L4.41038 15.26C4.24503 15.0985 4.14072 14.8848 4.1152 14.655C4.08967 14.4253 4.14451 14.1939 4.27038 14L4.93038 12.91L4.20038 11.81C4.15861 11.7593 4.12748 11.7006 4.10885 11.6376C4.09022 11.5745 4.08447 11.5084 4.09193 11.4431C4.0994 11.3777 4.11993 11.3146 4.1523 11.2574C4.18468 11.2002 4.22823 11.15 4.28038 11.11C4.37533 11.031 4.49711 10.9916 4.62038 11H11.6704L10.3604 7.08002C10.1215 6.36426 9.99994 5.61458 10.0004 4.86002V3.75002C10.0054 3.5527 10.0861 3.36486 10.2257 3.22529C10.3652 3.08572 10.5531 3.00508 10.7504 3.00002C10.9072 3.00014 11.06 3.0494 11.1874 3.14088C11.3147 3.23236 11.4102 3.36146 11.4604 3.51002L12.0004 5.00002C12.4318 6.31493 13.1607 7.51263 14.1304 8.50002L18.6304 13H19.0004V19Z"] },
-  liSearch: { fill: true, rule: "evenodd", d: ["M21.41 18.59L16.14 13.31C16.7027 12.2975 16.9987 11.1584 17 10C17 8.61553 16.5895 7.26216 15.8203 6.11101C15.0511 4.95987 13.9579 4.06266 12.6788 3.53285C11.3997 3.00303 9.99224 2.86441 8.63437 3.13451C7.2765 3.4046 6.02922 4.07129 5.05026 5.05026C4.07129 6.02922 3.4046 7.2765 3.13451 8.63437C2.86441 9.99224 3.00303 11.3997 3.53285 12.6788C4.06266 13.9579 4.95987 15.0511 6.11101 15.8203C7.26216 16.5895 8.61553 17 10 17C11.1584 16.9987 12.2975 16.7027 13.31 16.14L18.59 21.41C18.9726 21.7377 19.4648 21.9089 19.9681 21.8894C20.4715 21.87 20.9489 21.6613 21.3051 21.3051C21.6613 20.9489 21.87 20.4715 21.8894 19.9681C21.9089 19.4648 21.7377 18.9726 21.41 18.59ZM5 10C5 9.0111 5.29325 8.0444 5.84265 7.22215C6.39206 6.39991 7.17296 5.75904 8.08659 5.38061C9.00022 5.00217 10.0055 4.90315 10.9755 5.09608C11.9454 5.289 12.8363 5.76521 13.5355 6.46447C14.2348 7.16373 14.711 8.05465 14.9039 9.02455C15.0969 9.99446 14.9978 10.9998 14.6194 11.9134C14.241 12.8271 13.6001 13.6079 12.7779 14.1574C11.9556 14.7068 10.9889 15 10 15C8.67392 15 7.40215 14.4732 6.46447 13.5355C5.52679 12.5979 5 11.3261 5 10Z"]},
-  liComment: { fill: true, rule: "evenodd", d: ["M7 9H17V10H7V9ZM7 13H14V12H7V13ZM23 11C23.0148 12.0949 22.7643 13.1772 22.2697 14.1541C21.7751 15.1311 21.0512 15.9738 20.16 16.61L12 22V18H8C6.14348 18 4.36301 17.2625 3.05025 15.9497C1.7375 14.637 1 12.8565 1 11C1 9.14348 1.7375 7.36301 3.05025 6.05025C4.36301 4.7375 6.14348 4 8 4H16C17.8565 4 19.637 4.7375 20.9497 6.05025C22.2625 7.36301 23 9.14348 23 11ZM21 11C21 9.67392 20.4732 8.40215 19.5355 7.46447C18.5979 6.52678 17.3261 6 16 6H8C6.67392 6 5.40215 6.52678 4.46447 7.46447C3.52678 8.40215 3 9.67392 3 11C3 12.3261 3.52678 13.5979 4.46447 14.5355C5.40215 15.4732 6.67392 16 8 16H14V18.28L19 15C19.6336 14.5463 20.1469 13.9448 20.4955 13.2477C20.844 12.5507 21.0172 11.7791 21 11Z"]},
-  liHome: { fill: true, d: ["M23 9V11H21V18C21 18.7956 20.6839 19.5587 20.1213 20.1213C19.5587 20.6839 18.7956 21 18 21H14V15H10V21H6C5.20435 21 4.44129 20.6839 3.87868 20.1213C3.31607 19.5587 3 18.7956 3 18V11H1V9L12 2L17 5.18V2H20V7.09L23 9Z"]},
-  liRepost: { fill: true, rule: "evenodd", d: ["M13.96 5H6C5.45 5 5 5.45 5 6V16H3V6C3 4.34 4.34 3 6 3H13.96L12 0H14.37L17 4L14.37 8H12L13.96 5ZM19.5 8H19V18C19 18.55 18.55 19 18 19H10.04L12 16H9.63L7 20L9.63 24H12L10.04 21H18C19.66 21 21 19.66 21 18V8H19.5Z"]},
-  liSend: { fill: true, d: ["M21 3L0 10L7.66 14.26L16 8L9.74 16.34L14 24L21 3Z"]},
-  liLove: { fill: true, rule: "evenodd", d: [""]},
-  liGlobe: { fill: true, vb: [16, 16], d: ["M8 1C6.61553 1 5.26216 1.41054 4.11101 2.17971C2.95987 2.94888 2.06266 4.04213 1.53285 5.32122C1.00303 6.6003 0.86441 8.00776 1.13451 9.36563C1.4046 10.7235 2.07129 11.9708 3.05026 12.9497C4.02922 13.9287 5.2765 14.5954 6.63437 14.8655C7.99224 15.1356 9.3997 14.997 10.6788 14.4672C11.9579 13.9373 13.0511 13.0401 13.8203 11.889C14.5895 10.7378 15 9.38447 15 8C15 6.14348 14.2625 4.36301 12.9497 3.05025C11.637 1.7375 9.85652 1 8 1ZM3 8C3 6.91815 3.35089 5.86548 4 5L4.55 5.55C4.69233 5.68951 4.80544 5.85599 4.8827 6.03971C4.95996 6.22342 4.99984 6.4207 5 6.62V7.69C5.00018 7.88885 5.07931 8.07948 5.22 8.22L5.78 8.78C5.92052 8.92069 6.11116 8.99983 6.31 9H7V9.69C7.00018 9.88884 7.07931 10.0795 7.22 10.22L7.78 10.78C7.9207 10.9205 7.99983 11.1112 8 11.31V13C6.67392 13 5.40215 12.4732 4.46447 11.5355C3.52679 10.5979 3 9.32608 3 8ZM9.24 12.83L11.24 10.37C11.3295 10.259 11.3855 10.1248 11.4014 9.9831C11.4174 9.84141 11.3926 9.69811 11.33 9.57L10.75 8.41C10.6805 8.27433 10.5719 8.16269 10.4381 8.08957C10.3044 8.01646 10.1517 7.98525 10 8H7V7.81C7.00096 7.71654 7.02758 7.62513 7.07696 7.54577C7.12634 7.46641 7.19658 7.40215 7.28 7.36L7.66 7.17C7.76509 7.11564 7.88169 7.08727 8 7.08727C8.11832 7.08727 8.23491 7.11564 8.34 7.17L9 7.5L9.38 6.8C9.45958 6.65258 9.50084 6.48753 9.5 6.32V5.47C9.50062 5.27316 9.57564 5.08384 9.71 4.94L10.78 3.85C11.5827 4.38684 12.2127 5.14463 12.594 6.03181C12.9753 6.91899 13.0916 7.8976 12.9287 8.84942C12.7658 9.80124 12.3308 10.6855 11.6762 11.3955C11.0217 12.1054 10.1755 12.6106 9.24 12.85V12.83Z"] },
-  liPlus: { fill: true, vb: [16, 16], d: ["M14 9H9V14H7V9H2V7H7V2H9V7H14V9Z"] },
-  liMsg: { fill: true, d: ["M16 4H8C6.14348 4 4.36301 4.7375 3.05025 6.05025C1.7375 7.36301 1 9.14348 1 11C1 12.8565 1.7375 14.637 3.05025 15.9497C4.36301 17.2625 6.14348 18 8 18H12V22L20.16 16.61C21.0512 15.9738 21.7751 15.1311 22.2697 14.1541C22.7643 13.1772 23.0148 12.0949 23 11C23 9.14348 22.2625 7.36301 20.9497 6.05025C19.637 4.7375 17.8565 4 16 4ZM8 12.25C7.75277 12.25 7.5111 12.1767 7.30554 12.0393C7.09998 11.902 6.93976 11.7068 6.84515 11.4784C6.75054 11.2499 6.72579 10.9986 6.77402 10.7561C6.82225 10.5137 6.9413 10.2909 7.11612 10.1161C7.29093 9.9413 7.51366 9.82225 7.75614 9.77402C7.99861 9.72579 8.24995 9.75054 8.47835 9.84515C8.70676 9.93976 8.90199 10.1 9.03934 10.3055C9.17669 10.5111 9.25 10.7528 9.25 11C9.25 11.3315 9.1183 11.6495 8.88388 11.8839C8.64946 12.1183 8.33152 12.25 8 12.25ZM12 12.25C11.7528 12.25 11.5111 12.1767 11.3055 12.0393C11.1 11.902 10.9398 11.7068 10.8452 11.4784C10.7505 11.2499 10.7258 10.9986 10.774 10.7561C10.8222 10.5137 10.9413 10.2909 11.1161 10.1161C11.2909 9.9413 11.5137 9.82225 11.7561 9.77402C11.9986 9.72579 12.2499 9.75054 12.4784 9.84515C12.7068 9.93976 12.902 10.1 13.0393 10.3055C13.1767 10.5111 13.25 10.7528 13.25 11C13.25 11.3315 13.1183 11.6495 12.8839 11.8839C12.6495 12.1183 12.3315 12.25 12 12.25ZM16 12.25C15.7528 12.25 15.5111 12.1767 15.3055 12.0393C15.1 11.902 14.9398 11.7068 14.8452 11.4784C14.7505 11.2499 14.7258 10.9986 14.774 10.7561C14.8222 10.5137 14.9413 10.2909 15.1161 10.1161C15.2909 9.9413 15.5137 9.82225 15.7561 9.77402C15.9986 9.72579 16.2499 9.75054 16.4784 9.84515C16.7068 9.93976 16.902 10.1 17.0393 10.3055C17.1767 10.5111 17.25 10.7528 17.25 11C17.25 11.3315 17.1183 11.6495 16.8839 11.8839C16.6495 12.1183 16.3315 12.25 16 12.25Z"] },
-  liNetwork: { fill: true, d: ["M12 16V22H3V16C3 15.2044 3.31607 14.4413 3.87868 13.8787C4.44129 13.3161 5.20435 13 6 13H9C9.79565 13 10.5587 13.3161 11.1213 13.8787C11.6839 14.4413 12 15.2044 12 16ZM17.5 13C18.1922 13 18.8689 12.7947 19.4445 12.4102C20.0201 12.0256 20.4687 11.4789 20.7336 10.8394C20.9985 10.1999 21.0678 9.49613 20.9328 8.81719C20.7977 8.13826 20.4644 7.51462 19.9749 7.02514C19.4854 6.53565 18.8618 6.20231 18.1828 6.06726C17.5039 5.93221 16.8002 6.00153 16.1606 6.26643C15.5211 6.53134 14.9744 6.97994 14.5899 7.55552C14.2053 8.13109 14 8.80778 14 9.50001C14 10.4283 14.3688 11.3185 15.0251 11.9749C15.6815 12.6313 16.5717 13 17.5 13ZM18.5 15H16.5C15.837 15 15.2011 15.2634 14.7322 15.7322C14.2634 16.2011 14 16.837 14 17.5V22H21V17.5C21 16.837 20.7366 16.2011 20.2678 15.7322C19.7989 15.2634 19.163 15 18.5 15ZM7.5 2.00001C6.60999 2.00001 5.73996 2.26393 4.99994 2.7584C4.25991 3.25286 3.68314 3.95567 3.34254 4.77794C3.00195 5.6002 2.91283 6.505 3.08647 7.37792C3.2601 8.25083 3.68868 9.05265 4.31802 9.68199C4.94736 10.3113 5.74918 10.7399 6.6221 10.9135C7.49501 11.0872 8.39981 10.9981 9.22208 10.6575C10.0443 10.3169 10.7471 9.7401 11.2416 9.00008C11.7361 8.26006 12 7.39003 12 6.50001C12.0013 5.90869 11.8858 5.32294 11.6601 4.77638C11.4345 4.22982 11.103 3.73322 10.6849 3.31509C10.2668 2.89696 9.7702 2.56555 9.22364 2.33987C8.67708 2.11419 8.09132 1.99869 7.5 2.00001Z"] },
-  liPost: { fill: true, d: ["M18 3H6C5.20435 3 4.44129 3.31607 3.87868 3.87868C3.31607 4.44129 3 5.20435 3 6V18C3 18.7956 3.31607 19.5587 3.87868 20.1213C4.44129 20.6839 5.20435 21 6 21H18C18.7956 21 19.5587 20.6839 20.1213 20.1213C20.6839 19.5587 21 18.7956 21 18V6C21 5.20435 20.6839 4.44129 20.1213 3.87868C19.5587 3.31607 18.7956 3 18 3ZM13 11H17V13H13V17H11V13H7V11H11V7H13V11Z"] },
-  liBell: { fill: true, d: ["M22 19H13.72C13.9002 19.3037 13.9968 19.6496 13.9999 20.0027C14.0031 20.3558 13.9127 20.7034 13.738 21.0102C13.5633 21.3171 13.3104 21.5722 13.0052 21.7496C12.6999 21.9271 12.3531 22.0206 12 22.0206C11.6469 22.0206 11.3001 21.9271 10.9948 21.7496C10.6896 21.5722 10.4367 21.3171 10.262 21.0102C10.0873 20.7034 9.99692 20.3558 10.0001 20.0027C10.0032 19.6496 10.0998 19.3037 10.28 19H2V18C2.04883 16.9493 2.46259 15.9485 3.17 15.17L4.17 14H19.87L20.87 15.17C21.5702 15.9496 21.9707 16.9525 22 18V19ZM18.21 7.44C18.009 5.93505 17.2688 4.55416 16.1267 3.5537C14.9846 2.55323 13.5183 2.00117 12 2C10.4817 2.00117 9.01538 2.55323 7.87331 3.5537C6.73124 4.55416 5.99099 5.93505 5.79 7.44L5 13H19L18.21 7.44Z"] },
-  liJobs: { fill: true, d: ["M17 6V5C17 4.20435 16.6839 3.44129 16.1213 2.87868C15.5587 2.31607 14.7956 2 14 2H10C9.20435 2 8.44129 2.31607 7.87868 2.87868C7.31607 3.44129 7 4.20435 7 5V6H2V10C2 10.7956 2.31607 11.5587 2.87868 12.1213C3.44129 12.6839 4.20435 13 5 13H19C19.7956 13 20.5587 12.6839 21.1213 12.1213C21.6839 11.5587 22 10.7956 22 10V6H17ZM9 5C9 4.73478 9.10536 4.48043 9.29289 4.29289C9.48043 4.10536 9.73478 4 10 4H14C14.2652 4 14.5196 4.10536 14.7071 4.29289C14.8946 4.48043 15 4.73478 15 5V6H9V5ZM19 14C19.5695 13.9968 20.1317 13.872 20.6491 13.634C21.1664 13.396 21.627 13.0503 22 12.62V17C22 17.7956 21.6839 18.5587 21.1213 19.1213C20.5587 19.6839 19.7956 20 19 20H5C4.20435 20 3.44129 19.6839 2.87868 19.1213C2.31607 18.5587 2 17.7956 2 17V12.62C2.373 13.0503 2.83358 13.396 3.35095 13.634C3.86831 13.872 4.43053 13.9968 5 14H19Z"] },
-
-  fbHome: { fill: true, rule: "evenodd", d: ["M10.6 3.3a2.2 2.2 0 0 1 2.8 0l6.6 5.4c.6.5.9 1.2.9 2V18a3 3 0 0 1-3 3H6.1a3 3 0 0 1-3-3v-7.3c0-.8.3-1.5.9-2l6.6-5.4Z M10.6 13.5h2.8a.6.6 0 0 1 .6.6v3.8a.6.6 0 0 1-.6.6h-2.8a.6.6 0 0 1-.6-.6v-3.8a.6.6 0 0 1 .6-.6Z"] },
-  fbReels: { sw: 1.8, d: ["M6 3h12a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3Z", "M3 8.5h18", "M8.5 3l2.7 5.5", "M13.5 3l2.7 5.5", "M10.5 12.3l4.2 2.5-4.2 2.5Z"] },
-  fbFriends: { sw: 1.8, d: ["M9 11a3.5 3.5 0 1 0 0-7a3.5 3.5 0 0 0 0 7Z", "M2.8 20c.5-3.2 3-5.2 6.2-5.2s5.7 2 6.2 5.2", "M16.5 11.5a2.5 2.5 0 1 0 0-5a2.5 2.5 0 0 0 0 5Z", "M17 14.4c2 .3 3.6 1.8 4.1 3.8"] },
-  fbMarket: { sw: 1.8, d: ["M4 11v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8", "M3 9.5l1.8-4.9a1.5 1.5 0 0 1 1.4-1h11.6a1.5 1.5 0 0 1 1.4 1L21 9.5c0 1.4-1.1 2.5-2.5 2.5S16 10.9 16 9.5c0 1.4-1.1 2.5-2.5 2.5h-3C9.1 12 8 10.9 8 9.5 8 10.9 6.900 12 5.500 12S3 10.900 3 9.500Z", "M9.5 21v-4a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v4"] },
-  fbBell: { sw: 1.8, d: ["M12 3a6 6 0 0 0-6 6v4.5L4.300 17h15.400L18 13.500V9a6 6 0 0 0-6-6Z", "M9.800 20a2.400 2.400 0 0 0 4.400 0"] },
-
-    thumbsUp: { d: ["M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"] },
-  globe: { d: ["M12 2a10 10 0 1 0 0 20a10 10 0 1 0 0-20z", "M2 12h20", "M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"] },
-};
-
-// Instagram type scale, in iOS points on a 390pt-wide screen. Tune sizes here and all three pages follow.
-const IG_FONT = 'Inter, -apple-system, "SF Pro Text", "Helvetica Neue", sans-serif';
-const IG_T = {
-  title: [16, 700], // Reels / Friends tabs
-  name: [14, 600],  // usernames, story caption
-  body: [13, 400],  // captions, liked by, placeholders
-  bodyB: [13, 600], // Follow buttons
-  count: [13, 500], // like / comment / share counts
-  rail: [13, 600],  // Reels side-rail counts
-  meta: [12, 400],  // subtitles, timestamps
-  song: [11, 400],  // Post audio line
-};
-
-const IG_AVATAR = 32; // avatar diameter in pt, used by Post, Reels and Stories
- const IG_POST_STATUS_H = 12; // space above the Post header for the status bar, in u (1u = 1% of screen width)
-const IG_REELS_TOP_Y = 20; // Reels top nav center, in u. Sits below the dynamic island / notch on every device.
-
-// Default "Liked by" photo. Swap for a file path if you'd rather use a real image.
-const IG_LIKER_DEFAULT =
-  "data:image/svg+xml;utf8," +
-  encodeURIComponent(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><rect width="64" height="64" fill="#E4C9D6"/><circle cx="32" cy="25" r="11" fill="#FFFFFF" fill-opacity="0.9"/><path d="M10 64c0-14 10-23 22-23s22 9 22 23z" fill="#FFFFFF" fill-opacity="0.9"/></svg>`
-  );
-
-let igMeasureCtx;
-const igTextW = (str, size, weight, font = IG_FONT) => {
-  igMeasureCtx ??= document.createElement("canvas").getContext("2d");
-  igMeasureCtx.font = `${weight} ${size}px ${font}`;
-  return igMeasureCtx.measureText(str ?? "").width;
-};
-
-// Instagram overlay (Post / Reels / Stories). Coordinates come from 390pt-wide iPhone screenshots, so 100u = screen width.
-function instagramOps(s, w, h) {
-  s = { ...socialDefaults("instagram", s.mode), ...s };
-  const u = Math.min(w, h * 0.5625) / 100;
-  const pt = (n) => (n * u * 100) / 390; // iOS points -> frame px
-  const M = pt(12); // side margin
-  const mode = modeOf("instagram", s.mode).value;
-  const dark = mode !== "post" || s.theme === "dark";
-  const bg = dark ? "#0B0F14" : "#FFFFFF";
-  const fg = dark ? "#F5F5F5" : "#262626";
-  const sub = dark ? "#A8A8A8" : "#737373";
-  const white = "#FFFFFF";
-  const hair = Math.max(1, 0.15 * u);
-  const initial = ((s.name ?? "").replace(/^@/, "").trim()[0] || "?").toUpperCase();
-  const ops = [];
-
-  const type = (k) => (typeof k === "string" ? { size: pt(IG_T[k][0]), weight: IG_T[k][1] } : k);
-  const tw = (str, k, weight) => {
-    const f = type(k);
-    return igTextW(str, f.size, weight ?? f.weight);
-  };
-
-  const rect = (x, y, rw, rh, fill, r = 0, stroke, sw) => ops.push({ t: "rect", x, y, w: rw, h: rh, fill, r, stroke, sw });
-  const grad = (x, y, gw, gh, from, to) => ops.push({ t: "vgrad", x, y, w: gw, h: gh, from, to });
-  const dot = (cx, cy, r, fill) => ops.push({ t: "circle", cx, cy, r, fill });
-  const dotG = (cx, cy, r, colors) => ops.push({ t: "circle", cx, cy, r, grad: colors });
-  const icon = (name, cx, cy, size, color) => ops.push({ t: "icon", name, cx, cy, size, color });
-  const text = (str, x, y, k, color, o = {}) => {
-    const f = type(k);
-    ops.push({ t: "text", text: str ?? "", x, y, s: f.size, color, weight: o.weight ?? f.weight, align: o.align ?? "left", maxW: o.maxW, font: IG_FONT });
-  };
-  const rich = (runs, x, y, k, color, maxW) =>
-    ops.push({ t: "text", runs, text: "", x, y, s: type(k).size, color, weight: 400, align: "left", maxW, font: IG_FONT });
-  const AV_R = pt(IG_AVATAR) / 2;
-  const avatar = (cx, cy) => {
-    if (s.avatar) {
-      ops.push({ t: "image", src: s.avatar, cx, cy, r: AV_R });
-      return;
-    }
-    dot(cx, cy, AV_R, "#B8B8BE");
-    text(initial, cx, cy, { size: AV_R * 0.9, weight: 700 }, "#3A3A3C", { align: "center" });
-  };
-  const liker = (cx, cy, r) => ops.push({ t: "image", src: IG_LIKER_DEFAULT, cx, cy, r });
-  if (mode === "story") {
-    rect(0, 0, w, 14 * u, "#0B0F14");
-    rect(0, h - 25.6 * u, w, 25.6 * u, "#0B0F14");
-    grad(0, 14 * u, w, 18 * u, "rgba(0,0,0,0.35)", "rgba(0,0,0,0)");
-    const segs = 4, gap = 0.4 * u, by = 16 * u, bh = Math.max(1, 0.35 * u);
-    const sw = (w - 3.8 * u - gap * (segs - 1)) / segs;
-    for (let i = 0; i < segs; i++) {
-      const x = 1.9 * u + i * (sw + gap);
-      rect(x, by, sw, bh, "rgba(255,255,255,0.35)", bh / 2);
-      if (i === 0) rect(x, by, sw * 0.4, bh, white, bh / 2);
-    }
-    const hy = 21.8 * u, ax = M + AV_R, nx = ax + AV_R + pt(10);
-    avatar(ax, hy);
-    text(s.name, nx, hy, "name", white, { maxW: 35 * u });
-    text(s.extra, nx + Math.min(tw(s.name, "name"), 35 * u) + pt(8), hy, "meta", "rgba(255,255,255,0.75)", { maxW: 14 * u });
-    icon("dots", w - 13.7 * u, hy, 5.5 * u, white);
-    icon("close", w - 4.6 * u, hy, 5.6 * u, white);
-    const ry = h - 14.7 * u;
-    rect(3.6 * u, ry - 4.85 * u, w - 26.4 * u, 9.7 * u, null, 4.85 * u, "rgba(255,255,255,0.6)", hair);
-    text("Send message...", 8.4 * u, ry, "body", "rgba(255,255,255,0.9)");
-    icon("heart", w - 16 * u, ry, 6.2 * u, white); // anchored to the right edge
-    icon("send", w - 6.4 * u, ry, 6.2 * u, white);
-    return ops;
-  }
-
-  if (mode === "reels") {
-    grad(0, 0, w, (IG_REELS_TOP_Y + 13) * u, "rgba(0,0,0,0.4)", "rgba(0,0,0,0)");
-    grad(0, h - 64 * u, w, 45 * u, "rgba(0,0,0,0)", "rgba(0,0,0,0.55)");
-    const topY = IG_REELS_TOP_Y * u;
-    icon("back", 8.4 * u, topY, 6 * u, white);
-    const wR = tw("Reels", "title"), wF = tw("Friends", "title"), tabGap = pt(20);
-    const x0 = w / 2 - (wR + tabGap + wF) / 2; // tabs centered on the frame
-    text("Reels", x0, topY, "title", white);
-    text("Friends", x0 + wR + tabGap, topY, "title", "rgba(255,255,255,0.65)");
-    icon("sliders", w - 19.3 * u, topY, 6 * u, white); // anchored to the right edge
-    icon("search", w - 7.5 * u, topY, 6 * u, white);
-
-    const rx = w - 7 * u;
-    [["heart", s.extra, 105.4, 98.8], ["comment", s.comments, 89.9, 83.5], ["repost", s.reposts, 74.1, 66.9], ["send", s.shares, 57.8, 51.5], ["bookmark", s.saves, 41.8, 35.8]].forEach(
-      ([ic, n, iy, ny]) => {
-        icon(ic, rx, h - iy * u, 6.3 * u, white);
-        text(n, rx, h - ny * u, "rail", white, { align: "center" });
-      }
-    );
-    icon("menuV", rx, h - 26.8 * u, 5.5 * u, white);
-
-    const ay = h - 41.7 * u, tx = M + AV_R * 2 + pt(10);
-    avatar(M + AV_R, ay);
-    text(s.name, tx, h - 44.05 * u, "name", white, { maxW: 28 * u });
-    const reelAudio = [s.artist, s.song].filter(Boolean).join(" · ");
-    if (reelAudio) {
-      icon("music", tx + pt(5), h - 39.65 * u, pt(14), "rgba(255,255,255,0.8)");
-      text(reelAudio, tx + pt(12), h - 39.65 * u, "meta", "rgba(255,255,255,0.8)", { maxW: w - tx - 18 * u - pt(12) });
-    }
-    text(s.caption, 3.7 * u, h - 32.5 * u, "body", white, { maxW: w - 18 * u });
-    liker(5.6 * u, h - 25.4 * u, 2 * u);
-    rich([["Liked by ", 400], [s.likedBy, 600], [" and ", 400], [s.likedOthers, 600]], 9.1 * u, h - 25.4 * u, "body", white, w - 30 * u);
-
-    rect(0, h - 19.2 * u, w, hair * 2.4, "rgba(255,255,255,0.3)");
-    rect(0, h - 19.2 * u, w * 0.84, hair * 2.4, white);
-    rect(0, h - 18.9 * u, w, 18.9 * u, "#0B0F14");
-    rect(3.6 * u, h - 11.7 * u - 5.25 * u, w - 6.8 * u, 10.5 * u, "#1B2026", 5.25 * u);
-    text("Add comment...", 8.3 * u, h - 11.7 * u, "body", "rgba(255,255,255,0.9)");
-    return ops;
-  }
-
-  // ----- Post -----
-  const SB = IG_POST_STATUS_H * u; // status bar area, header hangs below it
-  rect(0, 0, w, SB + 12 * u, bg);
-  avatar(M + AV_R, SB + 6 * u);
-  const hx = M + AV_R * 2 + pt(10);
-  const headMax = w - 10.1 * u - hx - pt(8); // room up to the menu icon
-  text(s.name, hx, SB + 3.9 * u, "name", fg, { maxW: headMax });
-  const audio = [s.artist, s.song].filter(Boolean).join(" · ");
-  if (audio) {
-    icon("music", hx + pt(5), SB + 8.3 * u, pt(16), sub);
-    text(audio, hx + pt(12), SB + 8.3 * u, "song", sub, { maxW: headMax - pt(12) });
-  }
-  icon("menu", w - 5 * u, SB + 6 * u, 5.5 * u, fg);
-
-  rect(0, h - 50 * u, w, 50 * u, bg);
-  [0, 1, 2].forEach((i) => dot(w / 2 + (i - 1) * 2.3 * u, h - 47 * u, 0.6 * u, i === 0 ? "#5B6BFF" : dark ? "#4A4D52" : "#C7C7CC"));
-
-  // Action row: spacing comes from measured text width, not a per-character guess.
-  const cy = h - 41 * u, ICO = 6.2 * u;
-  const halfW = (ic) => (ICONS[ic].vb ? ICONS[ic].vb[0] / 2 : 10) * (ICO / 24);
-  let x = M;
-  [["heart", s.extra], ["comment", s.comments], ["repost", s.reposts], ["send", s.shares]].forEach(([ic, n]) => {
-    const hx = halfW(ic);
-    icon(ic, x + hx, cy, ICO, fg);
-    x += hx * 2 + pt(6); // icon -> count
-    text(n, x, cy, "count", fg);
-    x += tw(n, "count") + pt(16); // count -> next icon
-  });
-  icon("bookmark", w - M - ICO * (8 / 24), cy, ICO, fg);
-
-  const lr = pt(9);
-  liker(M + lr, h - 33.4 * u, lr);
-  rich([["Liked by ", 400], [s.likedBy, 600], [" and ", 400], [s.likedOthers, 600]], M + lr * 2 + pt(6), h - 33.4 * u, "body", fg, w - 12 * u);
-  const cap = s.caption ?? "";
-  const long = cap.length > 34;
-  rich(
-    [[s.name ?? "", 600], [" " + (long ? cap.slice(0, 34) + "…" : cap), 400], ...(long ? [[" more", 400, sub]] : [])],
-    M, h - 28.6 * u, "body", fg, w - 6 * u
-  );
-  text(s.time, M, h - 24.3 * u, "meta", sub);
-
-  // floating nav pill: fixed 100u-wide layout, centered on the frame
-  const navX = (w - 100 * u) / 2;
-  rect(navX + 5.2 * u, h - 18.2 * u, 89.6 * u, 12.6 * u, dark ? "#171B20" : "#FFFFFF", 6.3 * u, dark ? "rgba(255,255,255,0.10)" : "rgba(0,0,0,0.10)", hair);
-  rect(navX + 6.3 * u, h - 17.2 * u, 19 * u, 10.6 * u, dark ? "#3B3F45" : "#EDEDED", 5.3 * u);
-  const ny = h - 11.9 * u;
-  icon("home", navX + 15.9 * u, ny, 6 * u, fg);
-  icon("reels", navX + 32.9 * u, ny, 6 * u, fg);
-  icon("send", navX + 50 * u, ny, 6 * u, fg);
-  icon("search", navX + 67.1 * u, ny, 6 * u, fg);
-  if (s.avatar) {
-    ops.push({ t: "image", src: s.avatar, cx: navX + 84.1 * u, cy: ny, r: 3.3 * u });
-  } else {
-    dot(navX + 84.1 * u, ny, 3.3 * u, "#B8B8BE");
-    text(initial, navX + 84.1 * u, ny, { size: 3 * u, weight: 700 }, "#3A3A3C", { align: "center" });
-  }
-  dot(navX + 52.7 * u, ny + 1.7 * u, 0.65 * u, "#FF3040");
-  dot(navX + 86.6 * u, ny + 1.9 * u, 0.65 * u, "#FF3040");
-  return ops;
-}
-
-// WhatsApp Status type scale, in iOS points on a 390pt-wide screen.
-const WA_T = {
-  name: [13, 600],
-  time: [12, 400],
-  caption: [17, 400],
-  reply: [15, 400],
-};
-
-// Asks the device for its system font (SF Pro on Apple devices), then falls back to Inter.
-const WA_FONT = '-apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", Inter, "Helvetica Neue", Arial, sans-serif';
-
-const WA_EMOJI = ["1f60d", "1f602", "1f62e"].map((c) => `${import.meta.env.BASE_URL}emoji/${c}.png`);
-
-// Splits text into lines that fit maxW, measured the same way as the Instagram overlay.
-function igWrap(str, size, weight, maxW, font) {
-  const lines = [];
-  let line = "";
-  (str ?? "").split(/\s+/).filter(Boolean).forEach((word) => {
-    const next = line ? `${line} ${word}` : word;
-    if (line && igTextW(next, size, weight, font) > maxW) {
-      lines.push(line);
-      line = word;
-    } else line = next;
-  });
-  if (line) lines.push(line);
-  return lines;
-}
-
-function whatsappOps(s, w, h) {
-  s = { ...socialDefaults("whatsapp", s.mode), ...s };
-  const u = Math.min(w, h * 0.5625) / 100;
-  const pt = (n) => (n * u * 100) / 390;
-  const white = "#FFFFFF";
-  const glass = "rgba(255,255,255,0.2)";
-  const initial = ((s.name ?? "").trim()[0] || "?").toUpperCase();
-  const ops = [];
-
-  const rect = (x, y, rw, rh, fill, r = 0) => ops.push({ t: "rect", x, y, w: rw, h: rh, fill, r });
-  const grad = (x, y, gw, gh, from, to) => ops.push({ t: "vgrad", x, y, w: gw, h: gh, from, to });
-  const dot = (cx, cy, r, fill) => ops.push({ t: "circle", cx, cy, r, fill });
-  const icon = (name, cx, cy, size, color) => ops.push({ t: "icon", name, cx, cy, size, color });
-  const text = (str, x, y, k, color, o = {}) => {
-    const [size, weight] = typeof k === "string" ? [pt(WA_T[k][0]), WA_T[k][1]] : [k.size, k.weight];
-    ops.push({ t: "text", text: str ?? "", x, y, s: size, color, weight, align: o.align ?? "left", maxW: o.maxW, font: WA_FONT });
-  };
-
-  // fades behind the header and the caption / reply area
-  grad(0, 0, w, 34 * u, "rgba(0,0,0,0.5)", "rgba(0,0,0,0)");
-  grad(0, h - 50 * u, w, 50 * u, "rgba(0,0,0,0)", "rgba(0,0,0,0.6)");
-
-  // progress bar (one status, about 60% played)
-  const pbH = Math.max(1, 0.85 * u), pbY = 16.3 * u - pbH / 2, pbX = 1.85 * u, pbW = w - 3.7 * u;
-  rect(pbX, pbY, pbW, pbH, "rgba(255,255,255,0.4)", pbH / 2);
-  rect(pbX, pbY, pbW * 0.6, pbH, white, pbH / 2);
-
-  // header
-  const hy = 23.2 * u, ax = 12.7 * u, ar = pt(16), nx = 19.6 * u;
-  icon("back", 4.2 * u, hy, 6.3 * u, white);
-  if (s.avatar) {
-    ops.push({ t: "image", src: s.avatar, cx: ax, cy: hy, r: ar });
-  } else {
-    dot(ax, hy, ar, "#B8B8BE");
-    text(initial, ax, hy, { size: ar * 0.9, weight: 700 }, "#3A3A3C", { align: "center" });
-  }
-  text(s.name, nx, 21.4 * u, "name", white, { maxW: 68 * u });
-  text(s.extra, nx, 25.2 * u, "time", "rgba(255,255,255,0.9)", { maxW: 68 * u });
-  icon("moreCircle", w - 4.7 * u, hy, 5.8 * u, white);
-
-  // caption, bottom-anchored so a second line grows upward
-  const capSize = pt(WA_T.caption[0]);
-  const lines = igWrap(s.caption, capSize, WA_T.caption[1], w - 7.4 * u, WA_FONT).slice(0, 4);
-  lines.forEach((ln, i) =>
-    text(ln, w / 2, h - 29 * u - (lines.length - 1 - i) * capSize * 1.25, "caption", white, { align: "center" })
-  );
-
-  // divider + reply row
-  rect(1.85 * u, h - 23.1 * u, w - 3.7 * u, Math.max(1, 0.25 * u), "rgba(255,255,255,0.45)");
-  const cy = h - 15 * u;
-  rect(3.6 * u, cy - 4.45 * u, 82.7 * u, 8.9 * u, glass, 4.45 * u);
-  text("Reply", 6.7 * u, cy, "reply", "rgba(255,255,255,0.8)");
-  WA_EMOJI.forEach((src, i) => ops.push({ t: "image", src, cx: (66.1 + i * 7.7) * u, cy, r: pt(10), sq: true }));
-  dot(w - 7.3 * u, cy, 4.5 * u, glass);
-  icon("heart", w - 7.3 * u, cy, 5.5 * u, white);
-
-  return ops;
-}
-
-const TT_FONT = '"TikTok Sans", -apple-system, "SF Pro Text", Inter, "Helvetica Neue", sans-serif';
-// Type scale in iOS points on a 390pt-wide screen.
-const TT_T = {
-  tab: [15, 500],
-  tabOn: [15, 700],
-  name: [15, 700],
-  body: [14, 400],
-  sound: [14, 500],
-};
-const TT_RED = "#FE2C55";
-const TT_DESIGN_W = 414; // the Figma frame the rail / nav CSS was exported from
-const TT_RAIL = { right: 9, bottom: 100 };
-
-// Default sound cover, used when neither a sound avatar nor a profile picture is uploaded.
-const TT_SOUND_DEFAULT =
-  "data:image/svg+xml;utf8," +
-  encodeURIComponent(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="98" height="98" viewBox="0 0 98 98"><rect width="98" height="98" fill="#2B2B2E"/><circle cx="49" cy="49" r="28" fill="#3A3A3E"/><circle cx="49" cy="49" r="6" fill="#151515"/></svg>`
-  );
-
-function tiktokOps(s, w, h) {
-  s = { ...socialDefaults("tiktok", s.mode), ...s };
-  const u = Math.min(w, h * 0.5625) / 100;
-  const pt = (n) => (n * u * 100) / 390;         // screenshot measurements
-  const d = (n) => (n * u * 100) / TT_DESIGN_W;  // Figma CSS measurements
-  const white = "#FFFFFF";
-  const white90 = "rgba(255,255,255,0.9)";
-  const dim = "rgba(255,255,255,0.6)";
-  const initial = ((s.name ?? "").replace(/^@/, "").trim()[0] || "?").toUpperCase();
-  const ops = [];
-
-  const type = (k) => (typeof k === "string" ? { size: pt(TT_T[k][0]), weight: TT_T[k][1] } : k);
-  const tw = (str, k) => {
-    const f = type(k);
-    return igTextW(str, f.size, f.weight, TT_FONT);
-  };
-  const rect = (x, y, rw, rh, fill, r = 0) => ops.push({ t: "rect", x, y, w: rw, h: rh, fill, r });
-  const grad = (x, y, gw, gh, from, to) => ops.push({ t: "vgrad", x, y, w: gw, h: gh, from, to });
-  const dot = (cx, cy, r, fill) => ops.push({ t: "circle", cx, cy, r, fill });
-  // Icons render at their exported size: 1 viewBox unit = 1 design pt.
-  const ic = (name, cx, cy, color, scale = 1) => ops.push({ t: "icon", name, cx, cy, size: d(24 * scale), color });
-  const text = (str, x, y, k, color, o = {}) => {
-    const f = type(k);
-    ops.push({ t: "text", text: str ?? "", x, y, s: f.size, color, weight: o.weight ?? f.weight, align: o.align ?? "left", maxW: o.maxW, font: TT_FONT });
-  };
-
-  // ----- layout anchors -----
-  const navH = d(87);
-  const navTop = h - navH;
-  const colCx = (i) => (w * (2 * i + 1)) / 10; // 5 equal columns across the full width
-
-  // fades behind the top tabs and the caption / nav
-  grad(0, 0, w, pt(130), "rgba(0,0,0,0.3)", "rgba(0,0,0,0)");
-  grad(0, navTop - pt(164), w, pt(164), "rgba(0,0,0,0)", "rgba(0,0,0,0.35)");
-
-  // ----- top tabs: measured widths + fixed gap, group centered on the screen -----
-  const ty = pt(74);
-  ic("tkLive", pt(26), ty, white, 0.9);
-  ic("tkSearch", w - pt(26), ty, white, 0.9);
-  const tabs = [["STEM", "tab"], ["Community", "tab"], ["Following", "tab"], ["For You", "tabOn"]];
-  const widths = tabs.map(([l, k]) => tw(l, k));
-  const gap = pt(18);
-  let tx = w / 2 - (widths.reduce((a, b) => a + b, 0) + gap * (tabs.length - 1)) / 2;
-  tabs.forEach(([l, k], i) => {
-    text(l, tx, ty, k, k === "tabOn" ? white : dim);
-    if (k === "tabOn") rect(tx + widths[i] / 2 - pt(10), ty + pt(15), pt(20), pt(2), white, pt(1));
-    tx += widths[i] + gap;
-  });
-
-  // ----- right rail: 49 x 403 column, right 9 / bottom 100 -----
-  const railL = w - d(TT_RAIL.right + 49);
-  const railT = h - d(TT_RAIL.bottom + 403);
-  const colX = railL + d(24.5);
-
-  // profile picture: 47 x 47 at (0, 0) of the rail, 1.2pt white border drawn inside
-  const PFP = 47, PFP_BORDER = 1.2;
-  const avCx = railL + d(PFP / 2), avCy = railT + d(PFP / 2);
-  dot(avCx, avCy, d(PFP / 2), white);
-  if (s.avatar) {
-    ops.push({ t: "image", src: s.avatar, cx: avCx, cy: avCy, r: d(PFP / 2 - PFP_BORDER) });
-  } else {
-    dot(avCx, avCy, d(PFP / 2 - PFP_BORDER), "#B8B8BE");
-    text(initial, avCx, avCy, { size: d(PFP / 2 - PFP_BORDER) * 0.9, weight: 700 }, "#3A3A3C", { align: "center" });
-  }
-  const fbX = railL + d(24), fbY = railT + d(49);
-  dot(fbX, fbY, d(11), TT_RED);
-  ic("tkPlus", fbX, fbY, white);
-
-  // 49pt items (34 icon + 15 label), 20pt gap, first one 78pt below the top
-  [["tkHeart", s.extra], ["tkComment", s.comments], ["tkBookmark", s.saves], ["tkShare", s.shares]].forEach(([name, n], i) => {
-    const top = railT + d(78 + i * 69);
-    ic(name, colX, top + d(17), white90);
-    text(n, colX, top + d(41.5), { size: d(13), weight: 500 }, white, { align: "center" });
-  });
-
-  // music disc: 49pt, 29pt cover
-  // sound avatar: 49 x 49 image, no vinyl ring. Falls back to the profile picture, then a default cover.
-  const dcY = railT + d(354 + 24.5);
-  ops.push({ t: "image", src: s.soundAvatar || s.avatar || TT_SOUND_DEFAULT, cx: colX, cy: dcY, r: d(24.5) });
-
-  // ----- bottom info: rows 21-22pt apart, sound row clears the progress bar -----
-  const lx = pt(10.5);
-  const infoMax = railL - lx - pt(10);
-  text(s.name, lx, navTop - pt(60), "name", white, { maxW: infoMax });
-  text(s.caption, lx, navTop - pt(39), "body", white, { maxW: infoMax });
-  ic("tkMusic", pt(16), navTop - pt(17), white90, 0.55);
-  text(s.sound, pt(27), navTop - pt(17), "sound", white, { maxW: Math.min(pt(178), infoMax - pt(16)) });
-
-  // progress bar: thin line 3pt above the nav
-  const py = navTop - pt(3), trackW = w - pt(21), played = trackW * 0.05;
-  rect(lx, py - pt(0.75), trackW, pt(1.5), "rgba(255,255,255,0.35)", pt(0.75));
-  rect(lx, py - pt(0.75), played, pt(1.5), white, pt(0.75));
-  dot(lx + played, py, pt(2.6), white);
-
-  // ----- navigation bar: 87pt tall, black, 0.5pt #333 top border -----
-  rect(0, navTop, w, navH, "#000000");
-  rect(0, navTop, w, Math.max(1, d(0.5)), "#333333");
-
-  // icon box 25pt (exports are 20pt, so 1.25x); label 10pt/500, 13pt line
-  [["tkHome", "Home", 0, white], ["tkFriends", "Friends", 1, dim], ["tkInbox", "Inbox", 3, dim], ["tkProfile", "Profile", 4, dim]].forEach(
-    ([name, label, col, color]) => {
-      ic(name, colCx(col), navTop + d(20.5), color, 1.25);
-      text(label, colCx(col), navTop + d(40.5), { size: d(10), weight: 500 }, color, { align: "center" });
-    }
-  );
-
-  // badges: 17pt pill, radius 9, 14pt/500 text with 4pt side padding
-  const badge = (str, cx, cy) => {
-    if (!str) return;
-    const f = { size: d(14), weight: 500 };
-    const bw = Math.max(d(17), igTextW(str, f.size, f.weight, TT_FONT) + d(8));
-    rect(cx - bw / 2, cy - d(8.5), bw, d(17), TT_RED, d(9));
-    text(str, cx, cy, f, white, { align: "center" });
-  };
-  badge(s.friendsBadge, colCx(1) + d(14.1), navTop + d(12));
-  badge(s.inboxBadge, colCx(3) + d(14.1), navTop + d(12));
-
-  // create button: 46.25 x 31.25, from the CSS insets
-  const ox = colCx(2) + d(0.12) - d(23.125), oy = navTop + d(23.62) - d(15.625);
-  const cb = (x, y, rw, rh, fill, r) => rect(ox + d(x), oy + d(y), d(rw), d(rh), fill, d(r));
-  cb(8.066, 0.5375, 38.184, 30.175, "#FA2D6C", 13.9);
-  cb(0, 0.5375, 38.184, 30.175, "#20D5EC", 13.9);
-  cb(3.765, 0.5375, 38.72, 30.175, white, 8.6);
-  cb(15.86, 14.545, 13.99, 2.69, "#161823", 0.7); // plus, horizontal bar
-  cb(21.515, 8.89, 2.69, 13.99, "#161823", 0.7);  // plus, vertical bar
-
-  return ops;
-}
-
-// TikTok Stories type scale, in iOS points on a 390pt-wide screen.
-const TTS_T = { name: [15, 600], meta: [15, 400], reply: [16, 400] };
-const TTS_H = 847;   // screen height in pt (390 x 847)
-const TTS_TOP = 55;  // black cover over the status bar, in pt. Set to 0 if your screenshots keep theirs.
-
-function tiktokStoryOps(s, w, h) {
-  s = { ...socialDefaults("tiktok", "story"), ...s };
-  const u = Math.min(w, h * 0.5625) / 100;
-  const pt = (n) => (n * u * 100) / 390;
-  const by = (y) => h - pt(TTS_H - y); // y from the top of the 390x847 screen, anchored to the bottom
-  const white = "#FFFFFF";
-  const initial = ((s.name ?? "").replace(/^@/, "").trim()[0] || "?").toUpperCase();
-  const ops = [];
-
-  const type = (k) => (typeof k === "string" ? { size: pt(TTS_T[k][0]), weight: TTS_T[k][1] } : k);
-  const tw = (str, k) => {
-    const f = type(k);
-    return igTextW(str, f.size, f.weight, TT_FONT);
-  };
-  const rect = (x, y, rw, rh, fill, r = 0) => ops.push({ t: "rect", x, y, w: rw, h: rh, fill, r });
-  const grad = (x, y, gw, gh, from, to) => ops.push({ t: "vgrad", x, y, w: gw, h: gh, from, to });
-  const dot = (cx, cy, r, fill) => ops.push({ t: "circle", cx, cy, r, fill });
-  // `box` = the icon's on-screen width in pt, whatever its viewBox is.
-  const icon = (name, cx, cy, box, color) =>
-    ops.push({ t: "icon", name, cx, cy, size: (pt(box) * 24) / (ICONS[name].vb?.[0] ?? 24), color });
-  const text = (str, x, y, k, color, o = {}) => {
-    const f = type(k);
-    ops.push({ t: "text", text: str ?? "", x, y, s: f.size, color, weight: o.weight ?? f.weight, align: o.align ?? "left", maxW: o.maxW, font: TT_FONT });
-  };
-
-  const M = pt(10.5); // side margin
-
-  // black bars: over the status bar, and behind the reply row (with a hairline divider)
-  if (TTS_TOP > 0) rect(0, 0, w, pt(TTS_TOP), "#000000");
-  rect(0, by(760), w, pt(87), "#000000");
-  rect(0, by(760), w, Math.max(1, pt(0.5)), "#262626");
-  grad(0, pt(TTS_TOP), w, pt(60), "rgba(0,0,0,0.35)", "rgba(0,0,0,0)");
-
-  // progress bar: one story, about 11% played
-  const pbH = pt(3), pbY = pt(61.8) - pbH / 2, pbW = w - M * 2;
-  rect(M, pbY, pbW, pbH, "rgba(255,255,255,0.4)", pbH / 2);
-  rect(M, pbY, pbW * 0.11, pbH, white, pbH / 2);
-
-  // header: 29pt avatar, name + "· time", close icon
-  const hy = pt(88.8), AV = pt(29), ar = AV / 2, nx = M + AV + pt(7);
-  if (s.avatar) {
-    ops.push({ t: "image", src: s.avatar, cx: M + ar, cy: hy, r: ar });
-  } else {
-    dot(M + ar, hy, ar, "#B8B8BE");
-    text(initial, M + ar, hy, { size: ar * 0.9, weight: 700 }, "#3A3A3C", { align: "center" });
-  }
-  const nameW = Math.min(tw(s.name, "name"), pt(175));
-  text(s.name, nx, hy, "name", white, { maxW: nameW });
-  if (s.extra) text(`· ${s.extra}`, nx + nameW + pt(6), hy, "meta", "rgba(255,255,255,0.6)", { maxW: w - (nx + nameW + pt(6)) - pt(46) });
-  icon("stClose", w - pt(25), hy, 18, white);
-
-  // reply row: 42pt pill, two emoji, like + share
-  const ry = by(793.8);
-  const pillW = w - M - pt(96); // fills the space left of the heart and share icons
-  const pillR = M + pillW;      // right end of the pill
-  rect(M, ry - pt(21), pillW, pt(42), "#333333", pt(21));
-  text("Message...", pt(29.6), ry, "reply", "rgba(255,255,255,0.55)");
-  ops.push({ t: "image", src: WA_EMOJI[0], cx: pillR - pt(57.3), cy: ry, r: pt(11), sq: true }); // pinned to the pill's right end
-  ops.push({ t: "image", src: WA_EMOJI[1], cx: pillR - pt(20.1), cy: ry, r: pt(11), sq: true });
-  icon("stHeart", w - pt(65.4), by(793.2), 24, white);  // anchored to the right edge
-  icon("stShare", w - pt(27), by(793.2), 24, white);
-
-  return ops;
-}
-
-const LI_FONT = WA_FONT;
-// Type scale in iOS points, measured from a 440pt-wide screenshot (iPhone 16 Pro Max). [size, weight]
-const LI_T = {
-  tab: [15, 600], name: [15, 600], degree: [11, 400], headline: [11.25, 400], time: [11, 400],
-  follow: [12.5, 600], body: [13.25, 400], count: [13.25, 400], search: [13.25, 400],
-  action: [12.25, 600], nav: [12.5, 400], navOn: [12.5, 500], next: [13.5, 600], badge: [13, 600],
-};
-// Nominal icon box sizes in pt. Retune these once the real SVGs are in.
-const LI_ICON = { search: 18, msg: 26, plus: 20, globe: 17, action: 19, nav: 24, react: 8 };
-const LI_DARK = {
-  bar: "#1D2226", bg: "#1C1E23", text: "rgba(255,255,255,0.9)", sub: "rgba(255,255,255,0.6)", sub2: "rgba(255,255,255,0.65)",
-  icon: "rgba(255,255,255,0.75)", link: "#70B7FA", hair: "#77787B", div: "#383A3E", border: "#777A7D",
-  badge: "#FC94A3", badgeText: "#1D2226", active: "rgba(255,255,255,0.9)",
-};
-const LI_LIGHT = {
-  bar: "#FFFFFF", bg: "#FFFFFF", text: "rgba(0,0,0,0.9)", sub: "rgba(0,0,0,0.6)", sub2: "rgba(0,0,0,0.6)",
-  icon: "rgba(0,0,0,0.6)", link: "#0A66C2", hair: "rgba(0,0,0,0.15)", div: "rgba(0,0,0,0.08)", border: "rgba(0,0,0,0.6)",
-  badge: "#CC1016", badgeText: "#FFFFFF", active: "rgba(0,0,0,0.9)",
-};
-const LI_LOVE_BADGE =
-  "data:image/svg+xml;utf8," +
-  encodeURIComponent(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 15C11.866 15 15 11.866 15 8C15 4.13401 11.866 1 8 1C4.13401 1 1 4.13401 1 8C1 11.866 4.13401 15 8 15Z" fill="#DF704D"/><path fill-rule="evenodd" clip-rule="evenodd" d="M7.70902 4.99954C7.20511 4.54226 6.54408 4.29721 5.86386 4.31553C5.18364 4.33385 4.53676 4.61411 4.05818 5.09785C3.5796 5.58159 3.30629 6.23143 3.29527 6.91181C3.28425 7.5922 3.53637 8.25055 3.99902 8.74954L7.99902 12.7495L11.999 8.74954C12.2466 8.5041 12.4432 8.21203 12.5773 7.89021C12.7115 7.5684 12.7805 7.22319 12.7805 6.87454C12.7805 6.52588 12.7115 6.18068 12.5773 5.85886C12.4432 5.53704 12.2466 5.24498 11.999 4.99954C11.7566 4.75565 11.4683 4.56207 11.1509 4.42992C10.8334 4.29778 10.4929 4.22968 10.149 4.22954C9.80481 4.22745 9.46368 4.29453 9.14589 4.42681C8.82809 4.55908 8.54011 4.75384 8.29903 4.99954L7.99902 5.29954L7.70902 4.99954Z" fill="#FFF3F0" stroke="#77280C"/><path d="M7.71064 4.99973C7.46863 4.75331 7.17995 4.55757 6.86145 4.42396C6.54296 4.29035 6.20103 4.22153 5.85564 4.22153C5.51026 4.22153 5.16833 4.29035 4.84983 4.42396C4.53134 4.55757 4.24266 4.75331 4.00064 4.99973C3.52043 5.49585 3.25195 6.15926 3.25195 6.84973C3.25195 7.54019 3.52043 8.2036 4.00064 8.69973L8.00064 12.6997L12.0006 8.69973C12.4809 8.2036 12.7493 7.54019 12.7493 6.84973C12.7493 6.15926 12.4809 5.49585 12.0006 4.99973C11.7601 4.75268 11.4724 4.55636 11.1546 4.42239C10.8369 4.28842 10.4955 4.21951 10.1506 4.21973C9.8058 4.21951 9.46441 4.28842 9.14666 4.42239C8.82891 4.55636 8.54123 4.75268 8.30064 4.99973L8.00064 5.24973L7.71064 4.99973Z" stroke="#77280C" stroke-linecap="round" stroke-linejoin="round"/></svg>`
-  );
-
-  const liBadge = (svg) => "data:image/svg+xml;utf8," + encodeURIComponent(svg);
-
-const LI_LIKE_BADGE = liBadge(
-  `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 15C11.866 15 15 11.866 15 8C15 4.13401 11.866 1 8 1C4.13401 1 1 4.13401 1 8C1 11.866 4.13401 15 8 15Z" fill="#378FE9"/><path fill-rule="evenodd" clip-rule="evenodd" d="M11.93 7.25012H11.38C11.33 7.25012 11.23 7.06012 10.98 6.79012C10.61 6.39012 10.2 5.88012 9.91002 5.60012C9.18946 4.97656 8.6012 4.21489 8.18002 3.36012C7.94002 2.85012 7.92002 2.62012 7.43002 2.62012C7.23747 2.64731 7.06202 2.74546 6.93807 2.8953C6.81413 3.04514 6.75063 3.23588 6.76002 3.43012C6.76002 3.57012 6.83002 4.06012 6.86002 4.23012C7.0729 5.01245 7.41057 5.75532 7.86002 6.43012H4.12002C3.99819 6.42925 3.87752 6.45369 3.76563 6.50189C3.65374 6.55009 3.55308 6.621 3.47002 6.71012C3.38655 6.79717 3.3228 6.90117 3.28311 7.01506C3.24343 7.12895 3.22873 7.25004 3.24002 7.37012C3.25543 7.60441 3.36081 7.82368 3.53413 7.98209C3.70744 8.1405 3.93528 8.22578 4.17002 8.22012H4.33002C4.12294 8.22775 3.92644 8.3135 3.78002 8.46012C3.64238 8.60591 3.56704 8.79964 3.57002 9.00012C3.57175 9.20162 3.64853 9.39524 3.78537 9.54317C3.9222 9.6911 4.10926 9.78271 4.31002 9.80012C4.18782 9.89361 4.09517 10.0204 4.04318 10.1652C3.99118 10.31 3.98206 10.4667 4.01688 10.6166C4.05171 10.7665 4.12902 10.9031 4.23954 11.0101C4.35006 11.1172 4.48911 11.1901 4.64002 11.2201C4.54145 11.3854 4.50929 11.582 4.55002 11.7701C4.60275 11.954 4.71459 12.1153 4.86824 12.2292C5.02189 12.3431 5.20879 12.4031 5.40002 12.4001H7.69002C7.98999 12.3987 8.28873 12.3618 8.58002 12.2901L10 11.8901H11.9C12.92 11.8501 13.19 7.25012 11.93 7.25012Z" fill="#D0E8FF"/><path d="M7.43088 6.43004H4.11088C3.98449 6.42886 3.85933 6.45492 3.74391 6.50645C3.62849 6.55797 3.52553 6.63376 3.44203 6.72865C3.35853 6.82354 3.29645 6.9353 3.26001 7.05633C3.22358 7.17736 3.21364 7.30482 3.23088 7.43004C3.25107 7.66165 3.35821 7.87704 3.53074 8.03287C3.70328 8.18871 3.92841 8.27345 4.16088 8.27004H4.32088C4.11381 8.27767 3.91731 8.36342 3.77088 8.51004C3.7003 8.58466 3.64535 8.67264 3.60929 8.76882C3.57322 8.86499 3.55677 8.96741 3.56088 9.07004C3.56456 9.27197 3.64174 9.46563 3.77797 9.61474C3.91419 9.76385 4.1001 9.85817 4.30088 9.88004C4.20525 9.95506 4.12773 10.0506 4.07407 10.1597C4.02041 10.2688 3.99198 10.3885 3.99088 10.51C3.9895 10.6981 4.05361 10.8808 4.17221 11.0268C4.29081 11.1727 4.45651 11.2729 4.64088 11.31C4.54167 11.4788 4.50955 11.6787 4.55088 11.87C4.60394 12.0529 4.71619 12.213 4.87001 12.3252C5.02384 12.4374 5.21056 12.4954 5.40088 12.49H7.69088C7.99085 12.4886 8.2896 12.4517 8.58088 12.38L10.0009 11.91H11.9009C12.9009 11.91 13.1709 7.27004 11.9009 7.27004C11.7177 7.28013 11.5341 7.28013 11.3509 7.27004C11.3509 7.27004 11.2009 7.08004 10.9509 6.81004C10.5809 6.41004 10.1709 5.90004 9.88088 5.62004C9.16907 4.99162 8.59094 4.22645 8.18088 3.37004C8.09962 3.1823 7.99185 3.00719 7.86088 2.85004C7.69433 2.70998 7.47944 2.64093 7.26247 2.65776C7.04551 2.6746 6.84384 2.77596 6.70088 2.94004C6.59725 3.05212 6.51278 3.1805 6.45088 3.32004C6.41177 3.41708 6.38164 3.5175 6.36088 3.62004C6.33405 3.90197 6.35776 4.18643 6.43088 4.46004C6.49055 4.7489 6.58107 5.03051 6.70088 5.30004C6.89034 5.65255 7.11124 5.98725 7.36088 6.30004C7.39174 6.31905 7.41613 6.34693 7.43088 6.38004" stroke="#004182" stroke-linecap="round" stroke-linejoin="round"/></svg>`
-);
-
-const LI_CELEBRATE_BADGE = liBadge(
-  `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1C9.85652 1 11.637 1.7375 12.9497 3.05025C14.2625 4.36301 15 6.14348 15 8C15 9.85652 14.2625 11.637 12.9497 12.9497C11.637 14.2625 9.85652 15 8 15C6.14348 15 4.36301 14.2625 3.05025 12.9497C1.7375 11.637 1 9.85652 1 8C1 6.14348 1.7375 4.36301 3.05025 3.05025C4.36301 1.7375 6.14348 1 8 1Z" fill="#D8D8D8"/><path fill-rule="evenodd" clip-rule="evenodd" d="M8 1C9.85652 1 11.637 1.7375 12.9497 3.05025C14.2625 4.36301 15 6.14348 15 8C15 9.85652 14.2625 11.637 12.9497 12.9497C11.637 14.2625 9.85652 15 8 15C6.14348 15 4.36301 14.2625 3.05025 12.9497C1.7375 11.637 1 9.85652 1 8C1 6.14348 1.7375 4.36301 3.05025 3.05025C4.36301 1.7375 6.14348 1 8 1Z" fill="white"/><path d="M8 15C11.866 15 15 11.866 15 8C15 4.13401 11.866 1 8 1C4.13401 1 1 4.13401 1 8C1 11.866 4.13401 15 8 15Z" fill="#6DAE4F"/><path d="M7.99958 1C9.38405 1 10.7374 1.41055 11.8886 2.17972C13.0397 2.94888 13.9369 4.04214 14.4667 5.32122C14.9966 6.6003 15.1352 8.00777 14.8651 9.36563C14.595 10.7235 13.9283 11.9708 12.9493 12.9497C11.9704 13.9287 10.7231 14.5954 9.36521 14.8655C8.00735 15.1356 6.59988 14.997 5.3208 14.4672C4.04171 13.9373 2.94846 13.0401 2.17929 11.889C1.41012 10.7379 0.999581 9.38447 0.999581 8C0.999581 6.14349 1.73708 4.36301 3.04983 3.05025C4.36259 1.7375 6.14307 1 7.99958 1ZM7.99958 2.47359e-06C6.14882 0.00145782 4.35581 0.644568 2.92604 1.81976C1.49627 2.99496 0.518198 4.62953 0.158455 6.445C-0.201289 8.26046 0.0795573 10.1445 0.953143 11.7761C1.82673 13.4077 3.23901 14.686 4.94937 15.3931C6.65972 16.1002 8.56234 16.1924 10.3331 15.654C12.1038 15.1156 13.6331 13.98 14.6604 12.4405C15.6876 10.901 16.1494 9.05295 15.9669 7.21121C15.7844 5.36946 14.969 3.64796 13.6596 2.34C12.9161 1.59733 12.0335 1.00842 11.0624 0.606911C10.0912 0.205406 9.05047 -0.000823887 7.99958 2.47359e-06Z" fill="white"/><path d="M12.1289 9.21995C12.1086 8.4344 11.9876 7.65471 11.7689 6.89995C11.1595 6.40073 10.6994 5.74338 10.4389 4.99995C10.2789 4.46995 10.1689 4.27995 9.6989 4.26995C9.5078 4.2926 9.33305 4.38881 9.2117 4.53816C9.09035 4.68751 9.03196 4.87826 9.0489 5.06995C9.0489 5.30995 9.0489 5.55995 9.1089 5.78995C9.24594 6.44562 9.44001 7.08806 9.6889 7.70995L5.1889 4.32995C5.11383 4.25683 5.02428 4.20025 4.92602 4.16386C4.82775 4.12747 4.72295 4.11208 4.61837 4.11867C4.51378 4.12527 4.41175 4.15371 4.31883 4.20215C4.22591 4.2506 4.14418 4.31798 4.0789 4.39995C4.03064 4.48325 3.99934 4.57528 3.9868 4.67074C3.97426 4.76619 3.98072 4.86318 4.00581 4.95613C4.03091 5.04907 4.07414 5.13614 4.13302 5.21231C4.1919 5.28848 4.26527 5.35225 4.3489 5.39995L6.5989 7.09995L7.1889 7.65995L3.6189 4.99995C3.52232 4.90427 3.40031 4.83834 3.26736 4.80998C3.13441 4.78162 2.99611 4.79202 2.8689 4.83995C2.74066 4.88501 2.6286 4.96695 2.54676 5.07547C2.46493 5.18399 2.41697 5.31427 2.4089 5.44995C2.39918 5.58427 2.42787 5.71858 2.49161 5.83722C2.55536 5.95585 2.65152 6.05391 2.7689 6.11995L4.9989 7.76995L6.3489 8.76995L3.4489 6.57995C3.37244 6.50906 3.28272 6.45401 3.18489 6.41797C3.08706 6.38193 2.98306 6.36561 2.8789 6.36995C2.66905 6.38854 2.47501 6.48915 2.3389 6.64995C2.0289 7.04995 2.2789 7.45995 2.5989 7.70995L4.8489 9.39995L5.9989 10.2499L3.7289 8.54995C3.65958 8.47448 3.57535 8.41423 3.48153 8.37302C3.38772 8.3318 3.28636 8.31052 3.1839 8.31052C3.08143 8.31052 2.98007 8.3318 2.88626 8.37302C2.79244 8.41423 2.70821 8.47448 2.6389 8.54995C2.57903 8.63599 2.53761 8.73349 2.51724 8.83631C2.49687 8.93913 2.49799 9.04506 2.52053 9.14743C2.54307 9.2498 2.58654 9.3464 2.64821 9.43116C2.70989 9.51592 2.78843 9.587 2.8789 9.63995L6.9789 12.6399C7.5789 13.0899 9.0489 13.4799 9.6989 12.9099" stroke="#165209" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path fill-rule="evenodd" clip-rule="evenodd" d="M12.61 9.89959L12.19 9.52959C12.1393 8.793 11.967 8.0699 11.68 7.38959C11.0935 6.69972 10.6789 5.88068 10.47 4.99959C10.31 4.46959 10.2 4.27959 9.73002 4.26959C9.53893 4.29225 9.36418 4.38846 9.24283 4.53781C9.12148 4.68716 9.06308 4.87791 9.08003 5.06959C9.08003 5.30959 9.08003 5.55959 9.14003 5.78959C9.2563 6.42101 9.44071 7.03795 9.69002 7.62959L9.50003 7.52959L5.19003 4.21959C5.11496 4.14648 5.02541 4.0899 4.92714 4.05351C4.82888 4.01712 4.72408 4.00173 4.61949 4.00832C4.51491 4.01492 4.41288 4.04336 4.31996 4.0918C4.22704 4.14025 4.14531 4.20763 4.08003 4.28959C4.02262 4.37529 3.98403 4.47218 3.96679 4.57388C3.94955 4.67557 3.95407 4.77977 3.98003 4.87959C4.00379 4.98014 4.04921 5.07428 4.11311 5.15546C4.17702 5.23664 4.25787 5.30289 4.35003 5.34959L6.55003 6.99959L7.19003 7.50959L3.62003 4.83959C3.54528 4.76625 3.45583 4.70961 3.35757 4.67341C3.25931 4.63721 3.15448 4.62228 3.05003 4.62959C2.94647 4.6359 2.84525 4.66307 2.75246 4.70946C2.65966 4.75586 2.5772 4.82053 2.51003 4.89959C2.45483 4.98629 2.41754 5.08315 2.40037 5.18448C2.38319 5.28581 2.38648 5.38955 2.41003 5.48959C2.42925 5.5957 2.47143 5.69632 2.53361 5.78441C2.5958 5.87251 2.67649 5.94595 2.77003 5.99959L5.00003 7.65959L6.35003 8.65959L3.45003 6.47959C3.37578 6.40498 3.28665 6.34682 3.18844 6.30892C3.09024 6.27102 2.98515 6.25421 2.88003 6.25959C2.77559 6.26656 2.67371 6.29503 2.58079 6.34321C2.48787 6.3914 2.4059 6.45825 2.34003 6.53959C2.28148 6.62447 2.24158 6.7208 2.22295 6.82221C2.20432 6.92363 2.20739 7.02784 2.23195 7.12799C2.25652 7.22814 2.30202 7.32194 2.36546 7.40323C2.4289 7.48451 2.50885 7.55144 2.60003 7.59959L4.85003 9.28959L6.00003 10.1396L3.73003 8.44959C3.66262 8.37234 3.5797 8.31015 3.48666 8.26707C3.39361 8.224 3.29254 8.20101 3.19003 8.19959C3.08623 8.20203 2.984 8.22544 2.88948 8.2684C2.79496 8.31136 2.71011 8.373 2.64003 8.44959C2.57881 8.53432 2.53624 8.63105 2.51512 8.73341C2.49399 8.83578 2.4948 8.94146 2.51747 9.0435C2.54014 9.14553 2.58418 9.2416 2.64667 9.32539C2.70916 9.40917 2.78869 9.47877 2.88003 9.52959L7.00003 12.6396C7.29304 12.863 7.62898 13.0236 7.98687 13.1114C8.34475 13.1991 8.71689 13.2121 9.08003 13.1496C9.28171 13.3061 9.52974 13.391 9.78503 13.391C10.0403 13.391 10.2883 13.3061 10.49 13.1496C11.09 12.6896 10.9 12.6396 11.34 12.0196C11.8422 11.3633 12.2683 10.652 12.61 9.89959Z" fill="#DCF0CB"/><path d="M12.1289 9.21995C12.1086 8.4344 11.9876 7.65471 11.7689 6.89995C11.1595 6.40073 10.6994 5.74338 10.4389 4.99995C10.2789 4.46995 10.1689 4.27995 9.6989 4.26995C9.5078 4.2926 9.33305 4.38881 9.2117 4.53816C9.09035 4.68751 9.03196 4.87826 9.0489 5.06995C9.0489 5.30995 9.0489 5.55995 9.1089 5.78995C9.24594 6.44562 9.44001 7.08806 9.6889 7.70995L5.1889 4.32995C5.11383 4.25683 5.02428 4.20025 4.92602 4.16386C4.82775 4.12747 4.72295 4.11208 4.61837 4.11867C4.51378 4.12527 4.41175 4.15371 4.31883 4.20215C4.22591 4.2506 4.14418 4.31798 4.0789 4.39995C4.03064 4.48325 3.99934 4.57528 3.9868 4.67074C3.97426 4.76619 3.98072 4.86318 4.00581 4.95613C4.03091 5.04907 4.07414 5.13614 4.13302 5.21231C4.1919 5.28848 4.26527 5.35225 4.3489 5.39995L6.5989 7.09995L7.1889 7.65995L3.6189 4.99995C3.52232 4.90427 3.40031 4.83834 3.26736 4.80998C3.13441 4.78162 2.99611 4.79202 2.8689 4.83995C2.74066 4.88501 2.6286 4.96695 2.54676 5.07547C2.46493 5.18399 2.41697 5.31427 2.4089 5.44995C2.39918 5.58427 2.42787 5.71858 2.49161 5.83722C2.55536 5.95585 2.65152 6.05391 2.7689 6.11995L4.9989 7.76995L6.3489 8.76995L3.4489 6.57995C3.37244 6.50906 3.28272 6.45401 3.18489 6.41797C3.08706 6.38193 2.98306 6.36561 2.8789 6.36995C2.66905 6.38854 2.47501 6.48915 2.3389 6.64995C2.0289 7.04995 2.2789 7.45995 2.5989 7.70995L4.8489 9.39995L5.9989 10.2499L3.7289 8.54995C3.65958 8.47448 3.57535 8.41423 3.48153 8.37302C3.38772 8.3318 3.28636 8.31052 3.1839 8.31052C3.08143 8.31052 2.98007 8.3318 2.88626 8.37302C2.79244 8.41423 2.70821 8.47448 2.6389 8.54995C2.57903 8.63599 2.53761 8.73349 2.51724 8.83631C2.49687 8.93913 2.49799 9.04506 2.52053 9.14743C2.54307 9.2498 2.58654 9.3464 2.64821 9.43116C2.70989 9.51592 2.78843 9.587 2.8789 9.63995L6.9789 12.6399C7.79647 13.1308 8.74935 13.348 9.6989 13.2599" stroke="#165209" stroke-width="0.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M14.7686 11.3899C14.567 11.173 14.4106 10.918 14.3086 10.6399C14.2949 10.4207 14.2614 10.2031 14.2086 9.98992C14.1773 9.60618 14.0538 9.23567 13.8486 8.90992C13.2672 8.22046 12.8531 7.40592 12.6386 6.52992C12.4786 5.99992 12.3686 5.80992 11.8986 5.79992C11.7042 5.81725 11.5245 5.9107 11.3986 6.05992C11.3393 6.13561 11.2955 6.22228 11.2697 6.31495C11.244 6.40762 11.2368 6.50447 11.2486 6.59992C11.2487 6.84117 11.2688 7.08199 11.3086 7.31992C11.4886 8.23992 11.6786 8.99992 11.6986 9.04992L7.40861 5.83992C7.33399 5.76581 7.2448 5.70799 7.14669 5.67012C7.04857 5.63225 6.94367 5.61516 6.83861 5.61992C6.7328 5.62555 6.62955 5.65446 6.5362 5.70459C6.44286 5.75472 6.36173 5.82483 6.29861 5.90992C6.24994 5.99263 6.21805 6.08413 6.20478 6.17917C6.1915 6.27422 6.1971 6.37095 6.22125 6.46383C6.2454 6.55671 6.28763 6.64392 6.34551 6.72047C6.4034 6.79701 6.47581 6.86139 6.55861 6.90992L8.80861 8.60992L9.48861 9.16992L5.88861 6.45992C5.81399 6.38581 5.7248 6.32799 5.62669 6.29012C5.52857 6.25225 5.42367 6.23516 5.31861 6.23992C5.16025 6.24156 5.00698 6.29609 4.88318 6.39485C4.75938 6.49361 4.67215 6.63093 4.63536 6.78497C4.59858 6.939 4.61435 7.10092 4.68017 7.24496C4.74599 7.389 4.85807 7.50691 4.99861 7.57992L7.24861 9.27992L8.59861 10.2799L5.70861 8.08992C5.63453 8.0161 5.54546 7.95905 5.44741 7.92265C5.34937 7.88624 5.24466 7.87133 5.14035 7.87891C5.03604 7.8865 4.93459 7.91641 4.84285 7.96662C4.7511 8.01682 4.67122 8.08616 4.60861 8.16992C4.29861 8.56992 4.53861 8.97992 4.86861 9.22992L7.11861 10.9099L8.23861 11.7599L5.99861 10.0599C5.86439 9.93039 5.68514 9.85799 5.49861 9.85799C5.31207 9.85799 5.13282 9.93039 4.99861 10.0599C4.93398 10.1403 4.88792 10.234 4.86372 10.3343C4.83951 10.4345 4.83777 10.5389 4.85861 10.6399C4.87818 10.7407 4.91852 10.8363 4.97706 10.9207C5.03559 11.005 5.11104 11.0763 5.19861 11.1299L9.19861 14.1299C9.53229 14.3805 9.91878 14.5515 10.3286 14.6299L10.9086 14.7199C11.2141 14.7617 11.5092 14.86 11.7786 15.0099C11.9716 15.0847 12.1856 15.0847 12.3786 15.0099C13.0805 14.7593 13.6951 14.3114 14.1486 13.7199C14.5669 13.1331 14.8096 12.4395 14.8486 11.7199C14.8783 11.5815 14.8783 11.4383 14.8486 11.2999L14.7686 11.3899Z" stroke="#165209" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path fill-rule="evenodd" clip-rule="evenodd" d="M14.8098 11.3399L14.3598 10.9999C14.3113 10.263 14.1388 9.53951 13.8498 8.85991C13.2684 8.17045 12.8543 7.3559 12.6398 6.47991C12.4798 5.94991 12.3698 5.75991 11.8998 5.74991C11.7053 5.76723 11.5256 5.86068 11.3998 6.00991C11.3404 6.0856 11.2966 6.17227 11.2709 6.26494C11.2452 6.35761 11.238 6.45445 11.2498 6.54991C11.2499 6.79115 11.2699 7.03197 11.3098 7.26991C11.4898 8.19991 11.6798 8.95991 11.6998 8.99991L7.40978 5.78991C7.33472 5.71679 7.24517 5.66021 7.1469 5.62382C7.04863 5.58743 6.94383 5.57204 6.83925 5.57864C6.73467 5.58523 6.63263 5.61367 6.53971 5.66211C6.4468 5.71056 6.36506 5.77794 6.29978 5.85991C5.98978 6.26991 6.23978 6.66991 6.55978 6.91991L8.80978 8.60991L9.48978 9.16991L5.88978 6.40991C5.81472 6.33679 5.72517 6.28021 5.6269 6.24382C5.52863 6.20743 5.42383 6.19204 5.31925 6.19864C5.21467 6.20523 5.11263 6.23367 5.01971 6.28211C4.9268 6.33056 4.84506 6.39794 4.77978 6.47991C4.46978 6.87991 4.71978 7.28991 5.03978 7.53991L7.28978 9.22991L8.63978 10.2299L5.70978 7.99991C5.63581 7.92548 5.54647 7.86813 5.44801 7.83185C5.34955 7.79558 5.24435 7.78126 5.13978 7.78991C5.03622 7.79442 4.93495 7.82188 4.84329 7.87031C4.75164 7.91873 4.67188 7.9869 4.60978 8.06991C4.54838 8.15376 4.50586 8.24992 4.48515 8.35176C4.46443 8.45361 4.46601 8.55873 4.48978 8.65991C4.51648 8.76058 4.56413 8.85448 4.62961 8.93547C4.69509 9.01646 4.77693 9.08272 4.86978 9.12991L7.11978 10.8199L8.23978 11.6699L5.99978 9.99991C5.9346 9.93339 5.85681 9.88054 5.77096 9.84446C5.6851 9.80839 5.59291 9.7898 5.49978 9.7898C5.40665 9.7898 5.31446 9.80839 5.22861 9.84446C5.14275 9.88054 5.06496 9.93339 4.99978 9.99991C4.9294 10.0813 4.87843 10.1775 4.85071 10.2815C4.82299 10.3854 4.81925 10.4943 4.83978 10.5999C4.85767 10.7065 4.89931 10.8077 4.96163 10.896C5.02395 10.9842 5.10535 11.0574 5.19978 11.1099L9.19978 14.1099C9.80677 14.4704 10.4943 14.6732 11.1998 14.6999C11.4569 14.8544 11.7242 14.9914 11.9998 15.1099C12.8017 14.9577 13.5163 14.5075 13.9998 13.8499C14.5209 13.0904 14.8188 12.2001 14.8598 11.2799L14.8098 11.3399Z" fill="#DDF6D1"/><path d="M14.7686 11.3899C14.567 11.173 14.4106 10.918 14.3086 10.6399C14.2949 10.4207 14.2614 10.2031 14.2086 9.98992C14.1773 9.60618 14.0538 9.23567 13.8486 8.90992C13.2672 8.22046 12.8531 7.40592 12.6386 6.52992C12.4786 5.99992 12.3686 5.80992 11.8986 5.79992C11.7042 5.81725 11.5245 5.9107 11.3986 6.05992C11.3393 6.13561 11.2955 6.22228 11.2697 6.31495C11.244 6.40762 11.2368 6.50447 11.2486 6.59992C11.2487 6.84117 11.2688 7.08199 11.3086 7.31992C11.4886 8.23992 11.6786 8.99992 11.6986 9.04992L7.40861 5.83992C7.33399 5.76581 7.2448 5.70799 7.14669 5.67012C7.04857 5.63225 6.94367 5.61516 6.83861 5.61992C6.7328 5.62555 6.62955 5.65446 6.5362 5.70459C6.44286 5.75472 6.36173 5.82483 6.29861 5.90992C6.24994 5.99263 6.21805 6.08413 6.20478 6.17917C6.1915 6.27422 6.1971 6.37095 6.22125 6.46383C6.2454 6.55671 6.28763 6.64392 6.34551 6.72047C6.4034 6.79701 6.47581 6.86139 6.55861 6.90992L8.80861 8.60992L9.48861 9.16992L5.88861 6.45992C5.81399 6.38581 5.7248 6.32799 5.62669 6.29012C5.52857 6.25225 5.42367 6.23516 5.31861 6.23992C5.16025 6.24156 5.00698 6.29609 4.88318 6.39485C4.75938 6.49361 4.67215 6.63093 4.63536 6.78497C4.59858 6.939 4.61435 7.10092 4.68017 7.24496C4.74599 7.389 4.85807 7.50691 4.99861 7.57992L7.24861 9.27992L8.59861 10.2799L5.70861 8.08992C5.63453 8.0161 5.54546 7.95905 5.44741 7.92265C5.34937 7.88624 5.24466 7.87133 5.14035 7.87891C5.03604 7.8865 4.93459 7.91641 4.84285 7.96662C4.7511 8.01682 4.67122 8.08616 4.60861 8.16992C4.29861 8.56992 4.53861 8.97992 4.86861 9.22992L7.11861 10.9099L8.23861 11.7599L5.99861 10.0599C5.86439 9.93039 5.68514 9.85799 5.49861 9.85799C5.31207 9.85799 5.13282 9.93039 4.99861 10.0599C4.93398 10.1403 4.88792 10.234 4.86372 10.3343C4.83951 10.4345 4.83777 10.5389 4.85861 10.6399C4.87818 10.7407 4.91852 10.8363 4.97706 10.9207C5.03559 11.005 5.11104 11.0763 5.19861 11.1299L9.19861 14.1299C9.53229 14.3805 9.91878 14.5515 10.3286 14.6299L10.9086 14.7199C11.2141 14.7617 11.5092 14.86 11.7786 15.0099C11.9716 15.0847 12.1856 15.0847 12.3786 15.0099C13.0805 14.7593 13.6951 14.3114 14.1486 13.7199C14.5669 13.1331 14.8096 12.4395 14.8486 11.7199C14.8783 11.5815 14.8783 11.4383 14.8486 11.2999L14.7686 11.3899Z" stroke="#165209" stroke-width="0.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M8.82961 2.82031L8.09961 3.74031" stroke="#165209" stroke-linecap="round" stroke-linejoin="round"/><path d="M5.49023 1.62012L5.56023 2.82012" stroke="#165209" stroke-linecap="round" stroke-linejoin="round"/><path d="M7.53867 1.62988L6.88867 3.18988" stroke="#165209" stroke-linecap="round" stroke-linejoin="round"/></svg>`
-);
-
-// Entries are [color, x, icon]. An icon that starts with "data:" is a full-color badge drawn as-is.
-const LI_REACT = [["#6DAE4F", 44, LI_CELEBRATE_BADGE], ["#DF704D", 32, LI_LOVE_BADGE], ["#378FE9", 20, LI_LIKE_BADGE]]; // back to front
-const LI_NEXT = {
-  name: "Jordan Ellis", degree: "3rd+",
-  headline: "Brand strategist helping teams tell clearer stories and ship sharper products",
-  text: "Love this direction. Curious how you approached the brand system from the start, and what changed along the way?",
-};
-
-function linkedinOps(s, w, h) {
-  s = { ...socialDefaults("linkedin", s.mode), ...s };
-  const k = Math.min(w / 440, h / 956);                 // fit the 440 x 956 screen inside the frame
-  const ox = (w - 440 * k) / 2;                         // center it horizontally
-  const pt = (n) => n * k;                              // design pt -> frame px
-  const Y = (n) => (n < 500 ? pt(n) : h - pt(956 - n)); // top chrome hangs from the top, footer from the bottom
-  const c = s.theme === "dark" ? LI_DARK : LI_LIGHT;
-  const initial = ((s.name ?? "").trim()[0] || "?").toUpperCase();
-  const ops = [];
-
-  const type = (k) => ({ size: pt(LI_T[k][0]), weight: LI_T[k][1] });
-  const tw = (str, k) => { const f = type(k); return igTextW(str, f.size, f.weight, LI_FONT) / pt(1); }; // width in design pt
-  const rect = (x, y, rw, rh, fill, r = 0, stroke, sw) =>
-    ops.push({ t: "rect", x: pt(x), y: Y(y), w: pt(rw), h: pt(rh), fill, r: pt(r), stroke, sw: sw && Math.max(1, pt(sw)) });
-  const dot = (cx, cy, r, fill) => ops.push({ t: "circle", cx: pt(cx), cy: Y(cy), r: pt(r), fill });
-  const icon = (name, cx, cy, size, color) => ops.push({ t: "icon", name, cx: pt(cx), cy: Y(cy), size: pt(size), color });
-  // y is the text BASELINE in design pt; the renderer centers on the cap height, so shift by 0.352em.
-  const T = (str, x, base, k, color, o = {}) => {
-    const f = type(k);
-    ops.push({ t: "text", text: str ?? "", x: pt(x), y: Y(base) - f.size * 0.352, s: f.size, color, weight: f.weight, align: o.align ?? "left", maxW: o.maxW && pt(o.maxW), font: LI_FONT });
-  };
-  const avatar = (cx, cy, r) => {
-    if (s.avatar) return ops.push({ t: "image", src: s.avatar, cx: pt(cx), cy: Y(cy), r: pt(r) });
-    dot(cx, cy, r, "#B8B8BE");
-    ops.push({ t: "text", text: initial, x: pt(cx), y: Y(cy), s: pt(r * 0.9), color: "#3A3A3C", weight: 700, align: "center", font: LI_FONT });
-  };
-
-  // ----- caption (measured first, because it decides where the image starts) -----
-  const capSize = pt(LI_T.body[0]);
-  const capMaxW = pt(416);
-  let lines = igWrap(s.caption, capSize, LI_T.body[1], capMaxW, LI_FONT);
-  const clipped = lines.length > 3;
-  lines = lines.slice(0, 3);
-  if (clipped) {
-    let last = lines[2];
-    while (last.length > 1 && igTextW(`${last}…more`, capSize, 400, LI_FONT) > capMaxW) last = last.slice(0, -1).trimEnd();
-    lines[2] = last;
-  }
-  const topEnd = lines.length ? 238.7 + (lines.length - 1) * 15.5 + 11 : 230; // where the post image begins
-
-  // ----- top bar -----
-  rect(0, 0, 440, 106, c.bar);
-  rect(0, 106, 440, topEnd - 106, c.bg);
-  ops.push({ t: "rect", x: 0, y: pt(106), w, h: Math.max(1, pt(0.34)), fill: c.hair, r: 0 });
-  avatar(44, 84, 16);
-  rect(68, 68, 292, 32, null, 16, c.border, 1);
-  icon("liSearch", 85, 84, LI_ICON.search, c.icon);
-  T("Search", 102.7, 88.7, "search", c.sub);
-  icon("liMsg", 390, 85, LI_ICON.msg, c.icon);
-
-  // ----- tabs -----
-  T("For you", 110, 135.3, "tab", c.text, { align: "center" });
-  T("Network", 330, 135.3, "tab", c.sub, { align: "center" });
-  rect(0, 152, 220, 2, c.active);
-  rect(12, 160.7, 416, 1, c.div);
-
-  // ----- post header -----
-  avatar(36, 193.7, 24);
-  T(s.name, 68, 184.3, "name", c.text, { maxW: 200 });
-  const bx = 68 + Math.min(tw(s.name, "name"), 200) + 5.3;
-  dot(bx + 1.15, 181.2, 1.15, c.sub);
-  T("You", bx + 7.6, 184.3, "degree", c.sub, { maxW: 40 });
-  T(s.headline, 68, 199.3, "headline", c.sub2, { maxW: 292 });
-  T(s.time, 68, 215.3, "time", c.sub, { maxW: 40 });
-  const tx = 68 + Math.min(tw(s.time, "time"), 40);
-  dot(tx + 6.75, 212.2, 1.15, c.sub);
-  icon("liGlobe", tx + 20.6, 211.3, LI_ICON.globe, c.icon);
-  const fw = tw("Follow", "follow");
-  T("Follow", 428, 190.3, "follow", c.link, { align: "right" });
-  icon("liPlus", 428 - fw - 13, 185.7, LI_ICON.plus, c.link);
-
-  // ----- caption -----
-  lines.forEach((ln, i) => {
-    const base = 238.7 + i * 15.5;
-    if (clipped && i === 2) {
-      ops.push({ t: "text", runs: [[`${ln}…`, 400], ["more", 400, c.sub]], text: "", x: pt(12), y: Y(base) - capSize * 0.352, s: capSize, color: c.text, weight: 400, align: "left", maxW: capMaxW, font: LI_FONT });
-    } else T(ln, 12, base, "body", c.text);
-  });
-
-  // ----- footer: reactions, actions, next post -----
-  rect(0, 720.7, 440, 156.3, c.bg);
-  LI_REACT.forEach(([col, cx, ic]) => {
-    dot(cx, 737, 8.2, c.bg); // cut-out ring so the circles overlap cleanly
-    if (ic.startsWith("data:")) {
-      ops.push({ t: "image", src: ic, cx: pt(cx), cy: Y(737), r: pt(8), sq: true }); // 16pt badge, circle is r 7 inside it
-      return;
-    }
-    dot(cx, 737, 7, col);
-    icon(ic, cx, 737, LI_ICON.react, "#FFFFFF");
-  });
-  T(s.extra, 56.3, 742, "count", c.sub);
-  const repW = tw(s.reposts, "count");
-  T(s.reposts, 428, 742, "count", c.sub, { align: "right" });
-  const dcx = 428 - repW - 8.65;
-  dot(dcx, 738.3, 1.35, c.sub);
-  T(s.comments, dcx - 7.7, 742, "count", c.sub, { align: "right" });
-  rect(12, 752.7, 416, 1, c.div);
-  [["liLike", "Like"], ["liComment", "Comment"], ["liRepost", "Repost"], ["liSend", "Send"]].forEach(([ic, label], i) => {
-    const cx = 55 + i * 110;
-    icon(ic, cx, 768.5, LI_ICON.action, c.icon);
-    T(label, cx, 791.7, "action", c.icon, { align: "center" });
-  });
-
-  // next post sliver, cut off by the nav bar
-  ops.push({ t: "image", src: IG_LIKER_DEFAULT, cx: pt(28), cy: Y(826), r: pt(16) });
-  T(LI_NEXT.name, 52, 823.3, "next", c.text, { maxW: 160 });
-  const nn = 52 + Math.min(tw(LI_NEXT.name, "next"), 160) + 5.3;
-  dot(nn + 1.15, 819.6, 1.15, c.sub);
-  T(LI_NEXT.degree, nn + 7.6, 823.3, "degree", c.sub);
-  T(LI_NEXT.headline, 52, 839.7, "headline", c.sub2, { maxW: 376 });
-  igWrap(LI_NEXT.text, capSize, 400, pt(376), LI_FONT).slice(0, 2).forEach((ln, i) => T(ln, 52, 862.7 + i * 15.5, "body", c.text, { maxW: 376 }));
-
-  // ----- bottom nav -----
-  rect(0, 877, 440, 79, c.bar);
-  rect(2, 877, 84, 2, c.active, 1);
-  [["liHome", "Home", 44, true], ["liNetwork", "My Network", 132], ["liPost", "Post", 220], ["liBell", "Notifications", 308], ["liJobs", "Jobs", 396]].forEach(
-    ([ic, label, cx, on]) => {
-      const col = on ? c.active : c.sub;
-      icon(ic, cx, 892.4, LI_ICON.nav, col);
-      T(label, cx, 918.3, on ? "navOn" : "nav", col, { align: "center" });
-    }
-  );
-  if (s.badge) {
-    const bw = Math.max(18, tw(s.badge, "badge") + 10);
-    rect(314.7, 880, bw, 18, c.badge, 9);
-    T(s.badge, 314.7 + bw / 2, 893.6, "badge", c.badgeText, { align: "center" });
-  }
-
-  // center the screen, then lay full-frame backgrounds and the media image underneath everything
-  ops.forEach((o) => {
-    if ("x" in o) o.x += ox;
-    if ("cx" in o) o.cx += ox;
-  });
-  const mediaTop = Y(topEnd), mediaBottom = Y(720.7);
-  ops.unshift(
-    { t: "rect", x: 0, y: 0, w, h, fill: c.bg, r: 0 },
-    { t: "rect", x: 0, y: 0, w, h: Y(106), fill: c.bar, r: 0 },
-    { t: "rect", x: 0, y: Y(877), w, h: h - Y(877), fill: c.bar, r: 0 },
-    { t: "media", src: s.media ?? null, x: ox, y: mediaTop, w: pt(440), h: mediaBottom - mediaTop }
-  );
-  return ops;
-}
-
-// ---------- Facebook ----------
-const FB_FONT = WA_FONT;
-// Design pt on a 440 x 956 screen, measured from a screenshot. [size, weight]
-const FB_T = {
-  name: [15, 600], follow: [15, 600], time: [13, 400], body: [15, 400],
-  count: [13, 400], action: [14, 600], badge: [11, 600],
-  rTitle: [26, 600], rName: [15, 600], rSub: [14, 500], rBody: [15, 400], rCount: [13, 500], // Reels
-  sName: [15, 600], sTime: [14, 400], sSongB: [14, 600], sSong: [14, 400], sReply: [15, 400], // Stories
-};
-const FB_TRACK = { 11: 0.06, 12: 0, 13: -0.08, 14: -0.15, 15: -0.23, 16: -0.31 };
-const fbTrack = (size) => FB_TRACK[size] ?? 0;
-const FB_LIGHT = { bg: "#FFFFFF", text: "#050505", sub: "#65676B", link: "#0866FF", band: "#D0D2D6", hair: "#CED0D4", navBg: "#FFFFFF", navLine: "rgba(0,0,0,0.08)", pill: "#E7F0FF" };
-const FB_DARK = { bg: "#242526", text: "#E4E6EB", sub: "#B0B3B8", link: "#4599FF", band: "#18191A", hair: "#3E4042", navBg: "#242526", navLine: "rgba(255,255,255,0.1)", pill: "#263951" };
-
-const FB_LIKE_BADGE =
-  "data:image/svg+xml;utf8," +
-  encodeURIComponent(
-    `<svg width="120" height="120" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M59.9999 0C26.8499 0 0 26.85 0 59.9999C0 93.1498 26.8499 120 59.9999 120C93.1498 120 120 93.1498 120 59.9999C120 26.85 93.1498 0 59.9999 0Z" fill="url(#fbLike)"/><path d="M90.2999 55.05C94.3499 57.9 93.5999 63.9 89.2499 66.15C91.4999 69.8999 88.6499 74.8499 84.7499 75.8999C85.3499 76.9499 85.6499 77.8499 85.4999 78.8999C84.8999 83.2499 80.0999 83.9999 76.4999 83.9999H56.8499C49.05 83.9999 45.15 79.6499 45.15 76.0499V57.6C45.15 47.85 56.0999 39.6 56.0999 32.7L55.1999 24.3C55.1999 23.85 55.1999 22.5 55.6499 22.2C56.2499 21.6 58.0499 20.55 60.5999 20.55C62.2499 20.55 63.4499 20.8501 64.7999 21.6001C69.2999 23.85 69.8999 29.4 69.8999 33.9C69.8999 36 67.1999 42.45 66.8999 44.7C70.3499 43.5 78.4499 42.15 84.7499 43.05C92.0999 44.1 94.1999 49.05 90.2999 55.05ZM28.65 48H34.95C36.15 48 37.35 48.45 38.25 49.35C39.15 50.25 39.6 51.45 39.6 52.65V82.7999C39.6 83.9999 39.15 85.1999 38.25 86.0999C37.35 86.9999 36.15 87.4499 34.95 87.4499H28.65C27.45 87.4499 26.25 86.9999 25.35 86.0999C24.45 85.1999 24 83.9999 24 82.7999V52.65C24 51.45 24.45 50.25 25.35 49.35C26.25 48.45 27.45 48 28.65 48Z" fill="white"/><defs><radialGradient id="fbLike" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(41.8938 37.318) rotate(77.6772) scale(84.6968 84.6968)"><stop stop-color="#18AFFF"/><stop offset="1" stop-color="#0062DF"/></radialGradient></defs></svg>`
-  );
-
-  // Strips nothing, just escapes parentheses so the data URI survives CSS url(...) in the DOM overlay.
-const fbBadge = (svg) => ("data:image/svg+xml;utf8," + encodeURIComponent(svg)).replace(/\(/g, "%28").replace(/\)/g, "%29");
-
-const FB_LOVE_BADGE = fbBadge(
-  `<svg width="120" height="120" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M59.9999 0C26.8499 0 0 26.85 0 59.9999C0 93.1498 26.8499 120 59.9999 120C93.1498 120 120 93.1498 120 59.9999C120 26.85 93.1498 0 59.9999 0Z" fill="url(#fbLoveG)"/><path d="M78.6009 30C62.1009 30 60.0009 43.65 60.0009 43.65C60.0009 43.65 57.9009 30 41.401 30C25.501 30 20.851 46.65 22.801 55.6499C27.901 79.1999 59.8509 95.6999 59.8509 95.6999C59.8509 95.6999 91.8009 79.1999 96.9009 55.6499C99.0009 46.65 94.3508 30 78.6009 30Z" fill="white"/><defs><radialGradient id="fbLoveG" cx="0" cy="0" r="1" gradientTransform="matrix(16.2437 63.5304 -63.5294 16.2438 53.436 53.3625)" gradientUnits="userSpaceOnUse"><stop stop-color="#FF8297"/><stop offset="0.1592" stop-color="#FD7A90"/><stop offset="0.4121" stop-color="#F8637B"/><stop offset="0.7251" stop-color="#EF3D5B"/><stop offset="1" stop-color="#E61739"/></radialGradient></defs></svg>`
-);
-
-const FB_HAHA_BADGE = fbBadge(
-  `<svg width="120" height="120" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M119.999 59.9999C119.999 93.1657 93.2656 120 60.2242 120C27.1827 120 0.449219 93.1657 0.449219 59.9999C0.449219 26.8341 27.1827 0 60.2242 0C93.1154 0 119.999 26.8341 119.999 59.9999Z" fill="url(#fbHahaA)"/><path d="M119.55 59.9999C119.55 93.1657 92.8164 120 59.775 120C26.7335 120 0 93.1657 0 59.9999C0 26.8341 26.7335 0 59.775 0C92.6662 0 119.55 26.8341 119.55 59.9999Z" fill="url(#fbHahaB)"/><path d="M95.9649 71.1555C96.4155 68.5927 95.3641 66.0299 92.9611 65.1254C87.5544 62.8641 76.5906 59.9998 59.6194 59.9998C42.7983 59.9998 31.8345 62.8641 26.2775 65.1254C23.8745 66.0299 22.8232 68.5927 23.2738 71.1555C26.2775 86.5324 35.8896 105.226 59.6194 105.226C83.3491 105.075 92.9611 86.3816 95.9649 71.1555Z" fill="url(#fbHahaC)"/><path d="M83.8003 95.7286C79.2947 91.5075 71.7852 88.1909 59.7702 88.1909C47.6049 88.1909 40.0955 91.5075 35.5898 95.7286C41.297 101.306 49.1068 105.075 59.62 105.075C70.2833 105.075 78.0931 101.306 83.8003 95.7286Z" fill="url(#fbHahaD)"/><path d="M28.6853 50.3518C26.7328 50.3518 25.2309 48.8442 24.9306 46.8844C24.1796 38.7437 30.1872 31.5076 38.4475 30.7538C46.5577 30 53.7667 36.0302 54.5177 44.3216C54.6679 46.4322 53.166 48.2412 51.2135 48.392C49.1109 48.5427 47.3086 47.0352 47.1584 45.0754C46.858 41.005 43.2535 37.99 39.1985 38.2915C35.1434 38.593 32.1396 42.2111 32.44 46.2814C32.5902 48.392 31.0883 50.201 29.1358 50.3518C28.8354 50.3518 28.6853 50.3518 28.6853 50.3518Z" fill="url(#fbHahaE)"/><path d="M90.7126 50.3519C90.5624 50.3519 90.5624 50.3519 90.4122 50.3519C88.3096 50.2011 86.8078 48.3921 87.1082 46.2815C87.4085 42.2112 84.4048 38.5931 80.3497 38.2916C76.2946 37.9901 72.6901 40.8544 72.3897 45.0755C72.2395 47.186 70.4372 48.6936 68.3346 48.3921C66.2319 48.2413 64.7301 46.4323 65.0305 44.3217C65.7814 36.0303 72.9905 30.1509 81.1006 30.7539C89.2108 31.5077 95.2183 38.7438 94.6176 46.8845C94.167 48.8443 92.5149 50.3519 90.7126 50.3519Z" fill="url(#fbHahaF)"/><defs><radialGradient id="fbHahaA" cx="0" cy="0" r="1" gradientTransform="matrix(-0.141675 81.2323 -83.6337 -0.146963 59.229 49.6661)" gradientUnits="userSpaceOnUse"><stop stop-color="#FFED85"/><stop offset="0.1898" stop-color="#FFE180"/><stop offset="0.5295" stop-color="#FFC273"/><stop offset="0.9773" stop-color="#FF915E"/><stop offset="1" stop-color="#FF8E5D"/></radialGradient><radialGradient id="fbHahaB" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(32.3913 29.692) scale(99.6575 100.032)"><stop stop-color="#FFEA84" stop-opacity="0"/><stop offset="1" stop-color="#F08423" stop-opacity="0.34"/></radialGradient><linearGradient id="fbHahaC" x1="59.6193" y1="61.8679" x2="59.6193" y2="114.428" gradientUnits="userSpaceOnUse"><stop stop-color="#3F1D04"/><stop offset="1" stop-color="#7E2307"/></linearGradient><linearGradient id="fbHahaD" x1="59.6951" y1="86.3056" x2="59.6951" y2="104.754" gradientUnits="userSpaceOnUse"><stop stop-color="#FC607C"/><stop offset="1" stop-color="#D91F3A"/></linearGradient><radialGradient id="fbHahaE" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(39.6977 40.4935) scale(12.5283 12.5754)"><stop stop-color="#2C445F"/><stop offset="0.9792" stop-color="#191A33"/></radialGradient><radialGradient id="fbHahaF" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(79.6228 40.4933) scale(12.5424 12.5896)"><stop stop-color="#2C445F"/><stop offset="0.9792" stop-color="#191A33"/></radialGradient></defs></svg>`
-);
-
-// Shared helpers: everything is authored in design pt, centered on the frame, with top chrome hanging
-// from the top and the footer from the bottom (same approach as LinkedIn).
-function fbKit(s, w, h) {
-  const k = Math.min(w / 440, h / 956);
-  const ox = (w - 440 * k) / 2;
-  const pt = (n) => n * k;
-  const Y = (n) => (n < 500 ? pt(n) : h - pt(956 - n));
-  const initial = ((s.name ?? "").trim()[0] || "?").toUpperCase();
-  const ops = [];
-  const font = (key) => ({ size: pt(FB_T[key][0]), weight: FB_T[key][1] });
-  const tw = (str, key) =>
-    (igTextW(str, font(key).size, font(key).weight, FB_FONT) + (str ?? "").length * pt(fbTrack(FB_T[key][0]))) / k;
-  const rect = (x, y, rw, rh, fill, r = 0, stroke, sw, shadow) =>
-    ops.push({
-      t: "rect", x: pt(x), y: Y(y), w: pt(rw), h: pt(rh), fill, r: pt(r), stroke, sw: sw && Math.max(1, pt(sw)),
-      shadow: shadow && { x: pt(shadow.x), y: pt(shadow.y), blur: pt(shadow.blur), color: shadow.color },
-    });
-  const grad = (x, y, gw, gh, from, to) => ops.push({ t: "vgrad", x: pt(x), y: Y(y), w: pt(gw), h: pt(gh), from, to });
-  const dot = (cx, cy, r, fill) => ops.push({ t: "circle", cx: pt(cx), cy: Y(cy), r: pt(r), fill });
-  // `box` = the icon's on-screen width in pt, whatever its viewBox is.
-  const icon = (name, cx, cy, box, color) =>
-    ops.push({ t: "icon", name, cx: pt(cx), cy: Y(cy), size: (pt(box) * 24) / (ICONS[name].vb?.[0] ?? 24), color });
-  const T = (str, x, cy, key, color, o = {}) => {
-    const f = font(key);
-    ops.push({ t: "text", text: str ?? "", x: pt(x), y: Y(cy), s: f.size, color, weight: f.weight, align: o.align ?? "left", maxW: o.maxW && pt(o.maxW), font: FB_FONT, ls: pt(fbTrack(FB_T[key][0])) });
-  };
-  const avatar = (cx, cy, r) => {
-    if (s.avatar) return ops.push({ t: "image", src: s.avatar, cx: pt(cx), cy: Y(cy), r: pt(r) });
-    dot(cx, cy, r, "#B8B8BE");
-    ops.push({ t: "text", text: initial, x: pt(cx), y: Y(cy), s: pt(r * 0.9), color: "#3A3A3C", weight: 700, align: "center", font: FB_FONT });
-  };
-  // Centers the screen, then puts full-frame backgrounds and the media slot underneath everything.
-  const finish = (mediaY, mediaH, under) => {
-    ops.forEach((o) => {
-      if ("x" in o) o.x += ox;
-      if ("cx" in o) o.cx += ox;
-    });
-    ops.unshift(...under, { t: "media", src: s.media ?? null, x: ox, y: mediaY, w: pt(440), h: mediaH });
-    return ops;
-  };
-  return { pt, Y, ops, tw, rect, grad, dot, icon, T, avatar, finish };
-}
-
-const FB_POST_SHIFT = 40; // how far the Post header block moves up, in design pt
-
-function facebookOps(s, w, h) {
-  s = { ...socialDefaults("facebook", s.mode), ...s };
-    const fbMode = modeOf("facebook", s.mode).value;
-  if (fbMode === "reels") return facebookReelsOps(s, w, h);
-  if (fbMode === "story") return facebookStoryOps(s, w, h);
-  const { pt, Y, ops, tw, rect, dot, icon, T, avatar, finish } = fbKit(s, w, h);
-  const c = s.theme === "dark" ? FB_DARK : FB_LIGHT;
-
-  const up = (n) => n - FB_POST_SHIFT;
-
-  // ----- header -----
-  avatar(31.9, up(149.1), 16.3);
-  // story ring + online dot, drawn around the avatar
-  ops.unshift({ t: "circle", cx: pt(31.9), cy: Y(up(149.1)), r: pt(20), fill: c.link }, { t: "circle", cx: pt(31.9), cy: Y(up(149.1)), r: pt(18.3), fill: c.bg });
-  dot(46, up(164.4), 6.3, c.bg);
-  dot(46, up(164.4), 4.8, "#31A24C");
-
-  T(s.name, 60.5, up(141.5), "name", c.text, { maxW: 290 });
-
-  T(s.time, 60.5, up(159.5), "time", c.sub, { maxW: 60 });
-  const timeW = Math.min(tw(s.time, "time"), 60);
-  dot(60.5 + timeW + 6.5, up(159.5), 1.1, c.sub);
-  icon("globe", 60.5 + timeW + 17, up(159.5), 13, c.sub);
-
-  icon("menu", 374, up(140.6), 26, c.sub);
-  icon("stClose", 418, up(141), 20, c.sub);
-
-  // ----- caption (max 2 lines, then "See more") -----
-  const CAP_LINE = 20; // 15pt text on a 20pt line
-  const capSize = pt(FB_T.body[0]), capMaxW = pt(415.6);
-  let lines = igWrap(s.caption, capSize, 400, capMaxW, FB_FONT);
-  const clipped = lines.length > 2;
-  lines = lines.slice(0, 2);
-  if (clipped) {
-    let last = lines[1];
-    while (last.length > 1 && igTextW(`${last}… See more`, capSize, 600, FB_FONT) > capMaxW) last = last.slice(0, -1).trimEnd();
-    lines[1] = last;
-  }
-  lines.forEach((ln, i) => {
-    const cy = up(191) + i * CAP_LINE;
-    if (clipped && i === 1) {
-      ops.push({ t: "text", runs: [[`${ln}… `, 400], ["See more", 600, c.sub]], text: "", x: pt(12.2), y: Y(cy), s: capSize, color: c.text, weight: 400, align: "left", maxW: capMaxW, font: FB_FONT, ls: pt(fbTrack(15)) });
-    } else T(ln, 12.2, cy, "body", c.text);
-  });
-  const mediaTop = lines.length ? up(191) + (lines.length - 1) * CAP_LINE + 18 : up(178);
-  const mediaBottom = 798.4; // one post fills the screen, so the media slot runs down to the reactions row
-
-  // ----- reactions row -----
-  const ry = 817.2;
-  ops.push({ t: "image", src: FB_LIKE_BADGE.replace(/\(/g, "%28").replace(/\)/g, "%29"), cx: pt(19.7), cy: Y(ry), r: pt(8.5), sq: true });
-  T(s.extra, 32.6, ry, "count", c.sub, { maxW: 90 });
-  T(s.shares, 427.8, ry, "count", c.sub, { align: "right" });
-  T(s.comments, 427.8 - tw(s.shares, "count") - 9.6, ry, "count", c.sub, { align: "right" });
-
-  // ----- action row: three equal columns, each group centered in its column -----
-    const ay = 840.6, GLYPH = 20, GAP = 6;
-  [["thumbsUp", "Like", 23], ["comment", "Comment", 26], ["stShare", "Share", 23]].forEach(([ic, label, box], i) => {
-    const cx = (440 / 3) * (i + 0.5);
-    const total = GLYPH + GAP + tw(label, "action");
-    const x0 = cx - total / 2;
-    icon(ic, x0 + GLYPH / 2, ay, box, c.sub);
-    T(label, x0 + GLYPH + GAP, ay, "action", c.sub);
-  });
-
-  // ----- floating nav pill (y 884-935 on the 956 screen, leaving the home-indicator area clear) -----
-  const NAV_Y = 909;
-  const navShadow = { x: 0, y: 4, blur: 16, color: s.theme === "dark" ? "rgba(0,0,0,0.6)" : "rgba(0,0,0,0.14)" };
-  rect(12, 883.5, 415.5, 51, c.navBg, 25.5, undefined, undefined, navShadow);
-  rect(17.8, 889.5, 61, 39, c.pill, 19.5); // active tab highlight
-  [["fbHome", 48.2], ["fbReels", 116.9], ["fbFriends", 185.5], ["fbMarket", 254.1], ["fbBell", 322.8]].forEach(([ic, cx], i) =>
-    icon(ic, cx, NAV_Y, 24, i === 0 ? c.link : c.text)
-  );
-  dot(391.4, NAV_Y, 13.2, c.text); // profile ring
-  dot(391.4, NAV_Y, 11.7, c.navBg);
-  avatar(391.4, NAV_Y, 10.7);
-
-  const badge = (str, cx, cy) => {
-    if (!str) return;
-    const bw = Math.max(16.4, tw(str, "badge") + 9);
-    rect(cx - bw / 2 - 1.4, cy - 9.6, bw + 2.8, 19.2, c.navBg, 9.6); // ring that cuts out the icon
-    rect(cx - bw / 2, cy - 8.2, bw, 16.4, "#E41E3F", 8.2);
-    T(str, cx, cy, "badge", "#FFFFFF", { align: "center" });
-  };
-  badge(s.reelsBadge, 126.9, 898.8);
-  badge(s.notifBadge, 332.8, 897.7);
-
-  // ----- full-width chrome behind everything: page and the two separator bands -----
-  const band = Math.max(1, pt(3.7));
-  const under = [
-    { t: "rect", x: 0, y: 0, w, h, fill: c.bg, r: 0 },
-        { t: "rect", x: 0, y: Y(115 - FB_POST_SHIFT), w, h: band, fill: c.band, r: 0 },
-    { t: "rect", x: 0, y: Y(868), w, h: band, fill: c.band, r: 0 },
-  ];
-  return finish(Y(mediaTop), Y(mediaBottom) - Y(mediaTop), under);
-}
-
-// Facebook Reels. Measured from a 1186 x 2576 screenshot (1px = 0.371pt). Video ends at y 877, black nav area below.
-function facebookReelsOps(s, w, h) {
-  const { Y, ops, tw, rect, grad, dot, icon, T, avatar, finish } = fbKit(s, w, h);
-  const white = "#FFFFFF";
-
-  // fades behind the header and the caption / rail
-  grad(0, 0, 440, 130, "rgba(0,0,0,0.35)", "rgba(0,0,0,0)");
-  grad(0, 700, 440, 177, "rgba(0,0,0,0)", "rgba(0,0,0,0.5)");
-
-  // header: hamburger (three lines, swap for a real icon later), title, search, more
-  [79.8, 88.3, 96.8].forEach((y) => rect(12, y - 0.8, 21, 1.6, white, 0.8));
-  T("Reels", 44.5, 88, "rTitle", white);
-  icon("search", 366, 88, 28, white);
-  icon("moreCircle", 410, 88, 28, white);
-
-  // right rail: icon center y, count center y, icon box (pt)
-  const RX = 412;
-  [
-    ["thumbsUp", s.extra, 563, 589, 33],
-    ["comment", s.comments, 634, 661, 36],
-    ["stShare", s.shares, 705, 732, 30],
-    ["bookmark", s.saves, 777, 804, 32],
-  ].forEach(([ic, n, iy, ny, box]) => {
-    icon(ic, RX, iy, box, white);
-    T(n, RX, ny, "rCount", white, { align: "center" });
-  });
-  icon("menu", RX, 844, 40, white);
-
-  // bottom info: 40pt avatar with story ring, name + globe, audio row, caption
-  const AY = 817;
-  dot(32, AY, 20, "#1877F2");
-  dot(32, AY, 18.2, "#000000");
-  avatar(32, AY, 16.6);
-  T(s.name, 60.5, 810, "rName", white, { maxW: 230 });
-  const nameW = Math.min(tw(s.name, "rName"), 230);
-  icon("globe", 60.5 + nameW + 13, 810, 15, white);
-  icon("music", 66, 831, 19, white);
-  T(s.sound, 76.5, 831, "rSub", white, { maxW: 270 });
-  T(s.caption, 12, 858, "rBody", white, { maxW: 416 });
-
-  // nav: same pill geometry as the Post UI, dark, with the Reels tab active (no badges)
-  rect(0, 877, 440, 79, "#000000");
-  rect(12, 883.5, 415.5, 51, "#0D0D0D", 25.5, "rgba(255,255,255,0.16)", 1);
-  rect(86.4, 889.5, 61, 39, "#2E2E2E", 19.5);
-  [["fbHome", 48.2], ["fbReels", 116.9], ["fbFriends", 185.5], ["fbMarket", 254.1], ["fbBell", 322.8]].forEach(([ic, cx]) =>
-    icon(ic, cx, 909, 24, white)
-  );
-  avatar(391.4, 909, 13.7);
-
-  return finish(0, Y(877), [{ t: "rect", x: 0, y: 0, w, h, fill: "#000000", r: 0 }]);
-}
-
-// Facebook Stories. Measured from a 1186 x 2576 screenshot (1px = 0.371pt on a 440 x 956 screen).
-// Media runs y 62 -> 844.5, black above and below. Reply row is bottom-anchored.
-function facebookStoryOps(s, w, h) {
-  const { pt, Y, ops, tw, rect, grad, dot, icon, T, avatar, finish } = fbKit(s, w, h);
-  const white = "#FFFFFF";
-  const soft = "rgba(255,255,255,0.75)";
-  const MEDIA_TOP = 62, MEDIA_BOTTOM = 844.5;
-
-  // fades behind the header and above the reply row
-  grad(0, MEDIA_TOP, 440, 90, "rgba(0,0,0,0.45)", "rgba(0,0,0,0)");
-  grad(0, MEDIA_BOTTOM - 24.5, 440, 24.5, "rgba(0,0,0,0)", "rgba(0,0,0,0.3)");
-
-  // progress bar: 8 segments, 2pt tall, 2.6pt gap, 12pt side margin, first ~20% played
-  const segs = 8, gap = 2.6, m = 11.9, segW = (440 - 2 * m - gap * (segs - 1)) / segs;
-  for (let i = 0; i < segs; i++) {
-    const x = m + i * (segW + gap);
-    rect(x, 69.5, segW, 2, "rgba(255,255,255,0.35)", 1);
-    if (i === 0) rect(x, 69.5, segW * 0.2, 2, white, 1);
-  }
-
-  // header: 40pt avatar, name + time on the first line, audio row on the second
-  avatar(31.9, 102.8, 20);
-  T(s.name, 60.5, 93.9, "sName", white, { maxW: 180 });
-  const nameW = Math.min(tw(s.name, "sName"), 180);
-  T(s.extra, 60.5 + nameW + 5.6, 93.9, "sTime", soft, { maxW: 50 });
-
-  // audio row: 3 signal bars, "Artist" semibold + " · Song" regular, chevron
-  [4.5, 6.5, 8.5].forEach((bh, i) => rect(60.5 + i * 4, 115.8 - bh, 2.6, bh, white, 1.3));
-  const song = ` · ${s.song ?? ""}`;
-  ops.push({
-    t: "text", runs: [[s.artist ?? "", 600], [song, 400, soft]], text: "", x: pt(76), y: Y(111.7),
-    s: pt(14), color: white, weight: 400, align: "left", maxW: pt(170), font: FB_FONT, ls: pt(fbTrack(14)),
-  });
-  const audioW = Math.min(tw(s.artist, "sSongB") + tw(song, "sSong"), 170);
-  icon("chevDown", 76 + audioW + 10, 111.7, 16, soft);
-
-  // top-right controls
-  icon("chevDown", 328, 102.8, 26, white);
-  icon("dots", 372, 102.8, 37, white);
-  icon("stClose", 416, 102.8, 23, white);
-
-  // mute button: 32pt, translucent with a hairline white ring
-  rect(11.8, 141, 32, 32, "rgba(0,0,0,0.4)", 16, "rgba(255,255,255,0.85)", 0.8);
-  icon("speakerOff", 27.8, 157, 20, white);
-
-  // reply row: 40pt circles, 40pt pill, centers 48pt apart
-  const RY = 885.7, BTN = "#404142";
-  dot(24.9, RY, 20, BTN);
-  icon("repost", 24.9, RY, 23, white);
-  rect(53, RY - 20, 262.7, 40, BTN, 20);
-  T("Send message...", 69.4, RY, "sReply", "rgba(255,255,255,0.9)");
-
-  // reactions: 40pt badges, centers 48pt apart. The last one is cut off by the screen edge, like the screenshot.
-  [[FB_LOVE_BADGE, 344], [FB_LIKE_BADGE.replace(/\(/g, "%28").replace(/\)/g, "%29"), 391.8], [FB_HAHA_BADGE, 439.7]].forEach(([src, cx]) =>
-    ops.push({ t: "image", src, cx: pt(cx), cy: Y(RY), r: pt(20), sq: true })
-  );
-
-  return finish(Y(MEDIA_TOP), Y(MEDIA_BOTTOM) - Y(MEDIA_TOP), [{ t: "rect", x: 0, y: 0, w, h, fill: "#000000", r: 0 }]);
-}
-
-// Builds the overlay as plain shapes in frame-local px, so the DOM and the canvas export draw the same thing.
-// The media slot for each platform/mode, in frame px. Chrome bars are drawn over everything outside it.
-function socialMediaRect(s, w, h) {
-  const u = Math.min(w, h * 0.5625) / 100;
-  const mode = modeOf(s.platform, s.mode).value;
-  const band = (top, bottom) => ({ x: 0, y: top, w, h: bottom - top });
-  switch (s.platform) {
-    case "instagram":
-      if (mode === "story") return band(14 * u, h - 25.6 * u);
-      if (mode === "reels") return band(0, h - 18.9 * u);
-            return band((IG_POST_STATUS_H + 12) * u, h - 50 * u);
-    case "tiktok": {
-      if (mode === "story") {
-        const pt = (n) => (n * u * 100) / 390;
-        return band(pt(TTS_TOP), h - pt(TTS_H - 760));
-      }
-      return band(0, h - (87 * u * 100) / 414);
-    }
-    case "facebook":
-      return mode === "story" ? band(0, h) : band(13 * u, h - 32 * u);
-    default:
-      return band(0, h); // whatsapp status
-  }
-}
-
-// Phone layouts are authored for a ~9:16 screen. On anything wider (tablets, desktop, landscape frames)
-// they render as a centered column, and the sides are filled with the app's own background.
-const SOCIAL_COLUMN_RATIO = 0.5625;
-
-function socialSideColor(s) {
-  const themed = modeOf(s.platform, s.mode).themed;
-  const dark = s.theme === "dark";
-  switch (s.platform) {
-    case "linkedin": return dark ? "#1C1E23" : "#FFFFFF";
-    case "facebook": return !themed ? "#000000" : dark ? "#242526" : "#FFFFFF";
-    case "instagram": return !themed || dark ? "#0B0F14" : "#FFFFFF";
-    default: return "#000000"; // TikTok, WhatsApp status
-  }
-}
-
-// ---------- Wide layouts: tablets in landscape and desktop ----------
-const WIDE_RATIO = 1.1; // w / h at or above this uses the web / tablet layouts
-const WIDE_H = 820; // layouts are authored at this height; width follows the screen
-
-function wideKit(s, w, h, font) {
-  const k = h / WIDE_H;
-  const W = w / k;
-  const P = (n) => n * k;
-  const ops = [];
-  const initial = ((s.name ?? "").replace(/^@/, "").trim()[0] || "?").toUpperCase();
-  const rect = (x, y, rw, rh, fill, r = 0, stroke, sw = 1) =>
-    ops.push({ t: "rect", x: P(x), y: P(y), w: P(rw), h: P(rh), fill, r: P(r), stroke, sw: stroke ? Math.max(1, P(sw)) : undefined });
-  const grad = (x, y, gw, gh, from, to) => ops.push({ t: "vgrad", x: P(x), y: P(y), w: P(gw), h: P(gh), from, to });
-  const dot = (cx, cy, r, fill) => ops.push({ t: "circle", cx: P(cx), cy: P(cy), r: P(r), fill });
-  const ring = (cx, cy, r, colors) => ops.push({ t: "circle", cx: P(cx), cy: P(cy), r: P(r), grad: colors });
-  const icon = (name, cx, cy, box, color) =>
-    ops.push({ t: "icon", name, cx: P(cx), cy: P(cy), size: (P(box) * 24) / (ICONS[name].vb?.[0] ?? 24), color });
-  const T = (str, x, cy, size, weight, color, o = {}) =>
-    ops.push({ t: "text", text: str ?? "", x: P(x), y: P(cy), s: P(size), color, weight, align: o.align ?? "left", maxW: o.maxW && P(o.maxW), font });
-  const runs = (list, x, cy, size, color, maxW) =>
-    ops.push({ t: "text", runs: list, text: "", x: P(x), y: P(cy), s: P(size), color, weight: 400, align: "left", maxW: maxW && P(maxW), font });
-  const tw = (str, size, weight) => igTextW(str, P(size), weight, font) / k;
-  const wrap = (str, size, weight, maxW) => igWrap(str, P(size), weight, P(maxW), font);
-  const img = (src, cx, cy, r, sq) => ops.push({ t: "image", src, cx: P(cx), cy: P(cy), r: P(r), sq });
-  const avatar = (cx, cy, r) => {
-    if (s.avatar) return img(s.avatar, cx, cy, r);
-    dot(cx, cy, r, "#B8B8BE");
-    ops.push({ t: "text", text: initial, x: P(cx), y: P(cy), s: P(r * 0.9), color: "#3A3A3C", weight: 700, align: "center", font });
-  };
-  const media = (x, y, mw, mh) => ops.push({ t: "media", src: s.media ?? null, x: P(x), y: P(y), w: P(mw), h: P(mh) });
-  const bg = (fill) => ops.push({ t: "rect", x: 0, y: 0, w, h, fill, r: 0 });
-  const pill = (str, cx, cy, fill, color = "#FFFFFF", size = 11) => {
-    if (!str) return;
-    const bw = Math.max(16, tw(str, size, 600) + 8);
-    rect(cx - bw / 2, cy - 8, bw, 16, fill, 8);
-    T(str, cx, cy, size, 600, color, { align: "center" });
-  };
-
-  // Centered 9:16 story / status card with progress bar, header and reply row.
-  const storyCard = ({ x, y = 30, cw = 428, ch = 760, name, time, stacked = false, caption, reply = "Send message...", trail = ["heart", "send"], badges, segs = 4 }) => {
-    media(x, y, cw, ch);
-    grad(x, y, cw, 130, "rgba(0,0,0,0.5)", "rgba(0,0,0,0)");
-    grad(x, y + ch - 150, cw, 150, "rgba(0,0,0,0)", "rgba(0,0,0,0.55)");
-    const gap = 3, sw = (cw - 24 - gap * (segs - 1)) / segs;
-    for (let i = 0; i < segs; i++) {
-      rect(x + 12 + i * (sw + gap), y + 12, sw, 2.5, "rgba(255,255,255,0.35)", 1.2);
-      if (i === 0) rect(x + 12, y + 12, sw * 0.4, 2.5, "#FFFFFF", 1.2);
-    }
-    const hy = y + 46;
-    avatar(x + 30, hy, 16);
-    if (stacked) {
-      T(name, x + 56, hy - 8, 14, 600, "#FFFFFF", { maxW: 190 });
-      T(time, x + 56, hy + 9, 12, 400, "rgba(255,255,255,0.8)", { maxW: 190 });
-    } else {
-      T(name, x + 56, hy, 14, 600, "#FFFFFF", { maxW: 190 });
-      T(time, x + 56 + Math.min(tw(name, 14, 600), 190) + 8, hy, 13, 400, "rgba(255,255,255,0.75)", { maxW: 80 });
-    }
-    icon("dots", x + cw - 56, hy, 24, "#FFFFFF");
-    icon("stClose", x + cw - 24, hy, 16, "#FFFFFF");
-    const ry = y + ch - 40;
-    if (caption) {
-      const lines = wrap(caption, 17, 400, cw - 56).slice(0, 3);
-      lines.forEach((ln, i) => T(ln, x + cw / 2, ry - 62 - (lines.length - 1 - i) * 22, 17, 400, "#FFFFFF", { align: "center" }));
-    }
-    rect(x + 14, ry - 22, cw - (badges ? 150 : 108), 44, caption ? "rgba(255,255,255,0.2)" : null, 22, caption ? undefined : "rgba(255,255,255,0.65)", 1.2);
-    T(reply, x + 34, ry, 15, 400, "rgba(255,255,255,0.9)");
-    if (badges) badges.forEach((src, i) => img(src, x + cw - 100 + i * 38, ry, 15, true));
-    else trail.forEach((ic, i) => icon(ic, x + cw - 66 + i * 38, ry, 24, "#FFFFFF"));
-  };
-
-  return { W, ops, rect, grad, dot, ring, icon, T, runs, tw, wrap, img, avatar, media, bg, pill, storyCard };
-}
-
-// ----- Instagram -----
-function instagramWideOps(s, w, h) {
-  const mode = modeOf("instagram", s.mode).value;
-  const dark = mode !== "post" || s.theme === "dark";
-  const c = dark
-    ? { bg: "#000000", fg: "#F5F5F5", sub: "#A8A8A8", line: "#262626" }
-    : { bg: "#FFFFFF", fg: "#262626", sub: "#737373", line: "#DBDBDB" };
-  const K = wideKit(s, w, h, IG_FONT);
-  const { W, ops, rect, grad, dot, ring, icon, T, runs, tw, img, avatar, media, bg, storyCard } = K;
-  const white = "#FFFFFF";
-
-  if (mode === "story") {
-    bg("#1A1A1A");
-    T("Instagram", 28, 40, 22, 700, white);
-    icon("close", W - 36, 40, 24, white);
-    storyCard({ x: (W - 428) / 2, name: s.name, time: s.extra });
-    return ops;
-  }
-
-  bg(c.bg);
-  const rail = W < 1000;
-  const SB = rail ? 72 : 244;
-  rect(SB - 1, 0, 1, WIDE_H, c.line);
-  if (rail) {
-    rect(25, 26, 22, 22, null, 6, c.fg, 1.8);
-    rect(32, 33, 8, 8, null, 4, c.fg, 1.8);
-  } else T("Instagram", 24, 40, 22, 700, c.fg);
-  const active = mode === "reels" ? 2 : 0;
-  const items = [["home", "Home"], ["search", "Search"], ["reels", "Reels"], ["send", "Messages"], ["heart", "Notifications"], ["liPlus", "Create"]];
-  items.forEach(([ic, label], i) => {
-    const y = 108 + i * 52;
-    icon(ic, 36, y, 24, c.fg);
-    if (!rail) T(label, 64, y, 16, i === active ? 700 : 400, c.fg);
-  });
-  const py = 108 + items.length * 52;
-  avatar(36, py, 12);
-  if (!rail) T("Profile", 64, py, 16, 400, c.fg);
-  icon("menu", 36, 780, 24, c.fg);
-  if (!rail) T("More", 64, 780, 16, 400, c.fg);
-
-  if (mode === "reels") {
-    const VW = 428, VH = 760, vy = 30;
-    const gx = SB + (W - SB - VW - 90) / 2;
-    media(gx, vy, VW, VH);
-    grad(gx, vy + VH - 260, VW, 260, "rgba(0,0,0,0)", "rgba(0,0,0,0.6)");
-    const lx = gx + 16, ay = vy + VH - 134;
-    avatar(lx + 16, ay, 16);
-    T(s.name, lx + 42, ay, 14, 600, white, { maxW: 170 });
-    const fx = lx + 42 + Math.min(tw(s.name, 14, 600), 170) + 12;
-    rect(fx, ay - 14, 64, 28, null, 8, white, 1);
-    T("Follow", fx + 32, ay, 13, 600, white, { align: "center" });
-    T(s.caption, lx, vy + VH - 92, 14, 400, white, { maxW: VW - 32 });
-    const audio = [s.artist, s.song].filter(Boolean).join(" · ");
-    if (audio) {
-      icon("music", lx + 8, vy + VH - 60, 14, "rgba(255,255,255,0.85)");
-      T(audio, lx + 22, vy + VH - 60, 13, 400, "rgba(255,255,255,0.85)", { maxW: VW - 60 });
-    }
-    const rx = gx + VW + 44;
-    [["heart", s.extra], ["comment", s.comments], ["repost", s.reposts], ["send", s.shares], ["bookmark", s.saves]].forEach(([ic, n], i) => {
-      const y = 480 + i * 60;
-      icon(ic, rx, y, 26, c.fg);
-      T(n, rx, y + 24, 12, 600, c.fg, { align: "center" });
-    });
-    icon("menuV", rx, 778, 24, c.fg);
-    return ops;
-  }
-
-  // ----- Post -----
-  const FEED = 470, showRight = W - SB > 900;
-  const group = FEED + (showRight ? 64 + 320 : 0);
-  const gx = SB + (W - SB - group) / 2;
-  ["alex", "mia", "jonah", "sara", "leo", "nina"].forEach((n, i) => {
-    const cx = gx + 36 + i * 74;
-    ring(cx, 56, 32, ["#F9CE34", "#EE2A7B", "#6228D7"]);
-    dot(cx, 56, 30, c.bg);
-    img(IG_LIKER_DEFAULT, cx, 56, 28);
-    T(n, cx, 102, 12, 400, c.sub, { align: "center", maxW: 68 });
-  });
-  avatar(gx + 16, 150, 16);
-  T(s.name, gx + 42, 150, 14, 600, c.fg, { maxW: 200 });
-  T(`• ${s.time ?? ""}`, gx + 42 + Math.min(tw(s.name, 14, 600), 200) + 8, 150, 14, 400, c.sub);
-  icon("menu", gx + FEED - 10, 150, 24, c.fg);
-  media(gx, 180, FEED, 480);
-
-  const ay = 688;
-  let x = gx;
-  [["heart", s.extra], ["comment", s.comments], ["repost", s.reposts], ["send", s.shares]].forEach(([ic, n]) => {
-    icon(ic, x + 12, ay, 24, c.fg);
-    T(n, x + 30, ay, 13, 600, c.fg);
-    x += 30 + tw(n, 13, 600) + 18;
-  });
-  icon("bookmark", gx + FEED - 10, ay, 24, c.fg);
-  runs([["Liked by ", 400], [s.likedBy, 600], [" and ", 400], [s.likedOthers, 600]], gx, 722, 14, c.fg, FEED);
-  const cap = s.caption ?? "", long = cap.length > 56;
-  runs([[s.name ?? "", 600], [" " + (long ? cap.slice(0, 56) + "…" : cap), 400], ...(long ? [[" more", 400, c.sub]] : [])], gx, 746, 14, c.fg, FEED);
-  T(`View all ${s.comments} comments`, gx, 770, 14, 400, c.sub, { maxW: FEED });
-
-  if (showRight) {
-    const rx = gx + FEED + 64;
-    avatar(rx + 22, 56, 22);
-    T(s.name, rx + 56, 48, 14, 600, c.fg, { maxW: 200 });
-    T("Your profile", rx + 56, 66, 14, 400, c.sub);
-    T("Switch", rx + 320, 56, 12, 600, "#0095F6", { align: "right" });
-    T("Suggested for you", rx, 116, 14, 600, c.sub);
-    T("See all", rx + 320, 116, 12, 600, c.fg, { align: "right" });
-    ["alex.rivera", "mia.chen", "jonah_k", "sara.lopez", "leo.park"].forEach((n, i) => {
-      const y = 160 + i * 56;
-      img(IG_LIKER_DEFAULT, rx + 22, y, 22);
-      T(n, rx + 56, y - 8, 14, 600, c.fg, { maxW: 180 });
-      T("Suggested for you", rx + 56, y + 10, 12, 400, c.sub);
-      T("Follow", rx + 320, y, 12, 600, "#0095F6", { align: "right" });
-    });
-    T("About · Help · Press · API · Jobs · Privacy · Terms", rx, 470, 11, 400, c.sub, { maxW: 320 });
-  }
-  return ops;
-}
-
-// ----- TikTok -----
-function tiktokWideOps(s, w, h) {
-  const mode = modeOf("tiktok", s.mode).value;
-  const K = wideKit(s, w, h, TT_FONT);
-  const { W, ops, rect, grad, dot, icon, T, img, avatar, media, bg, pill, storyCard } = K;
-  const white = "#FFFFFF", sub = "rgba(255,255,255,0.6)", line = "rgba(255,255,255,0.12)";
-  bg("#121212");
-  const rail = W < 1000;
-  const SB = rail ? 72 : 240;
-
-  icon("tkMusic", 36, 40, 22, white);
-  if (!rail) T("TikTok", 56, 40, 24, 700, white);
-  if (rail) icon("tkSearch", 36, 92, 20, white);
-  else {
-    rect(16, 72, SB - 32, 40, "#2A2A2A", 20);
-    icon("tkSearch", 38, 92, 16, sub);
-    T("Search", 56, 92, 14, 400, sub);
-  }
-  [["tkHome", "For You"], ["tkFriends", "Friends"], ["tkLive", "LIVE"], ["tkPlus", "Upload"], ["tkInbox", "Inbox"], ["tkProfile", "Profile"]].forEach(([ic, label], i) => {
-    const y = 160 + i * 52, on = i === 0, col = on ? TT_RED : white;
-    icon(ic, 36, y, 24, col);
-    if (!rail) T(label, 66, y, 17, on ? 700 : 600, col);
-    if (i === 1) pill(s.friendsBadge, 50, y - 12, TT_RED);
-    if (i === 4) pill(s.inboxBadge, 50, y - 12, TT_RED);
-  });
-  rect(SB - 1, 0, 1, WIDE_H, line);
-
-  const VW = 428, VH = 760, vy = 30;
-  if (mode === "story") {
-    icon("tkClose", W - 36, 40, 20, white);
-    storyCard({ x: SB + (W - SB - VW) / 2, name: s.name, time: s.extra, reply: "Send a message..." });
-    return ops;
-  }
-  const gx = SB + (W - SB - VW - 100) / 2;
-  media(gx, vy, VW, VH);
-  grad(gx, vy + VH - 240, VW, 240, "rgba(0,0,0,0)", "rgba(0,0,0,0.55)");
-  T(s.name, gx + 16, vy + VH - 100, 17, 700, white, { maxW: VW - 32 });
-  T(s.caption, gx + 16, vy + VH - 70, 15, 400, white, { maxW: VW - 32 });
-  icon("tkMusic", gx + 24, vy + VH - 40, 14, white);
-  T(s.sound, gx + 40, vy + VH - 40, 14, 500, white, { maxW: VW - 70 });
-
-  const rx = gx + VW + 48;
-  dot(rx, 372, 24, "#FFFFFF");
-  if (s.avatar) img(s.avatar, rx, 372, 22);
-  else avatar(rx, 372, 22);
-  dot(rx, 396, 10, TT_RED);
-  icon("tkPlus", rx, 396, 22, white);
-  [["tkHeart", s.extra], ["tkComment", s.comments], ["tkBookmark", s.saves], ["tkShare", s.shares]].forEach(([ic, n], i) => {
-    const y = 456 + i * 78;
-    dot(rx, y, 22, "rgba(255,255,255,0.12)");
-    icon(ic, rx, y, 24, white);
-    T(n, rx, y + 36, 13, 600, white, { align: "center" });
-  });
-  img(s.soundAvatar || s.avatar || TT_SOUND_DEFAULT, rx, 770, 20);
-  return ops;
-}
-
-// ----- WhatsApp (status) -----
-function whatsappWideOps(s, w, h) {
-  const K = wideKit(s, w, h, WA_FONT);
-  const { W, ops, rect, dot, icon, T, img, avatar, bg, storyCard } = K;
-  const panel = "#111B21", viewer = "#0B141A", line = "#222D34", text = "#E9EDEF", sub = "#8696A0", green = "#00A884";
-  bg(viewer);
-  const LW = W < 900 ? 0 : 400;
-  if (LW) {
-    rect(0, 0, LW, WIDE_H, panel);
-    rect(LW - 1, 0, 1, WIDE_H, line);
-    T("Status", 24, 40, 22, 700, text);
-    icon("liPlus", LW - 74, 40, 18, sub);
-    icon("menuV", LW - 30, 40, 24, sub);
-    dot(44, 112, 24, "#2A3942");
-    icon("liPlus", 44, 112, 18, text);
-    T("My status", 84, 104, 16, 500, text);
-    T("Click to add status update", 84, 124, 13, 400, sub);
-    T("RECENT", 24, 178, 13, 500, green);
-    [[s.name, s.extra, true], ["Maya", "Today, 4:12 AM"], ["Chris", "Today, 2:30 AM"], ["Priya", "Yesterday, 11:08 PM"]].forEach(([n, t, on], i) => {
-      const y = 236 + i * 76;
-      if (on) rect(0, y - 38, LW - 1, 76, "#2A3942");
-      dot(44, y, 27, green);
-      dot(44, y, 25, on ? "#2A3942" : panel);
-      if (on) avatar(44, y, 23);
-      else img(IG_LIKER_DEFAULT, 44, y, 23);
-      T(n, 86, y - 10, 16, 500, text, { maxW: LW - 110 });
-      T(t, 86, y + 12, 13, 400, sub, { maxW: LW - 110 });
-    });
-  }
-  icon("stClose", W - 36, 40, 20, text);
-  storyCard({ x: LW + (W - LW - 428) / 2, y: 40, ch: 740, name: s.name, time: s.extra, stacked: true, caption: s.caption, reply: "Reply", trail: ["heart"], segs: 1 });
-  return ops;
-}
-
-// ----- LinkedIn -----
-function linkedinWideOps(s, w, h) {
-  const dark = s.theme === "dark";
-  const c = dark ? LI_DARK : LI_LIGHT;
-  const K = wideKit(s, w, h, LI_FONT);
-  const { W, ops, rect, dot, icon, T, runs, tw, wrap, img, avatar, media, bg, pill } = K;
-  bg(dark ? "#000000" : "#F4F2EE");
-
-  const CW = Math.min(W - 48, 1128), X0 = (W - CW) / 2;
-  rect(0, 0, W, 56, c.bar);
-  rect(0, 56, W, 1, c.div);
-  rect(X0, 11, 34, 34, "#0A66C2", 6);
-  T("in", X0 + 17, 29, 22, 700, "#FFFFFF", { align: "center" });
-  rect(X0 + 46, 10, 280, 36, dark ? "#38434F" : "#EDF3F8", 6);
-  icon("liSearch", X0 + 68, 28, 16, c.sub);
-  T("Search", X0 + 86, 28, 14, 400, c.sub);
-  const NW = 84, nx0 = X0 + CW - NW * 6;
-  [["liHome", "Home"], ["liNetwork", "My Network"], ["liJobs", "Jobs"], ["liMsg", "Messaging"], ["liBell", "Notifications"]].forEach(([ic, label], i) => {
-    const cx = nx0 + i * NW + NW / 2, on = i === 0, col = on ? c.active : c.sub;
-    icon(ic, cx, 20, 22, col);
-    T(label, cx, 44, 12, on ? 500 : 400, col, { align: "center" });
-    if (on) rect(nx0 + i * NW, 54, NW, 2, c.active);
-  });
-  pill(s.badge, nx0 + 4 * NW + NW / 2 + 12, 12, c.badge, c.badgeText);
-  const meX = nx0 + 5 * NW + NW / 2;
-  avatar(meX, 20, 12);
-  T("Me", meX, 44, 12, 400, c.sub, { align: "center" });
-
-  const leftOn = CW >= 780, rightOn = CW >= 1050, LW = 225, RW = 300, GAP = 24;
-  const center = Math.min(600, CW - (leftOn ? LW + GAP : 0) - (rightOn ? RW + GAP : 0));
-  const total = (leftOn ? LW + GAP : 0) + center + (rightOn ? GAP + RW : 0);
-  const gx = (W - total) / 2;
-  const lx = gx, px = gx + (leftOn ? LW + GAP : 0), rx = px + center + GAP;
-
-  if (leftOn) {
-    rect(lx, 72, LW, 222, c.bg, 8, c.div, 1);
-    const cover = dark ? "#3E4A5A" : "#A0B4B7";
-    rect(lx, 72, LW, 54, cover, 8);
-    rect(lx, 100, LW, 26, cover);
-    dot(lx + 112, 126, 38, c.bg);
-    avatar(lx + 112, 126, 36);
-    T(s.name, lx + 112, 178, 16, 600, c.text, { align: "center", maxW: 200 });
-    T(s.headline, lx + 112, 198, 12, 400, c.sub, { align: "center", maxW: 200 });
-    rect(lx, 226, LW, 1, c.div);
-    T("Profile viewers", lx + 16, 248, 12, 600, c.sub);
-    T("41", lx + LW - 16, 248, 12, 600, c.link, { align: "right" });
-    T("View all analytics", lx + 16, 272, 12, 600, c.text);
-  }
-
-  rect(px, 72, center, 64, c.bg, 8, c.div, 1);
-  avatar(px + 36, 104, 22);
-  rect(px + 72, 86, center - 88, 36, null, 18, c.border, 1);
-  T("Start a post", px + 92, 104, 14, 600, c.sub);
-
-  let lines = wrap(s.caption, 14, 400, center - 32);
-  const clipped = lines.length > 3;
-  lines = lines.slice(0, 3);
-  if (clipped) {
-    let last = lines[2];
-    while (last.length > 1 && tw(`${last}…more`, 14, 400) > center - 32) last = last.slice(0, -1).trimEnd();
-    lines[2] = last;
-  }
-  const capY = 248, mediaY = capY + lines.length * 20 + 6, mediaH = 300;
-  const ry = mediaY + mediaH + 22, bottom = ry + 74;
-  rect(px, 148, center, bottom - 148, c.bg, 8, c.div, 1);
-  avatar(px + 36, 190, 24);
-  T(s.name, px + 70, 180, 15, 600, c.text, { maxW: center - 220 });
-  T(s.headline, px + 70, 198, 12, 400, c.sub2, { maxW: center - 220 });
-  T(s.time, px + 70, 214, 12, 400, c.sub);
-  icon("liGlobe", px + 70 + tw(s.time, 12, 400) + 16, 214, 12, c.icon);
-  icon("liPlus", px + center - 72, 188, 16, c.link);
-  T("Follow", px + center - 16, 188, 15, 600, c.link, { align: "right" });
-  lines.forEach((ln, i) => {
-    if (clipped && i === 2) runs([[`${ln}…`, 400], ["more", 400, c.sub]], px + 16, capY + i * 20, 14, c.text, center - 32);
-    else T(ln, px + 16, capY + i * 20, 14, 400, c.text);
-  });
-  media(px, mediaY, center, mediaH);
-  [[LI_CELEBRATE_BADGE, 40], [LI_LOVE_BADGE, 28], [LI_LIKE_BADGE, 16]].forEach(([src, dx]) => {
-    dot(px + dx + 8, ry, 9.5, c.bg);
-    img(src, px + dx + 8, ry, 8, true);
-  });
-  T(s.extra, px + 70, ry, 12, 400, c.sub);
-  const repW = tw(s.reposts, 12, 400);
-  T(s.reposts, px + center - 16, ry, 12, 400, c.sub, { align: "right" });
-  dot(px + center - 16 - repW - 8, ry, 1.3, c.sub);
-  T(s.comments, px + center - 16 - repW - 16, ry, 12, 400, c.sub, { align: "right" });
-  rect(px + 12, ry + 16, center - 24, 1, c.div);
-  [["liLike", "Like"], ["liComment", "Comment"], ["liRepost", "Repost"], ["liSend", "Send"]].forEach(([ic, label], i) => {
-    const cx = px + (center * (i + 0.5)) / 4, tot = 20 + 8 + tw(label, 14, 600), x0 = cx - tot / 2;
-    icon(ic, x0 + 10, ry + 44, 20, c.icon);
-    T(label, x0 + 28, ry + 44, 14, 600, c.icon);
-  });
-
-  if (rightOn) {
-    rect(rx, 72, RW, 330, c.bg, 8, c.div, 1);
-    T("LinkedIn News", rx + 16, 98, 16, 600, c.text);
-    ["Hiring rebounds across tech", "Design roles lead new openings", "Remote work: what comes next", "Startups raise record rounds", "AI tools reshape workflows"].forEach((n, i) => {
-      const y = 134 + i * 52;
-      dot(rx + 20, y - 6, 2.5, c.text);
-      T(n, rx + 32, y - 6, 13, 600, c.text, { maxW: RW - 48 });
-      T("Top news · 3,412 readers", rx + 32, y + 12, 12, 400, c.sub, { maxW: RW - 48 });
-    });
-  }
-  return ops;
-}
-
-// ----- Facebook -----
-function facebookWideOps(s, w, h) {
-  const mode = modeOf("facebook", s.mode).value;
-  const dark = mode !== "post" || s.theme === "dark";
-  const c = dark ? FB_DARK : FB_LIGHT;
-  const K = wideKit(s, w, h, FB_FONT);
-  const { W, ops, rect, grad, dot, icon, T, runs, tw, wrap, img, avatar, media, bg, pill, storyCard } = K;
-  const white = "#FFFFFF";
-  const chipBg = dark ? "#3A3B3C" : "#F0F2F5";
-  const likeBadge = FB_LIKE_BADGE.replace(/\(/g, "%28").replace(/\)/g, "%29");
-
-  if (mode === "story") {
-    bg("#000000");
-    dot(36, 36, 20, "#1877F2");
-    T("f", 36, 39, 28, 700, white, { align: "center" });
-    icon("stClose", W - 36, 36, 20, white);
-    storyCard({ x: (W - 428) / 2, name: s.name, time: s.extra, badges: [FB_LOVE_BADGE, likeBadge, FB_HAHA_BADGE] });
-    return ops;
-  }
-
-  bg(mode === "post" ? (dark ? "#18191A" : "#F0F2F5") : "#000000");
-  rect(0, 0, W, 56, c.bg);
-  rect(0, 56, W, 1, c.hair);
-  dot(36, 28, 20, "#1877F2");
-  T("f", 36, 31, 28, 700, white, { align: "center" });
-  if (W >= 900) {
-    rect(66, 8, 250, 40, chipBg, 20);
-    icon("search", 90, 28, 16, c.sub);
-    T("Search Facebook", 108, 28, 15, 400, c.sub);
-  } else {
-    dot(86, 28, 20, chipBg);
-    icon("search", 86, 28, 16, c.sub);
-  }
-  const activeNav = mode === "reels" ? 1 : 0;
-  [["fbHome", 0], ["fbReels", 1], ["fbMarket", 2], ["fbFriends", 3]].forEach(([ic, i]) => {
-    const cx = W / 2 + (i - 1.5) * 100, on = i === activeNav;
-    icon(ic, cx, 28, 26, on ? c.link : c.sub);
-    if (on) rect(cx - 40, 53, 80, 3, c.link, 1.5);
-  });
-  pill(s.reelsBadge, W / 2 - 50 + 14, 14, "#E41E3F");
-  [["menu", W - 174], ["comment", W - 126], ["fbBell", W - 78]].forEach(([ic, cx]) => {
-    dot(cx, 28, 20, chipBg);
-    icon(ic, cx, 28, 22, c.text);
-  });
-  pill(s.notifBadge, W - 78 + 14, 12, "#E41E3F");
-  avatar(W - 30, 28, 20);
-
-  if (mode === "reels") {
-    const VH = 730, VW = 411, vy = 70, gx = (W - VW) / 2;
-    media(gx, vy, VW, VH);
-    grad(gx, vy + VH - 240, VW, 240, "rgba(0,0,0,0)", "rgba(0,0,0,0.55)");
-    avatar(gx + 34, vy + VH - 112, 18);
-    T(s.name, gx + 62, vy + VH - 112, 15, 600, white, { maxW: 200 });
-    T("Follow", gx + VW - 20, vy + VH - 112, 14, 600, white, { align: "right" });
-    icon("music", gx + 24, vy + VH - 76, 14, white);
-    T(s.sound, gx + 40, vy + VH - 76, 14, 500, white, { maxW: VW - 70 });
-    T(s.caption, gx + 16, vy + VH - 44, 15, 400, white, { maxW: VW - 32 });
-    const rx = gx + VW + 44;
-    [["thumbsUp", s.extra], ["comment", s.comments], ["stShare", s.shares], ["bookmark", s.saves]].forEach(([ic, n], i) => {
-      const y = 460 + i * 80;
-      dot(rx, y, 24, "rgba(255,255,255,0.12)");
-      icon(ic, rx, y, 24, white);
-      T(n, rx, y + 38, 13, 500, white, { align: "center" });
-    });
-    return ops;
-  }
-
-  const leftOn = W >= 1000, rightOn = W >= 1250, LW = 280, RW = 300;
-  const space0 = leftOn ? LW : 0, space1 = W - (rightOn ? RW : 0);
-  const FW = Math.min(680, space1 - space0 - 48);
-  const fx = space0 + (space1 - space0 - FW) / 2;
-
-  if (leftOn) {
-    avatar(40, 92, 18);
-    T(s.name, 70, 92, 16, 600, c.text, { maxW: 190 });
-    [["fbFriends", "Friends"], ["fbReels", "Reels"], ["fbMarket", "Marketplace"], ["bookmark", "Saved"]].forEach(([ic, label], i) => {
-      const y = 144 + i * 52;
-      icon(ic, 40, y, 26, c.link);
-      T(label, 70, y, 16, 500, c.text);
-    });
-  }
-
-  const lines0 = wrap(s.caption, 15, 400, FW - 32);
-  const clipped = lines0.length > 2;
-  const lines = lines0.slice(0, 2);
-  if (clipped) {
-    let last = lines[1];
-    while (last.length > 1 && tw(`${last}… See more`, 15, 600) > FW - 32) last = last.slice(0, -1).trimEnd();
-    lines[1] = last;
-  }
-  const mediaY = 156 + lines.length * 20 + 10, mediaH = 460;
-  const ry = mediaY + mediaH + 22, bottom = ry + 68;
-  rect(fx, 72, FW, bottom - 72, c.bg, 8, c.hair, 1);
-  avatar(fx + 36, 112, 20);
-  T(s.name, fx + 68, 104, 15, 600, c.text, { maxW: FW - 200 });
-  T(s.time, fx + 68, 122, 13, 400, c.sub);
-  icon("globe", fx + 68 + tw(s.time, 13, 400) + 16, 122, 13, c.sub);
-  icon("menu", fx + FW - 62, 112, 24, c.sub);
-  icon("stClose", fx + FW - 26, 112, 18, c.sub);
-  lines.forEach((ln, i) => {
-    if (clipped && i === 1) runs([[`${ln}… `, 400], ["See more", 600, c.sub]], fx + 16, 156 + i * 20, 15, c.text, FW - 32);
-    else T(ln, fx + 16, 156 + i * 20, 15, 400, c.text);
-  });
-  media(fx, mediaY, FW, mediaH);
-  img(likeBadge, fx + 26, ry, 9, true);
-  T(s.extra, fx + 42, ry, 13, 400, c.sub);
-  T(s.shares, fx + FW - 16, ry, 13, 400, c.sub, { align: "right" });
-  T(s.comments, fx + FW - 16 - tw(s.shares, 13, 400) - 12, ry, 13, 400, c.sub, { align: "right" });
-  rect(fx + 12, ry + 16, FW - 24, 1, c.hair);
-  [["thumbsUp", "Like"], ["comment", "Comment"], ["stShare", "Share"]].forEach(([ic, label], i) => {
-    const cx = fx + (FW * (i + 0.5)) / 3, tot = 20 + 6 + tw(label, 14, 600), x0 = cx - tot / 2;
-    icon(ic, x0 + 10, ry + 40, 22, c.sub);
-    T(label, x0 + 26, ry + 40, 14, 600, c.sub);
-  });
-
-  if (rightOn) {
-    const rx = W - RW + 16;
-    T("Contacts", rx, 92, 16, 600, c.sub);
-    ["Alex Morgan", "Maya Chen", "Chris Ortiz", "Priya Nair", "Jordan Lee", "Sam Rivera"].forEach((n, i) => {
-      const y = 134 + i * 48;
-      img(IG_LIKER_DEFAULT, rx + 18, y, 18);
-      dot(rx + 30, y + 12, 6, c.navBg);
-      dot(rx + 30, y + 12, 4.5, "#31A24C");
-      T(n, rx + 48, y, 15, 500, c.text, { maxW: RW - 80 });
-    });
-  }
-  return ops;
-}
-
-function wideSocialOps(s, w, h) {
-  s = { ...socialDefaults(s.platform, s.mode), ...s };
-  switch (s.platform) {
-    case "instagram": return instagramWideOps(s, w, h);
-    case "tiktok": return tiktokWideOps(s, w, h);
-    case "whatsapp": return whatsappWideOps(s, w, h);
-    case "linkedin": return linkedinWideOps(s, w, h);
-    default: return facebookWideOps(s, w, h);
-  }
-}
-
-function socialOps(s, w, h) {
-  if (w / h >= WIDE_RATIO) return wideSocialOps(s, w, h);
-  // taller than wide (phones, portrait tablets): phone layout as a centered column
-  const cw = Math.min(w, h * SOCIAL_COLUMN_RATIO);
-  const ox = (w - cw) / 2;
-  const ops = buildSocialOps(s, cw, h);
-  if (!ops.some((o) => o.t === "media")) {
-    ops.unshift({ t: "media", src: s.media ?? null, ...socialMediaRect(s, cw, h) });
-  }
-  if (ox < 0.5) return ops;
-  ops.forEach((o) => {
-    if ("x" in o) o.x += ox;
-    if ("cx" in o) o.cx += ox;
-  });
-  ops.unshift({ t: "rect", x: 0, y: 0, w, h, fill: socialSideColor(s), r: 0 });
-  return ops;
-}
-
-function buildSocialOps(s, w, h) {
-  if (s.platform === "facebook") return facebookOps(s, w, h);
-  if (s.platform === "instagram") return instagramOps(s, w, h);
-  if (s.platform === "whatsapp") return whatsappOps(s, w, h);
-  if (s.platform === "tiktok") return modeOf("tiktok", s.mode).value === "story" ? tiktokStoryOps(s, w, h) : tiktokOps(s, w, h);
-  if (s.platform === "linkedin") return linkedinOps(s, w, h);
-  const u = Math.min(w, h * 0.5625) / 100;
-  const dark = s.theme === "dark";
-  const ops = [];
-  const rect = (x, y, rw, rh, fill, r = 0) => ops.push({ t: "rect", x, y, w: rw, h: rh, fill, r });
-  const grad = (x, y, gw, gh, from, to) => ops.push({ t: "vgrad", x, y, w: gw, h: gh, from, to });
-  const dot = (cx, cy, r, fill) => ops.push({ t: "circle", cx, cy, r, fill });
-  const text = (str, x, y, size, color, o = {}) =>
-    ops.push({ t: "text", text: str ?? "", x, y, s: size, color, weight: o.weight ?? 500, align: o.align ?? "left", maxW: o.maxW });
-  const handle = (s.name ?? "").replace(/^@/, "");
-  const initial = (handle.trim()[0] || "?").toUpperCase();
-  const mode = modeOf(s.platform, s.mode).value;
-
-  // ----- shared story chrome -----
-  const progress = (segs = 3) => {
-    const gap = u, y = 3.5 * u, bh = Math.max(1, 0.7 * u);
-    const sw = (w - 6 * u - gap * (segs - 1)) / segs;
-    for (let i = 0; i < segs; i++) {
-      const x = 3 * u + i * (sw + gap);
-      rect(x, y, sw, bh, "rgba(255,255,255,0.35)", bh / 2);
-      if (i === 0) rect(x, y, sw * 0.6, bh, "#FFFFFF", bh / 2);
-    }
-  };
-  const storyTop = ({ label = handle, ring, segs = 3, stacked = false }) => {
-    grad(0, 0, w, 24 * u, "rgba(0,0,0,0.5)", "rgba(0,0,0,0)");
-    progress(segs);
-    const cy = 11 * u, r = 3.6 * u, ax = 7.5 * u, nx = 14 * u;
-    if (ring) {
-      dot(ax, cy, r + 0.9 * u, ring);
-      dot(ax, cy, r + 0.35 * u, "#000000");
-    }
-    dot(ax, cy, r, "#C7C7CC");
-    text(initial, ax, cy, 3.2 * u, "#3A3A3C", { align: "center", weight: 700 });
-    if (stacked) {
-      text(label, nx, cy - 2 * u, 3.3 * u, "#FFFFFF", { weight: 600, maxW: w * 0.5 });
-      text(s.extra, nx, cy + 2.4 * u, 2.6 * u, "rgba(255,255,255,0.75)", { weight: 400, maxW: w * 0.5 });
-    } else {
-      text(label, nx, cy, 3.3 * u, "#FFFFFF", { weight: 600, maxW: w * 0.4 });
-      const nameW = Math.min(w * 0.4, (label ?? "").length * 1.9 * u);
-      text(s.extra, nx + nameW + 2 * u, cy, 3 * u, "rgba(255,255,255,0.7)", { weight: 400, maxW: w * 0.2 });
-    }
-    text("•••", w - 11 * u, cy, 3 * u, "#FFFFFF", { align: "center" });
-    text("✕", w - 4.5 * u, cy, 3.4 * u, "#FFFFFF", { align: "center" });
-  };
-  const storyText = () => {
-    if (!s.caption) return;
-    const bw = Math.min(w - 16 * u, s.caption.length * 2.1 * u + 8 * u);
-    rect((w - bw) / 2, h * 0.5 - 4.5 * u, bw, 9 * u, "rgba(0,0,0,0.55)", 2.5 * u);
-    text(s.caption, w / 2, h * 0.5, 3.6 * u, "#FFFFFF", { align: "center", weight: 600, maxW: bw - 6 * u });
-  };
-  const storyReply = (placeholder, icons) => {
-    grad(0, h - 24 * u, w, 24 * u, "rgba(0,0,0,0)", "rgba(0,0,0,0.5)");
-    const rw = w - 6 * u - icons.length * 8 * u;
-    rect(3 * u, h - 13 * u, rw, 8.5 * u, "rgba(255,255,255,0.18)", 4.25 * u);
-    text(placeholder, 7 * u, h - 8.75 * u, 3.3 * u, "rgba(255,255,255,0.9)", { weight: 400, maxW: rw - 8 * u });
-    icons.forEach((ic, i) => text(ic, 3 * u + rw + 5 * u + i * 8 * u, h - 8.75 * u, 4.6 * u, "#FFFFFF", { align: "center" }));
-  };
-
-  switch (s.platform) {
-    case "tiktok": {
-      storyTop({ ring: "#FE2C55" });
-      storyText();
-      storyReply("Send a message...", ["♡", "➤"]);
-      break;
-    }
-    case "facebook": {
-      if (mode === "story") {
-        storyTop({ label: s.name, ring: "#1877F2" });
-        storyText();
-        storyReply("Send message...", ["👍", "❤️"]);
-        break;
-      }
-      const bg = dark ? "#242526" : "#FFFFFF";
-      const fg = dark ? "#E4E6EB" : "#050505";
-      const sub = dark ? "#B0B3B8" : "#65676B";
-      const line = dark ? "#3E4042" : "#CED0D4";
-      rect(0, 0, w, 13 * u, bg);
-      dot(7 * u, 6.5 * u, 3.8 * u, "#1877F2");
-      text(initial, 7 * u, 6.5 * u, 3.8 * u, "#FFFFFF", { align: "center", weight: 700 });
-      text(s.name, 13 * u, 5 * u, 3.6 * u, fg, { weight: 600, maxW: w - 34 * u });
-      text("Just now · 🌐", 13 * u, 9.2 * u, 2.7 * u, sub, { weight: 400 });
-      text("•••", w - 11 * u, 6.5 * u, 3.2 * u, sub, { align: "center" });
-      text("✕", w - 4.5 * u, 6.5 * u, 3.4 * u, sub, { align: "center" });
-      rect(0, h - 32 * u, w, 32 * u, bg);
-      text(s.caption, 4 * u, h - 27 * u, 3.4 * u, fg, { weight: 400, maxW: w - 8 * u });
-      dot(6 * u, h - 19.5 * u, 2 * u, "#1877F2");
-      text("👍", 6 * u, h - 19.5 * u, 2.2 * u, "#FFFFFF", { align: "center" });
-      text(s.extra, 9.5 * u, h - 19.5 * u, 2.9 * u, sub, { weight: 400 });
-      text("12 comments", w - 4 * u, h - 19.5 * u, 2.9 * u, sub, { align: "right", weight: 400 });
-      rect(4 * u, h - 14.5 * u, w - 8 * u, Math.max(1, 0.25 * u), line);
-      ["👍 Like", "💬 Comment", "↗ Share"].forEach((l, i) =>
-        text(l, (w * (1 + 2 * i)) / 6, h - 7.5 * u, 3 * u, sub, { align: "center", weight: 600 })
-      );
-      break;
-    }
-    default: {
-      // instagram
-      if (mode === "story") {
-        storyTop({ ring: "#E1306C" });
-        storyText();
-        storyReply("Send message", ["♡", "➤"]);
-        break;
-      }
-      const bg = dark ? "#000000" : "#FFFFFF";
-      const fg = dark ? "#FFFFFF" : "#262626";
-      rect(0, 0, w, 12 * u, bg);
-      dot(6.5 * u, 6 * u, 3.6 * u, "#E1306C");
-      dot(6.5 * u, 6 * u, 3.1 * u, bg);
-      dot(6.5 * u, 6 * u, 2.6 * u, "#C7C7CC");
-      text(s.name, 12 * u, 6 * u, 3.6 * u, fg, { weight: 600, maxW: w - 24 * u });
-      text("•••", w - 4 * u, 6 * u, 3.2 * u, fg, { align: "right" });
-      rect(0, h - 26 * u, w, 26 * u, bg);
-      text("♡", 4 * u, h - 20.5 * u, 6 * u, fg);
-      dot(15 * u, h - 20.5 * u, 2.6 * u, fg);
-      dot(15 * u, h - 20.5 * u, 2.2 * u, bg);
-      text("➤", 22 * u, h - 20.5 * u, 5 * u, fg);
-      rect(w - 7.5 * u, h - 23 * u, 3.6 * u, 5 * u, fg, 0.5 * u);
-      rect(w - 7.1 * u, h - 22.6 * u, 2.8 * u, 4.2 * u, bg, 0.3 * u);
-      text(`${s.extra} likes`, 4 * u, h - 13 * u, 3.3 * u, fg, { weight: 600 });
-      text(`${s.name} ${s.caption}`, 4 * u, h - 7.5 * u, 3.2 * u, fg, { weight: 400, maxW: w - 8 * u });
-      text("2 hours ago", 4 * u, h - 3 * u, 2.4 * u, dark ? "#A8A8A8" : "#8E8E8E", { weight: 400 });
-    }
-  }
-  return ops;
-}
-
-const chromeKey = (f) => (f.img ? `${f.img.cropUrl ?? f.img.url}|${(f.w / f.h).toFixed(2)}` : null);
-
-// Draws the image as object-cover at the frame's aspect, then averages the pixels behind
-// the status bar and home indicator (same 440 x 956 layout paintPhoneChrome uses).
-function sampleChromeColors(img, fw, fh) {
-  try {
-    const W = 120, H = Math.max(1, Math.round((W * fh) / fw));
-    const c = document.createElement("canvas");
-    c.width = W;
-    c.height = H;
-    const ctx = c.getContext("2d", { willReadFrequently: true });
-    const sc = Math.max(W / img.naturalWidth, H / img.naturalHeight);
-    const dw = img.naturalWidth * sc, dh = img.naturalHeight * sc;
-    ctx.drawImage(img, (W - dw) / 2, (H - dh) / 2, dw, dh);
-    const k = Math.min(W / 440, H / 956);
-    const ox = (W - 440 * k) / 2;
-    const luma = (x, y, w, h) => {
-      const px = Math.min(W - 1, Math.max(0, Math.round(ox + x * k)));
-      const py = Math.min(H - 1, Math.max(0, Math.round(y * k)));
-      const pw = Math.max(1, Math.min(W - px, Math.round(w * k)));
-      const ph = Math.max(1, Math.min(H - py, Math.round(h * k)));
-      const d = ctx.getImageData(px, py, pw, ph).data;
-      let sum = 0, n = 0;
-      for (let i = 0; i < d.length; i += 4) {
-        sum += 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
-        n++;
-      }
-      return n ? sum / n / 255 : 0;
-    };
-    const status = (luma(58, 26, 44, 18) + luma(322, 26, 76, 18)) / 2;
-    const home = luma(153, 925, 134, 24);
-    return { status: status > 0.6 ? "#000000" : "#FFFFFF", home: home > 0.6 ? "#000000" : "#FFFFFF" };
-  } catch {
-    return null;
-  }
-}
-
-// Phone chrome is drawn by the mockup's own canvas code (paintPhoneChrome), via a single "chrome" op.
-function chromeOps(f, w, h, auto) {
-  const s = f.social ?? DEFAULT_SOCIAL;
-  const m = s.on ? modeOf(s.platform, s.mode) : null;
-  const darkText = !!m && m.themed && s.theme !== "dark";
-  // With a social UI on, its theme decides. Otherwise the image decides.
-  const socialColor = s.on ? (darkText ? "#000000" : "#FFFFFF") : null;
-  return [{
-    t: "chrome", w, h,
-    statusBar: !!f.statusBar,
-    homeIndicator: !!f.homeIndicator,
-    color: socialColor ?? "#FFFFFF",
-    statusColor: socialColor ?? auto?.status ?? "#FFFFFF",
-    homeColor: socialColor ?? auto?.home ?? "#FFFFFF",
-  }];
-}
-
-function ChromeCanvas({ o }) {
-  const ref = useRef(null);
-  useLayoutEffect(() => {
-    const c = ref.current;
-    if (!c) return;
-    const dpr = window.devicePixelRatio || 1;
-    c.width = Math.round(o.w * dpr);
-    c.height = Math.round(o.h * dpr);
-    const ctx = c.getContext("2d");
-    ctx.scale(dpr, dpr);
-    paintPhoneChrome(ctx, o.w, o.h, o);
-    }, [o.w, o.h, o.statusBar, o.homeIndicator, o.color, o.statusColor, o.homeColor]);
-  return <canvas ref={ref} className="absolute inset-0" style={{ width: o.w, height: o.h }} />;
-}
-
-function SocialOverlay({ social, width, height }) {
-  const ops = socialOps(social, width, height);
-  return (
-    <div className="social-ui absolute inset-0 pointer-events-none overflow-hidden" style={{ fontFamily: "Inter, sans-serif" }}>
-      {ops.map((o, i) => {
-        if (o.t === "rect" || o.t === "vgrad") {
-          return (
-            <div
-              key={i}
-              className="absolute"
-              style={{
-                left: o.x, top: o.y, width: o.w, height: o.h, borderRadius: o.r || 0,
-                background: o.t === "vgrad" ? `linear-gradient(to bottom, ${o.from}, ${o.to})` : o.fill || "transparent",
-                boxShadow: [o.shadow && `${o.shadow.x}px ${o.shadow.y}px ${o.shadow.blur}px ${o.shadow.color}`, o.stroke && `inset 0 0 0 ${o.sw}px ${o.stroke}`].filter(Boolean).join(", ") || undefined,
-              }}
-            />
-          );
-        }
-        if (o.t === "circle") {
-          return (
-            <div
-              key={i}
-              className="absolute rounded-full"
-              style={{
-                left: o.cx - o.r, top: o.cy - o.r, width: o.r * 2, height: o.r * 2,
-                background: o.grad ? `linear-gradient(45deg, ${o.grad.join(", ")})` : o.fill,
-              }}
-            />
-          );
-        }
-
-                if (o.t === "chrome") return <ChromeCanvas key={i} o={o} />;
-
-        if (o.t === "media") {
-          return o.src ? (
-            <div
-              key={i}
-              className="absolute bg-cover bg-center"
-              style={{ left: o.x, top: o.y, width: o.w, height: o.h, backgroundImage: `url(${o.src})` }}
-            />
-          ) : (
-            <div
-              key={i}
-              className="keep-size absolute flex items-center justify-center text-center font-semibold select-none"
-              style={{
-                left: o.x, top: o.y, width: o.w, height: o.h,
-                background: "linear-gradient(180deg, #FFFFFF 0%, #FF47BC 100%)",
-                color: "#FAF9FA", fontSize: Math.max(11, o.w * 0.05), lineHeight: 1.3,
-              }}
-            >
-              <span style={{ maxWidth: "45%" }}>Drop your image here</span>
-            </div>
-          );
-        }
-        if (o.t === "image") {
-          return (
-            <div
-              key={i}
-              className={`absolute bg-center ${o.sq ? "bg-contain bg-no-repeat" : "rounded-full bg-cover"}`}
-              style={{ left: o.cx - o.r, top: o.cy - o.r, width: o.r * 2, height: o.r * 2, backgroundImage: `url(${o.src})` }}
-            />
-          );
-        }
-        if (o.t === "icon") {
-          const ic = ICONS[o.name];
-          if (!ic) return null;
-          const [vw, vh] = ic.vb || [24, 24];
-          const k = o.size / 24;
-          return (
-            <svg
-              key={i}
-              viewBox={`0 0 ${vw} ${vh}`}
-              fill={ic.fill ? o.color : "none"}
-              fillRule={ic.rule || "nonzero"}
-              stroke={ic.fill ? "none" : o.color}
-              strokeWidth={ic.sw ?? 2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="absolute"
-              style={{ left: o.cx - (vw * k) / 2, top: o.cy - (vh * k) / 2, width: vw * k, height: vh * k, overflow: "visible" }}
-            >
-              {ic.d.map((d, j) => <path key={j} d={d} />)}
-            </svg>
-          );
-        }
-        const tx = o.align === "center" ? "-50%" : o.align === "right" ? "-100%" : "0";
-        return (
-          <span
-            key={i}
-            className="absolute block whitespace-nowrap overflow-hidden text-ellipsis"
-                        style={{ left: o.x, top: o.y, fontFamily: o.font, fontSize: o.s, fontWeight: o.weight, color: o.color, lineHeight: 1.25, letterSpacing: o.ls, maxWidth: o.maxW, transform: `translate(${tx}, -50%)` }}
-          >
-            {o.runs
-              ? o.runs.map(([str, wt, col], k) => <span key={k} style={{ fontWeight: wt, color: col || o.color }}>{str}</span>)
-              : o.text}
-          </span>
-        );
-      })}
-    </div>
-  );
-}
-
-function paintSocial(ctx, ops, ox, oy, imgs) {
-  ops.forEach((o) => {
-    if (o.t === "rect" || o.t === "vgrad") {
-      let fill = o.fill;
-      if (o.t === "vgrad") {
-        const g = ctx.createLinearGradient(0, oy + o.y, 0, oy + o.y + o.h);
-        g.addColorStop(0, o.from);
-        g.addColorStop(1, o.to);
-        fill = g;
-      }
-      if (fill) {
-        ctx.save();
-        if (o.shadow) {
-          ctx.shadowColor = o.shadow.color;
-          ctx.shadowBlur = o.shadow.blur;
-          ctx.shadowOffsetX = o.shadow.x;
-          ctx.shadowOffsetY = o.shadow.y;
-        }
-        ctx.fillStyle = fill;
-        ctx.beginPath();
-        ctx.roundRect(ox + o.x, oy + o.y, o.w, o.h, o.r || 0);
-        ctx.fill();
-        ctx.restore();
-      }
-      if (o.stroke) {
-        ctx.beginPath();
-        ctx.roundRect(ox + o.x + o.sw / 2, oy + o.y + o.sw / 2, o.w - o.sw, o.h - o.sw, Math.max(0, (o.r || 0) - o.sw / 2));
-        ctx.lineWidth = o.sw;
-        ctx.strokeStyle = o.stroke;
-        ctx.stroke();
-      }
-    } else if (o.t === "circle") {
-      let fill = o.fill;
-      if (o.grad) {
-        const g = ctx.createLinearGradient(ox + o.cx - o.r, oy + o.cy + o.r, ox + o.cx + o.r, oy + o.cy - o.r);
-        o.grad.forEach((c, i) => g.addColorStop(i / (o.grad.length - 1), c));
-        fill = g;
-      }
-      ctx.fillStyle = fill;
-      ctx.beginPath();
-      ctx.arc(ox + o.cx, oy + o.cy, o.r, 0, Math.PI * 2);
-      ctx.fill();
-    } else if (o.t === "icon") {
-      const ic = ICONS[o.name];
-      if (!ic) return;
-      const [vw, vh] = ic.vb || [24, 24];
-      const k = o.size / 24;
-      ctx.save();
-      ctx.translate(ox + o.cx - (vw * k) / 2, oy + o.cy - (vh * k) / 2);
-      ctx.scale(k, k);
-      ctx.lineWidth = ic.sw ?? 2;
-      ctx.lineCap = "round";
-      ctx.lineJoin = "round";
-      ctx.fillStyle = o.color;
-      ctx.strokeStyle = o.color;
-      ic.d.forEach((d) => {
-        const p = new Path2D(d);
-        if (ic.fill) ctx.fill(p, ic.rule || "nonzero");
-        else ctx.stroke(p);
-      });
-      ctx.restore();
-
-      } else if (o.t === "chrome") {
-      ctx.save();
-      ctx.translate(ox, oy);
-      paintPhoneChrome(ctx, o.w, o.h, o);
-      ctx.restore();
-    } else if (o.t === "media") {
-      const img = imgs?.get(o.src);
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(ox + o.x, oy + o.y, o.w, o.h);
-      ctx.clip();
-      if (img) {
-        const sc = Math.max(o.w / img.naturalWidth, o.h / img.naturalHeight);
-        const dw = img.naturalWidth * sc, dh = img.naturalHeight * sc;
-        ctx.drawImage(img, ox + o.x + (o.w - dw) / 2, oy + o.y + (o.h - dh) / 2, dw, dh);
-      } else {
-        const g = ctx.createLinearGradient(0, oy + o.y, 0, oy + o.y + o.h);
-        g.addColorStop(0, "#FFFFFF");
-        g.addColorStop(1, "#FF47BC");
-        ctx.fillStyle = g;
-        ctx.fillRect(ox + o.x, oy + o.y, o.w, o.h);
-        const fs = Math.max(11, o.w * 0.05), mx = ox + o.x + o.w / 2, my = oy + o.y + o.h / 2;
-        ctx.fillStyle = "#FAF9FA";
-        ctx.font = `600 ${fs}px Inter, sans-serif`;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText("Drop your", mx, my - fs * 0.65);
-        ctx.fillText("image here", mx, my + fs * 0.65);
-      }
-      ctx.restore();
-    } else if (o.t === "image") {
-      const img = imgs?.get(o.src);
-      if (img && o.sq) {
-        ctx.drawImage(img, ox + o.cx - o.r, oy + o.cy - o.r, o.r * 2, o.r * 2);
-      } else if (img) {
-        const sc = Math.max((o.r * 2) / img.naturalWidth, (o.r * 2) / img.naturalHeight);
-        const dw = img.naturalWidth * sc, dh = img.naturalHeight * sc;
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(ox + o.cx, oy + o.cy, o.r, 0, Math.PI * 2);
-        ctx.clip();
-        ctx.drawImage(img, ox + o.cx - dw / 2, oy + o.cy - dh / 2, dw, dh);
-        ctx.restore();
-      }
-    } else {
-      ctx.textBaseline = "middle";
-      ctx.letterSpacing = `${o.ls ?? 0}px`;
-      if (o.runs) {
-        ctx.textAlign = "left";
-        let x = ox + o.x;
-        o.runs.forEach(([str, wt, col]) => {
-          ctx.font = `${wt} ${o.s}px ${o.font || "Inter, sans-serif"}`;
-          ctx.fillStyle = col || o.color;
-          ctx.fillText(str, x, oy + o.y);
-          x += ctx.measureText(str).width;
-        });
-        ctx.letterSpacing = "0px";
-        return;
-      }
-      ctx.font = `${o.weight} ${o.s}px ${o.font || "Inter, sans-serif"}`;
-      ctx.textAlign = o.align;
-      ctx.fillStyle = o.color;
-      let str = o.text;
-      if (o.maxW && ctx.measureText(str).width > o.maxW) {
-        while (str.length > 1 && ctx.measureText(`${str}…`).width > o.maxW) str = str.slice(0, -1);
-        str = `${str}…`;
-      }
-      ctx.fillText(str, ox + o.x, oy + o.y);
-      ctx.letterSpacing = "0px";
-    }
-  });
-}
-
-// Labelled text input, same look as the browser Address field.
-// Long-text fields span both columns; everything else pairs up.
-const SOCIAL_FULL_WIDTH = new Set(["name", "sub", "caption", "sound", "headline"]);
-
-function SocialField({ label, value, onChange, full = false, multiline = false }) {
-  const fieldClass =
-    "flex-1 min-w-0 bg-transparent text-[13px] font-medium tracking-[-0.005em] text-[#3A3A3A] dark:text-[#FAF9FA] outline-none";
-  return (
-    <div className={`flex flex-col gap-2 min-w-0 ${full ? "col-span-2" : ""}`}>
-      <label className="text-[12px] font-medium tracking-[0.01em] text-[#8C8C8C] dark:text-[#9A9A9A] truncate">{label}</label>
-      <div className={`flex ${multiline ? "items-start" : "items-center"} px-2 py-2 bg-[#EDEDED] dark:bg-[#292929] hover:bg-[#E3E3E3] dark:hover:bg-[#333333] focus-within:bg-[#E3E3E3] dark:focus-within:bg-[#333333] rounded-[10px] border border-transparent focus-within:border-[#FF47BC] transition-colors`}>
-        {multiline ? (
-          // Enter inserts a new line. The textarea scrolls once it passes ~5 lines.
-          <textarea
-            value={value}
-            rows={3}
-            onChange={(e) => onChange(e.target.value)}
-            className={`${fieldClass} resize-none max-h-[110px] overflow-y-auto custom-scroll`}
-          />
-        ) : (
-          <input value={value} onChange={(e) => onChange(e.target.value)} className={fieldClass} />
-        )}
-      </div>
-    </div>
-  );
-}
-
-// Round-thumbnail image upload, same look as the Avatar row.
-function ImageUploadField({ label, value, onChange, uploadLabel = "Upload image" }) {
-  const inputRef = useRef(null);
-  const [name, setName] = useState(null);
-  const pick = (e) => {
-    const file = e.target.files?.[0];
-    if (file && file.type.startsWith("image/")) {
-      onChange(URL.createObjectURL(file));
-      setName(file.name);
-    }
-    e.target.value = "";
-  };
-  return (
-    <div className="flex flex-col gap-2">
-      <label className="text-[13px] font-medium tracking-[0.01em] text-[#8C8C8C] dark:text-[#9A9A9A]">{label}</label>
-      {value ? (
-        <div className="w-full h-[66px] flex items-center justify-between py-2 pl-2 pr-1 gap-2 bg-[#FAF9FA] dark:bg-[#171717] border border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10 rounded-2xl">
-          <div className="flex items-center gap-2 h-12 min-w-0">
-            <div className="w-12 h-12 rounded-full shrink-0 bg-cover bg-center bg-[#EDEDED]" style={{ backgroundImage: `url(${value})` }} />
-            <span className="text-[13px] font-medium leading-4 tracking-[-0.005em] text-[#3A3A3A] dark:text-[#FAF9FA] truncate">{name}</span>
-          </div>
-          <div className="flex items-start gap-0.5 shrink-0">
-            <Tooltip label="Replace image" placement="bottom">
-              <button type="button" onClick={() => inputRef.current?.click()} className="group flex items-center justify-center w-8 h-8 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
-                <UploadSimple size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
-              </button>
-            </Tooltip>
-            <Tooltip label="Remove image" placement="bottom">
-              <button type="button" onClick={() => onChange(null)} className="group flex items-center justify-center w-8 h-8 rounded-lg hover:bg-[#F04438]/10 transition-colors">
-                <Trash size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#F04438] transition-colors" />
-              </button>
-            </Tooltip>
-          </div>
-        </div>
-      ) : (
-        <button
-          type="button"
-          onClick={() => inputRef.current?.click()}
-          className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10 rounded-[10px] flex flex-col items-center justify-center gap-1 hover:bg-[#EAEAEA] dark:hover:bg-[#333333] transition-colors"
-        >
-          <UploadSimple size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A]" />
-          <span className="text-[13px] font-medium tracking-[-0.005em] text-[#8C8C8C] dark:text-[#9A9A9A]">{uploadLabel}</span>
-        </button>
-      )}
-      <input ref={inputRef} type="file" accept="image/*" onChange={pick} className="hidden" />
-    </div>
-  );
-}
-
-// Default frame size (same shape as the old iPhone 16 Pro Max default).
-const FRAME_DEFAULT_SIZE = { w: 1320, h: 2868 };
-
-// x / y are the frame's center offset from the canvas center, and s is on-screen px per nominal px.
-// Both are in units of the canvas box's short side, so layouts survive canvas resizes.
-// s = null means "auto-fit to 80% of the canvas" (what a fresh upload/crop uses).
-const makeFrame = (id, patch = {}) => ({
-  id, x: 0, y: 0, w: FRAME_DEFAULT_SIZE.w, h: FRAME_DEFAULT_SIZE.h, s: null,
-  r: 0, // Z rotation in degrees
-  img: null, // { url, label, nw, nh, crop, cropUrl }
-  radius: 0,
-  corners: null, // null = uniform, else [tl, tr, br, bl] in %
-  stroke: DEFAULT_STROKE,
-  effects: [],
-  social: DEFAULT_SOCIAL,
-    statusBar: false, homeIndicator: false,
-  backType: "solid", backHex: "FFFFFF", backOpacity: 100,
-  backGradientType: "Linear", backGradientAngle: 90, backGradientOpacity: 100,
-  backStops: [
-    { id: "back-1", hex: "FFFFFF", position: 0, opacity: 100 },
-    { id: "back-2", hex: "000000", position: 100, opacity: 100 },
-  ],
-  ...patch,
-});
-
-const cornersOf = (f) => f.corners ?? [f.radius, f.radius, f.radius, f.radius];
-const backFillOf = (f) =>
-  f.backType === "solid" ? hexRgba(f.backHex, f.backOpacity) : buildGradientCss(f.backGradientType, f.backGradientAngle, f.backStops);
-const backOpacityOf = (f) => (f.backType === "solid" ? 1 : f.backGradientOpacity / 100);
-
-// Per-frame version of the old App-level `frameAppearance`.
-function frameAppearanceOf(f, env, rx, ry) {
-  const s = f.stroke;
-  const strokeOn = s.on && s.width > 0;
-  const strokeCss = hexRgba(s.hex, s.opacity);
-  const outer = [];
-  if (strokeOn && s.position === "outside") outer.push(`0 0 0 ${s.width}px ${strokeCss}`);
-  if (strokeOn && s.position === "center") outer.push(`0 0 0 ${s.width / 2}px ${strokeCss}`);
-  f.effects
-    .filter((e) => e.visible && e.type === "dropShadow")
-    .forEach((e) => outer.push(`${e.x}px ${e.y}px ${e.blur}px ${e.spread}px ${hexRgba(e.hex, e.opacity)}`));
-  const blur = f.effects.filter((e) => e.visible && e.type === "layerBlur").reduce((sum, e) => sum + e.blur, 0);
-  return {
-    radiiFrac: cornersOf(f).map((p) => p / 100),
-    sheen: sheenCss(env, rx, ry),
-    sheenKey: env,
-    boxShadow: outer.length ? outer.join(", ") : "none",
-    filter: blur > 0 ? `blur(${blur}px)` : "none",
-    insetStroke:
-      strokeOn && s.position !== "outside"
-        ? `inset 0 0 0 ${s.position === "center" ? s.width / 2 : s.width}px ${strokeCss}`
-        : null,
-    noise: f.effects
-      .filter((e) => e.visible && e.type === "noise")
-      .map((e) => ({ id: e.id, opacity: (e.amount / 100) * 0.6, url: makeGrainUrl(e.size) })),
-  };
-}
-
-function frameRect(f, box) {
-  const short = Math.min(box.w, box.h);
-  const ratio = f.w / f.h;
-  const width = f.s == null ? Math.min(box.w * 0.8, box.h * 0.8 * ratio) : f.w * f.s * short;
-  const height = f.s == null ? width / ratio : f.h * f.s * short;
-  return { left: box.w / 2 + f.x * short - width / 2, top: box.h / 2 + f.y * short - height / 2, width, height };
-}
-
 const ALIGN_ACTIONS = [
   { key: "left", label: "Align left", Icon: AlignLeftSimple, shortcut: [ALT, "A"] },
   { key: "hcenter", label: "Align horizontal centers", Icon: AlignCenterHorizontalSimple, shortcut: [ALT, "H"] },
@@ -4199,19 +292,7 @@ function useModifiers() {
   return mods;
 }
 
-// Deep copy of a frame (same fields duplicateSelected copies), under a new id.
-const cloneFrame = (f, id) => ({
-  ...f,
-  id,
-  img: f.img ? { ...f.img } : null,
-  corners: f.corners ? [...f.corners] : null,
-  stroke: { ...f.stroke },
-  social: { ...f.social },
-  effects: f.effects.map((e) => ({ ...e })),
-  backStops: f.backStops.map((s) => ({ ...s })),
-});
-
-function FrameLayer({ frames, selectedIds, onSelect, onFramesChange, aspectLocked, environment, camera, cameraEase, background, textBehind, sizeRef, onPickFile, onRotate, onZoom, backVisible, chromeColors, nextFrameId, stageRef, animRef, onStageReady, groupOf, onFrameDoubleClick }) {
+function FrameLayer({ frames, selectedIds, onSelect, onFramesChange, aspectLocked, environment, camera, cameraEase, background, textBehind, sizeRef, onPickFile, onRotate, onZoom, backVisible, chromeColors, nextFrameId, stageRef, animRef, onStageReady, groupOf, onFrameDoubleClick, videoMode, onVideoReady }) {
   const wrapRef = useRef(null);
   const [box, setBox] = useState(null);
   const [guides, setGuides] = useState({ v: false, h: false }); // v = vertical line (centered in X), h = horizontal line (centered in Y)
@@ -4532,7 +613,22 @@ function FrameLayer({ frames, selectedIds, onSelect, onFramesChange, aspectLocke
                 ) : f.social?.on ? (
                   <div className="w-full h-full bg-black" />
                 ) : imgUrl ? (
-                  <img src={imgUrl} alt="" draggable={false} className="w-full h-full object-cover select-none pointer-events-none" />
+                  videoMode && f.img.video ? (
+                    <video
+                      data-frame-video
+                      src={f.img.video.url}
+                      poster={imgUrl}
+                      muted
+                      loop
+                      playsInline
+                      preload="auto"
+                      draggable={false}
+                      onLoadedMetadata={onVideoReady}
+                      className="w-full h-full object-cover select-none pointer-events-none"
+                    />
+                  ) : (
+                    <img src={imgUrl} alt="" draggable={false} className="w-full h-full object-cover select-none pointer-events-none" />
+                  )
                 ) : (
                   <div
                     className="keep-size w-full h-full flex items-center justify-center text-center text-[#FAF9FA] font-semibold select-none"
@@ -4660,114 +756,6 @@ function useFileDrop(onFile) {
     },
   };
   return { dragOver, dropProps };
-}
-
-// Horizontal scroller that fades whichever edge has more content past it.
-function FadeScroller({ children, className = "", fade = 24 }) {
-  const ref = useRef(null);
-  const [edge, setEdge] = useState({ left: false, right: false });
-
-  const measure = useCallback(() => {
-    const el = ref.current;
-    if (!el) return;
-    const left = el.scrollLeft > 1;
-    const right = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
-    setEdge((p) => (p.left === left && p.right === right ? p : { left, right }));
-  }, []);
-
-  // Runs every render so adding / removing thumbnails re-checks; setEdge bails out when nothing changed.
-  useLayoutEffect(measure);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    el.addEventListener("scroll", measure, { passive: true });
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => {
-      el.removeEventListener("scroll", measure);
-      ro.disconnect();
-    };
-  }, [measure]);
-
-  const mask = `linear-gradient(to right, ${edge.left ? "transparent" : "#000"} 0, #000 ${fade}px, #000 calc(100% - ${fade}px), ${edge.right ? "transparent" : "#000"} 100%)`;
-
-  return (
-    <div ref={ref} className={className} style={{ maskImage: mask, WebkitMaskImage: mask }}>
-      {children}
-    </div>
-  );
-}
-
-// Vertical scroller that fades whichever edge has more content past it.
-// Uses gradient overlays (not a mask) so fixed popups inside it aren't clipped.
-function FadeScrollerY({ children, className = "", wrapClassName = "", fade = 24 }) {
-  const ref = useRef(null);
-  const innerRef = useRef(null);
-  const [edge, setEdge] = useState({ top: false, bottom: false });
-
-  const measure = useCallback(() => {
-    const el = ref.current;
-    if (!el) return;
-    const top = el.scrollTop > 1;
-    const bottom = el.scrollTop + el.clientHeight < el.scrollHeight - 1;
-    setEdge((p) => (p.top === top && p.bottom === bottom ? p : { top, bottom }));
-  }, []);
-
-  useLayoutEffect(measure);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    el.addEventListener("scroll", measure, { passive: true });
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    if (innerRef.current) ro.observe(innerRef.current); // catches sections collapsing / lists growing
-    return () => {
-      el.removeEventListener("scroll", measure);
-      ro.disconnect();
-    };
-  }, [measure]);
-
-  const overlay =
-    "pointer-events-none absolute inset-x-0 z-10 from-[#FAF9FA] dark:from-[#171717] to-transparent transition-opacity duration-200";
-
-  return (
-    <div className={`relative min-h-0 ${wrapClassName}`}>
-      <div ref={ref} className="absolute inset-0 overflow-y-auto custom-scroll">
-        <div ref={innerRef} className={className}>
-          {children}
-        </div>
-      </div>
-      <div
-        className={`${overlay} top-0 bg-gradient-to-b ${edge.top ? "opacity-100" : "opacity-0"}`}
-        style={{ height: fade }}
-      />
-      <div
-        className={`${overlay} bottom-0 bg-gradient-to-t ${edge.bottom ? "opacity-100" : "opacity-0"}`}
-        style={{ height: fade }}
-      />
-    </div>
-  );
-}
-
-// Section header: whole row is the click target, and the caret sits in the same hover chip as AppearanceHeader.
-function SectionHeader({ label, open, onToggle }) {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      aria-expanded={open}
-      className="group flex items-center gap-2 w-full select-none"
-    >
-      <CaretRight
-        size={16}
-        weight="regular"
-        className={`shrink-0 text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-[color,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] ${open ? "rotate-90" : "rotate-0"}`}
-      />
-      <span className="section-title text-[14px] font-medium tracking-[0.01em] text-[#3A3A3A] dark:text-[#FAF9FA]">{label}</span>
-    </button>
-  );
 }
 
 // Social media UI controls for the Mockup tab (same fields as the Frame tab's section).
@@ -5798,11 +1786,7 @@ function TextPopup({ popupRef, anchorRef, toolbarRef, value, onChange, onClose, 
                   <Icon size={14} weight="regular" className="shrink-0" />
                   {tip}
                 </span>
-                <span className="flex items-center gap-1 shrink-0">
-                  {keys.map((k) => (
-                    <KeyCap key={k}>{k}</KeyCap>
-                  ))}
-                </span>
+                <KeyCombo keys={keys} />
               </button>
             ))}
           </div>,
@@ -6230,397 +2214,6 @@ function TextEditor({ item, selected, onSelect, onChange, onDuplicate, isOcclude
       )}
     </div>
   );
-}
-
-// ---------- Video timeline ----------
-const CAM_KEYS = ["rotationX", "rotationY", "rotationZ", "positionX", "positionY", "zoom", "fov"];
-const smoothstep = (x) => x * x * (3 - 2 * x);
-const VID_EASES = {
-  smooth: smoothstep,
-  linear: (x) => x,
-  in: (x) => x * x,
-  out: (x) => 1 - (1 - x) * (1 - x),
-  hold: (x) => (x >= 1 ? 1 : 0),
-};
-
-// Cubic-bezier solver (same maths as CSS cubic-bezier)
-const vidBezier = (x1, y1, x2, y2) => {
-  const cx = 3 * x1, bx = 3 * (x2 - x1) - cx, ax = 1 - cx - bx;
-  const cy = 3 * y1, by = 3 * (y2 - y1) - cy, ay = 1 - cy - by;
-  const X = (t) => ((ax * t + bx) * t + cx) * t;
-  const Y = (t) => ((ay * t + by) * t + cy) * t;
-  const dX = (t) => (3 * ax * t + 2 * bx) * t + cx;
-  return (x) => {
-    if (x <= 0) return 0;
-    if (x >= 1) return 1;
-    let t = x;
-    for (let i = 0; i < 8; i++) {
-      const e = X(t) - x;
-      if (Math.abs(e) < 1e-6) return Y(t);
-      const d = dX(t);
-      if (Math.abs(d) < 1e-6) break;
-      t -= e / d;
-    }
-    let lo = 0, hi = 1;
-    t = x;
-    for (let i = 0; i < 24; i++) {
-      const e = X(t) - x;
-      if (Math.abs(e) < 1e-6) break;
-      if (e > 0) hi = t; else lo = t;
-      t = (lo + hi) / 2;
-    }
-    return Y(t);
-  };
-};
-
-// Mirrors an "out" curve into its "in" and "in-out" versions.
-const vidMirrorIn = (f) => (x) => 1 - f(1 - x);
-const vidMirrorInOut = (f) => (x) => (x < 0.5 ? (1 - f(1 - 2 * x)) / 2 : (1 + f(2 * x - 1)) / 2);
-
-// kind -> builder. p = the adjustable numbers for that kind.
-const VID_EASE_BUILD = {
-  fn: (_p, id) => VID_EASES[id],
-  bezier: (p) => vidBezier(p[0], p[1], p[2], p[3]),
-  backIn: ([s]) => (x) => (s + 1) * x * x * x - s * x * x,
-  backOut: ([s]) => (x) => 1 + (s + 1) * (x - 1) ** 3 + s * (x - 1) ** 2,
-  backInOut: ([s]) => {
-    const c = s * 1.525;
-    return (x) =>
-      x < 0.5
-        ? ((2 * x) ** 2 * ((c + 1) * 2 * x - c)) / 2
-        : ((2 * x - 2) ** 2 * ((c + 1) * (2 * x - 2) + c) + 2) / 2;
-  },
-  elastic: ([period]) => {
-    const c = (2 * Math.PI) / (period * 10);
-    return (x) => (x <= 0 ? 0 : x >= 1 ? 1 : 2 ** (-10 * x) * Math.sin((x * 10 - 0.75) * c) + 1);
-  },
-  elasticIn: (p) => vidMirrorIn(VID_EASE_BUILD.elastic(p)),
-  elasticInOut: (p) => vidMirrorInOut(VID_EASE_BUILD.elastic(p)),
-  bounce: ([e]) => {
-    const N = 4;
-    let total = 1;
-    for (let i = 1; i <= N; i++) total += 2 * e ** i;
-    return (x) => {
-      if (x <= 0) return 0;
-      if (x >= 1) return 1;
-      let t = x * total;
-      if (t <= 1) return t * t;
-      t -= 1;
-      for (let i = 1; i <= N; i++) {
-        const d = 2 * e ** i;
-        if (t <= d) {
-          const tau = t - e ** i;
-          return 1 - (e ** (2 * i) - tau * tau);
-        }
-        t -= d;
-      }
-      return 1;
-    };
-  },
-  bounceIn: (p) => vidMirrorIn(VID_EASE_BUILD.bounce(p)),
-  bounceInOut: (p) => vidMirrorInOut(VID_EASE_BUILD.bounce(p)),
-  spring: ([z, w]) => {
-    const zeta = Math.min(0.99, z);
-    const wd = w * Math.sqrt(1 - zeta * zeta);
-    const raw = (x) => 1 - Math.exp(-zeta * w * x) * (Math.cos(wd * x) + ((zeta * w) / wd) * Math.sin(wd * x));
-    const end = raw(1);
-    return (x) => (x <= 0 ? 0 : x >= 1 ? 1 : raw(x) + (1 - end) * x * x); // nudged so it lands exactly on 1
-  },
-};
-
-// Adjustable params per kind. Stored value = shown value / div.
-const VID_OVERSHOOT = [{ label: "Overshoot", min: 0, max: 400, div: 100 }];
-const VID_PERIOD = [{ label: "Period", min: 10, max: 100, div: 100 }];
-const VID_BOUNCINESS = [{ label: "Bounciness", min: 10, max: 90, div: 100 }];
-
-const VID_EASE_PARAMS = {
-  backIn: VID_OVERSHOOT,
-  backOut: VID_OVERSHOOT,
-  backInOut: VID_OVERSHOOT,
-  elastic: VID_PERIOD,
-  elasticIn: VID_PERIOD,
-  elasticInOut: VID_PERIOD,
-  bounce: VID_BOUNCINESS,
-  bounceIn: VID_BOUNCINESS,
-  bounceInOut: VID_BOUNCINESS,
-  spring: [
-    { label: "Damping", min: 5, max: 99, div: 100 },
-    { label: "Speed", min: 4, max: 40, div: 1 },
-  ],
-};
-
-const VID_EASE_GROUPS = ["Basic", "Ease", "Overshoot"];
-const VID_EASE_PRESETS = [
-  // Basic
-  { id: "hold", label: "Hold", group: "Basic", kind: "fn", p: [] },
-  { id: "smooth", label: "Smooth", group: "Basic", kind: "fn", p: [] },
-  { id: "linear", label: "Linear", group: "Basic", kind: "fn", p: [] },
-  { id: "css-ease", label: "CSS ease", group: "Basic", kind: "bezier", p: [0.25, 0.1, 0.25, 1] },
-
-  // Ease: Sine
-  { id: "sine-in", label: "Sine in", group: "Ease", kind: "bezier", p: [0.47, 0, 0.745, 0.715] },
-  { id: "sine-out", label: "Sine out", group: "Ease", kind: "bezier", p: [0.39, 0.575, 0.565, 1] },
-  { id: "sine-in-out", label: "Sine in-out", group: "Ease", kind: "bezier", p: [0.445, 0.05, 0.55, 0.95] },
-  // Ease: Quad (existing ids)
-  { id: "in", label: "Ease in", group: "Ease", kind: "bezier", p: [0.11, 0, 0.5, 0] },
-  { id: "out", label: "Ease out", group: "Ease", kind: "bezier", p: [0.5, 1, 0.89, 1] },
-  { id: "in-out", label: "In-out", group: "Ease", kind: "bezier", p: [0.45, 0, 0.55, 1] },
-  // Ease: Cubic
-  { id: "cubic-in", label: "Cubic in", group: "Ease", kind: "bezier", p: [0.55, 0.055, 0.675, 0.19] },
-  { id: "cubic-out", label: "Cubic out", group: "Ease", kind: "bezier", p: [0.215, 0.61, 0.355, 1] },
-  { id: "cubic-in-out", label: "Cubic in-out", group: "Ease", kind: "bezier", p: [0.65, 0, 0.35, 1] },
-  // Ease: Quart
-  { id: "quart-in", label: "Quart in", group: "Ease", kind: "bezier", p: [0.895, 0.03, 0.685, 0.22] },
-  { id: "quart-out", label: "Quart out", group: "Ease", kind: "bezier", p: [0.165, 0.84, 0.44, 1] },
-  { id: "quart-in-out", label: "Quart in-out", group: "Ease", kind: "bezier", p: [0.77, 0, 0.175, 1] },
-  // Ease: Quint
-  { id: "quint-in", label: "Quint in", group: "Ease", kind: "bezier", p: [0.755, 0.05, 0.855, 0.06] },
-  { id: "quint-out", label: "Quint out", group: "Ease", kind: "bezier", p: [0.23, 1, 0.32, 1] },
-  { id: "quint-in-out", label: "Quint in-out", group: "Ease", kind: "bezier", p: [0.86, 0, 0.07, 1] },
-  // Ease: Expo
-  { id: "expo-in", label: "Expo in", group: "Ease", kind: "bezier", p: [0.95, 0.05, 0.795, 0.035] },
-  { id: "expo-out", label: "Expo out", group: "Ease", kind: "bezier", p: [0.16, 1, 0.3, 1] },
-  { id: "expo-in-out", label: "Expo in-out", group: "Ease", kind: "bezier", p: [0.87, 0, 0.13, 1] },
-  // Ease: Circ
-  { id: "circ-in", label: "Circ in", group: "Ease", kind: "bezier", p: [0.6, 0.04, 0.98, 0.335] },
-  { id: "circ-out", label: "Circ out", group: "Ease", kind: "bezier", p: [0.075, 0.82, 0.165, 1] },
-  { id: "circ-in-out", label: "Circ in-out", group: "Ease", kind: "bezier", p: [0.785, 0.135, 0.15, 0.86] },
-
-  // Overshoot
-  { id: "back-in", label: "Back in", group: "Overshoot", kind: "backIn", p: [1.7] },
-  { id: "back-out", label: "Back out", group: "Overshoot", kind: "backOut", p: [1.7] },
-  { id: "back-in-out", label: "Back in-out", group: "Overshoot", kind: "backInOut", p: [1.7] },
-  { id: "elastic-in", label: "Elastic in", group: "Overshoot", kind: "elasticIn", p: [0.3] },
-  { id: "elastic", label: "Elastic out", group: "Overshoot", kind: "elastic", p: [0.3] },
-  { id: "elastic-in-out", label: "Elastic in-out", group: "Overshoot", kind: "elasticInOut", p: [0.3] },
-  { id: "bounce-in", label: "Bounce in", group: "Overshoot", kind: "bounceIn", p: [0.5] },
-  { id: "bounce", label: "Bounce out", group: "Overshoot", kind: "bounce", p: [0.5] },
-  { id: "bounce-in-out", label: "Bounce in-out", group: "Overshoot", kind: "bounceInOut", p: [0.5] },
-  { id: "spring", label: "Spring", group: "Overshoot", kind: "spring", p: [0.35, 14] },
-];
-const VID_EASE_CUSTOM_DEFAULT = [0.5, 0, 0.5, 1];
-
-// Legacy string ("smooth", "in"...) or spec object -> spec object
-const vidEaseSpec = (e) => {
-  if (e && typeof e === "object") return e;
-  const pr = VID_EASE_PRESETS.find((x) => x.id === (e ?? "smooth")) ?? VID_EASE_PRESETS[0];
-  return { id: pr.id, kind: pr.kind, p: [...pr.p] };
-};
-
-// Spec (or legacy string) -> easing function, cached so playback doesn't rebuild it every frame
-const vidEaseCache = new Map();
-const vidEaseFn = (e, fallback = smoothstep) => {
-  if (!e) return fallback;
-  if (typeof e === "string") return VID_EASES[e] ?? fallback;
-  const k = `${e.kind}|${e.id}|${e.p.join(",")}`;
-  let f = vidEaseCache.get(k);
-  if (!f) {
-    f = VID_EASE_BUILD[e.kind]?.(e.p, e.id) ?? fallback;
-    if (vidEaseCache.size > 200) vidEaseCache.clear();
-    vidEaseCache.set(k, f);
-  }
-  return f;
-};
-const VID_FPS = 30;
-const VID_PPS = 80; // default px per second
-const VID_PPS_MIN = 12;
-const VID_PPS_MAX = 400;
-const VID_LABEL_W = 220; // shot names column
-const VID_PAD = 16; // gap between the names column and 0s
-const VID_GRAY = 40; // end zone width
-const VID_H_MIN = 120; // timeline height limits (px)
-const VID_H_MAX = 480;
-const VID_GLIDE_MS = 180; // playhead glide while dragging a shot edge (inside the 140-220ms range used elsewhere)
-const VID_GLIDE_EASE = vidBezier(0.22, 1, 0.36, 1); // same curve as every other transition in the app
-const VID_PROPS = [
-  ["rotationX", "X - Rotation"],
-  ["rotationY", "Y - Rotation"],
-  ["rotationZ", "Z - Rotation"],
-  ["positionX", "X - Position"],
-  ["positionY", "Y - Position"],
-  ["zoom", "Zoom"],
-  ["fov", "FoV"],
-];
-const vidClamp = (n, a, b) => Math.min(b, Math.max(a, n));
-const vidSnap = (t) => Math.round(t * VID_FPS) / VID_FPS;
-// 00:05:20 = minutes : seconds : frames (30 fps)
-const fmtTC = (t) => {
-  const f = Math.round(Math.max(0, t) * VID_FPS);
-  return [Math.floor(f / (VID_FPS * 60)), Math.floor(f / VID_FPS) % 60, f % VID_FPS].map((n) => String(n).padStart(2, "0")).join(":");
-};
-
-// keys sorted by t. t is relative to the shot.
-function sampleCamera(keys, t, ease = smoothstep) {
-  if (!keys.length) return null;
-  const out = {};
-  CAM_KEYS.forEach((p) => {
-    // a key without `props` drives every property
-    const ks = keys.filter((k) => !k.props || k.props.includes(p));
-    if (!ks.length) {
-      out[p] = keys[0][p];
-      return;
-    }
-    if (t <= ks[0].t) {
-      out[p] = ks[0][p];
-      return;
-    }
-    const last = ks[ks.length - 1];
-    if (t >= last.t) {
-      out[p] = last[p];
-      return;
-    }
-for (let i = 0; i < ks.length - 1; i++) {
-  const a = ks[i], b = ks[i + 1];
-  if (t >= a.t && t <= b.t) {
-    // property override wins, then the key's general easing, then the shot's
-    const es = a.propEase?.[p] ?? a.ease;
-    const segEase = es ? vidEaseFn(es, ease) : ease;
-    const u = segEase((t - a.t) / Math.max(1e-6, b.t - a.t));
-    out[p] = a[p] + (b[p] - a[p]) * u;
-    return;
-  }
-}
-    out[p] = last[p];
-  });
-  return out;
-}
-
-// Later shots win on overlap. Outside every shot, hold the nearest earlier pose (or the first shot's first pose).
-function sampleShots(shots, t) {
-  // frame-only shots (keys that only drive `frames`) must not drive the camera
-  const withKeys = shots.filter(
-    (s) => s.keys.length && !s.hidden && s.keys.some((k) => !k.props || k.props.some((p) => CAM_KEYS.includes(p)))
-  );
-  for (let i = withKeys.length - 1; i >= 0; i--) {
-    const s = withKeys[i];
-    if (t >= s.start && t <= s.start + s.len) return sampleCamera(s.keys, t - s.start, VID_EASES[s.ease] ?? smoothstep);
-  }
-  let best = null;
-  withKeys.forEach((s) => {
-    if (s.start + s.len < t && (!best || s.start + s.len > best.start + best.len)) best = s;
-  });
-  if (best) return sampleCamera(best.keys, best.len, VID_EASES[best.ease] ?? smoothstep);
-  const first = [...withKeys].sort((a, b) => a.start - b.start)[0];
-  return first ? sampleCamera(first.keys, 0, VID_EASES[first.ease] ?? smoothstep) : null;
-}
-
-// "none" = playhead isn't inside any shot, "on" = it sits on a keyframe, "add" = inside a shot with no keyframe here.
-// Uses the same shot pick and 1/60 tolerance as vidAddKey.
-// Properties whose current camera value differs from what the timeline plays at time t.
-// cam is rounded to whole numbers, so differences up to 0.5 are just rounding.
-// ---- Frame-mode keyframes: each frame's placement is stored on the key as key.frames[frameId] = { x, y, w, h, s } ----
-function framePoseMap(frames, box) {
-  if (!box) return undefined;
-  const short = Math.min(box.w, box.h);
-  const out = {};
-  frames.forEach((f) => {
-    out[f.id] = { x: f.x, y: f.y, w: f.w, h: f.h, s: f.s ?? frameRect(f, box).width / (f.w * short), r: f.r ?? 0 };
-  });
-  return out;
-}
-
-function framePoseChanged(a, b) {
-  return (
-    Math.abs(a.x - b.x) > 0.002 ||
-    Math.abs(a.y - b.y) > 0.002 ||
-    Math.abs(a.w * a.s - b.w * b.s) > 0.002 ||
-    Math.abs(a.h * a.s - b.h * b.s) > 0.002 ||
-    Math.abs((a.r ?? 0) - (b.r ?? 0)) > 0.05
-  );
-}
-
-function sampleFrameKeys(keys, t, ease = smoothstep) {
-  const out = {};
-  const ids = new Set();
-  keys.forEach((k) => k.frames && Object.keys(k.frames).forEach((id) => ids.add(id)));
-  ids.forEach((id) => {
-    const ks = keys.filter((k) => k.frames?.[id]);
-    const last = ks[ks.length - 1];
-    if (t <= ks[0].t) return void (out[id] = ks[0].frames[id]);
-    if (t >= last.t) return void (out[id] = last.frames[id]);
-    for (let i = 0; i < ks.length - 1; i++) {
-      const a = ks[i], b = ks[i + 1];
-      if (t >= a.t && t <= b.t) {
-        const f = a.ease ? vidEaseFn(a.ease, ease) : ease;
-        const u = f((t - a.t) / Math.max(1e-6, b.t - a.t));
-        const o = {};
-        ["x", "y", "w", "h", "s", "r"].forEach((p) => {
-          const va = a.frames[id][p] ?? 0, vb = b.frames[id][p] ?? 0;
-          o[p] = va + (vb - va) * u;
-        });
-        return void (out[id] = o);
-      }
-    }
-    out[id] = last.frames[id];
-  });
-  return out;
-}
-
-// Each frame follows its own shot(s): the latest active one wins, otherwise it holds its last pose.
-function sampleShotFrames(shots, t) {
-  const list = shots.filter((s) => s.keys.some((k) => k.frames) && !s.hidden);
-  if (!list.length) return null;
-  const ease = (s) => VID_EASES[s.ease] ?? smoothstep;
-  const ids = new Set();
-  list.forEach((s) => s.keys.forEach((k) => k.frames && Object.keys(k.frames).forEach((id) => ids.add(id))));
-  const out = {};
-  ids.forEach((id) => {
-    const own = list.filter((s) => s.keys.some((k) => k.frames?.[id]));
-    let pick = null;
-    for (let i = own.length - 1; i >= 0; i--) {
-      const s = own[i];
-      if (t >= s.start && t <= s.start + s.len) { pick = { s, u: t - s.start }; break; }
-    }
-    if (!pick) {
-      let best = null;
-      own.forEach((s) => { if (s.start + s.len < t && (!best || s.start + s.len > best.start + best.len)) best = s; });
-      if (best) pick = { s: best, u: best.len };
-    }
-    if (!pick) pick = { s: [...own].sort((a, b) => a.start - b.start)[0], u: 0 };
-    const r = sampleFrameKeys(pick.s.keys, pick.u, ease(pick.s))[id];
-    if (r) out[id] = r;
-  });
-  return out;
-}
-
-function changedCamProps(shots, t, cam) {
-  if (!cam) return [];
-  const base = sampleShots(shots, t); // null in Frame mode: its shots only key "frames"
-  const out = base ? CAM_KEYS.filter((p) => Math.abs(base[p] - cam[p]) > 0.5) : [];
-  // Frame mode: moving / resizing a frame counts as an edit ("frames")
-  if (cam.frames) {
-    const fb = sampleShotFrames(shots, t);
-    if (fb && Object.keys(fb).length && Object.keys(cam.frames).some((id) => !fb[id] || framePoseChanged(cam.frames[id], fb[id])))
-      out.push("frames");
-  }
-  return out;
-}
-
-function keyStateAt(shots, selShot, t, prop = null, cam = null) {
-  const inside = (s) => t >= s.start - 1e-6 && t <= s.start + s.len + 1e-6;
-  const cur = shots.find((s) => s.id === selShot);
-  const s = cur && inside(cur) ? cur : [...shots].reverse().find(inside);
-  if (!s) return "none";
-  const hit = s.keys.find((k) => Math.abs(s.start + k.t - t) < 1 / 60);
-  if (!hit) {
-    // adding needs an actual camera edit. Without one there's nothing to key (and during playback cam is null)
-    const p0 = prop && prop !== "bg" ? prop : null;
-    const changed = changedCamProps(shots, t, cam);
-    return (p0 ? changed.includes(p0) : changed.length > 0) ? "add" : "idle";
-  }
-  // a keyframe here that doesn't cover the selected property doesn't count
-  const p = prop && prop !== "bg" ? prop : null;
-  if (p && hit.props && !hit.props.includes(p)) return "add";
-  // shot row + a partial keyframe: properties changed since then aren't part of it yet
-  if (!p && hit.props && changedCamProps(shots, t, cam).some((c) => !hit.props.includes(c))) return "add";
-  return "on";
-}
-
-// The shot a keyframe would be added to at time t (same pick as keyStateAt / vidShotAt).
-function vidShotAtTime(shots, selShot, t) {
-  const inside = (s) => t >= s.start - 1e-6 && t <= s.start + s.len + 1e-6;
-  const cur = shots.find((s) => s.id === selShot);
-  return cur && inside(cur) ? cur : [...shots].reverse().find(inside) ?? null;
 }
 
 // Ease-in-out curve with end points, drawn on Phosphor's 256 grid so it matches the other icons.
@@ -7064,8 +2657,6 @@ const mixHex = (a, b, t) => {
     .toUpperCase();
 };
 
-// Resting value of every background property. x / y = % of the canvas, w = size %, cr = radius % of the short side.
-const BG_CUSTOM_REST = { a: 1, x: 0, y: 0, s: 1, r: 0, b: 0, w: 100, cr: 0, c: null };
 const BG_CUSTOM_IDLE = { id: "custom", from: {} }; // stable object for the preview before anything is added
 
 // keys = the `from` fields a property owns. def = what gets set when it's added.
@@ -7448,611 +3039,6 @@ function BgAnimPopover({ v, menu, onClose, onSwitch }) {
       </div>
     </div>
   );
-}
-
-// ---------- Background animations ----------
-const BG_ANIM_NONE = { id: "none", label: "None", group: "" };
-const BG_ANIM_GROUPS = ["Fade", "Scale", "Mask", "Blur", "Effects"];
-// pv = progress shown in the preview tile. linear = skip the smooth easing (stepped effects).
-const BG_ANIMS = [
-  { id: "fade", label: "Fade", group: "Fade" },
-  { id: "slide", label: "Slide", group: "Fade" },
-  { id: "grow", label: "Grow", group: "Scale" },
-  { id: "shrink", label: "Shrink", group: "Scale" },
-  { id: "spin", label: "Spin", group: "Scale" },
-  { id: "twist", label: "Twist", group: "Scale" },
-  { id: "move-scale", label: "Move & Scale", group: "Scale" },
-  { id: "mask-reveal", label: "Mask Reveal", group: "Mask" },
-  { id: "mask-center", label: "Mask Center", group: "Mask" },
-  { id: "mask-resize", label: "Mask Resize", group: "Mask" },
-  { id: "mask-slide", label: "Mask & Slide", group: "Mask" },
-  { id: "mask-expand", label: "Mask Expand", group: "Mask" },
-  { id: "blur", label: "Blur", group: "Blur" },
-  { id: "blur-slide", label: "Blur & Slide", group: "Blur" },
-  { id: "blur-scale", label: "Blur & Scale", group: "Blur" },
-  { id: "dissolve", label: "Dissolve", group: "Effects" },
-  { id: "wipe", label: "Wipe", group: "Effects" },
-  { id: "pixel", label: "Pixel", group: "Effects" },
-  { id: "pixel-wipe", label: "Pixel Wipe", group: "Effects" },
-  { id: "luma", label: "Luma Reveal", group: "Effects" },
-  { id: "blink", label: "Blink", group: "Effects", pv: 0.3, linear: true },
-  { id: "glitch", label: "Glitch", group: "Effects", pv: 0.9, linear: true },
-  { id: "barrel", label: "Barrel", group: "Effects", pv: 0.95 },
-  { id: "film-roll", label: "Film Roll", group: "Effects" },
-];
-const BG_ANIM_BY_ID = Object.fromEntries([BG_ANIM_NONE, { id: "custom", label: "Custom", group: "" }, ...BG_ANIMS].map((a) => [a.id, a]));
-const bgProgress = (id, u, ease) => {
-  if (ease) return vidClamp(vidEaseFn(vidEaseSpec(ease))(u), 0, 1);
-  return BG_ANIM_BY_ID[id]?.linear ? u : smoothstep(u);
-};
-const bgDefaultEase = (id) => (BG_ANIM_BY_ID[id]?.linear ? "linear" : "smooth");
-const BG_DIRS = [
-  { value: "left", label: "From left" },
-  { value: "right", label: "From right" },
-  { value: "top", label: "From top" },
-  { value: "bottom", label: "From bottom" },
-];
-const BG_SPIN = [
-  { value: "cw", label: "Clockwise" },
-  { value: "ccw", label: "Counter-clockwise" },
-];
-const BG_FILM = [
-  { value: "up", label: "Up" },
-  { value: "down", label: "Down" },
-];
-const bgSel = (key, label, options, def) => ({ key, label, type: "select", options, def });
-const bgRng = (key, label, min, max, def, hardMax) => ({ key, label, type: "range", min, max, def, hardMax });
-const bgTog = (key, label, def = true) => ({ key, label, type: "toggle", def });
-const BG_FADE = bgTog("fade", "Fade");
-
-// Adjustable values per animation. `def` is what the animation used before it was adjustable.
-const BG_ANIM_PARAMS = {
-  slide: [bgSel("dir", "Direction", BG_DIRS, "right"), bgRng("distance", "Distance (%)", 0, 100, 12, 300), BG_FADE],
-  grow: [bgRng("scale", "Start scale (%)", 0, 100, 50), BG_FADE],
-  shrink: [bgRng("scale", "Start scale (%)", 100, 300, 160, 1000), BG_FADE],
-  spin: [bgSel("dir", "Direction", BG_SPIN, "cw"), bgRng("angle", "Angle (°)", 0, 360, 30, 3600), bgRng("scale", "Start scale (%)", 50, 300, 150, 1000), BG_FADE],
-  twist: [bgSel("dir", "Direction", BG_SPIN, "ccw"), bgRng("angle", "Angle (°)", 0, 720, 60, 3600), bgRng("scale", "Start scale (%)", 50, 400, 190, 1000), BG_FADE],
-  "move-scale": [bgSel("dir", "Direction", BG_DIRS, "left"), bgRng("distance", "Distance (%)", 0, 100, 35, 300), bgRng("scale", "Start scale (%)", 0, 100, 60), BG_FADE],
-  "mask-reveal": [bgSel("dir", "Direction", BG_DIRS, "left")],
-  "mask-center": [bgSel("axis", "Axis", [{ value: "vertical", label: "Vertical" }, { value: "horizontal", label: "Horizontal" }], "vertical")],
-  "mask-resize": [bgRng("zoom", "Inner zoom (%)", 0, 100, 30, 300)],
-  "mask-slide": [bgSel("dir", "Direction", BG_DIRS, "bottom"), bgRng("distance", "Distance (%)", 0, 100, 35, 300)],
-  "mask-expand": [bgRng("x", "Origin X (%)", 0, 100, 50), bgRng("y", "Origin Y (%)", 0, 100, 50)],
-  blur: [bgRng("blur", "Blur", 0, 100, 40, 300), BG_FADE],
-  "blur-slide": [bgRng("blur", "Blur", 0, 100, 40, 300), bgSel("dir", "Direction", BG_DIRS, "right"), bgRng("distance", "Distance (%)", 0, 100, 12, 300), BG_FADE],
-  "blur-scale": [bgRng("blur", "Blur", 0, 100, 40, 300), bgRng("scale", "Start scale (%)", 100, 300, 135, 1000), BG_FADE],
-  dissolve: [bgRng("cells", "Detail", 16, 240, 96)],
-  pixel: [bgRng("cells", "Pixel count", 4, 80, 14)],
-  "pixel-wipe": [bgSel("dir", "Direction", BG_DIRS, "left"), bgRng("cells", "Pixel count", 4, 80, 26)],
-  wipe: [bgSel("dir", "Direction", BG_DIRS, "left"), bgRng("softness", "Softness (%)", 0, 100, 3)],
-  luma: [bgSel("order", "Reveal first", [{ value: "dark", label: "Dark areas" }, { value: "light", label: "Light areas" }], "light")],
-  blink: [bgRng("count", "Blinks", 1, 8, 2)],
-  glitch: [bgRng("slices", "Slices", 4, 40, 14), bgRng("shift", "Shift (%)", 0, 100, 40, 200)],
-  barrel: [bgRng("strength", "Strength (%)", 0, 100, 70, 200)],
-  "film-roll": [bgSel("dir", "Direction", BG_FILM, "up"), bgRng("rolls", "Rolls", 1, 6, 2)],
-};
-const bgParamDef = (id, key) => BG_ANIM_PARAMS[id]?.find((p) => p.key === key)?.def;
-
-// kind = "enter" | "exit". Clips saved with the old single `anim` count as their enter animation.
-const bgAnimOf = (b, kind) => {
-  const a = kind === "enter" && b.enter === undefined ? b.anim : b[kind];
-  return a && a.id !== "none" ? { delay: 0, ...a } : null;
-};
-
-// Order-independent identity of a background, so a state change can be told apart from a snapshot being applied.
-const bgKey = (sn) =>
-  JSON.stringify([sn.bgType, sn.bgHex, sn.bgOpacity, sn.gradientType, sn.gradientAngle, sn.gradientOpacity, sn.gradientStops, sn.grainAmount, sn.customBgImageUrl]);
-
-const bgFallbackSnap = () => ({
-  bgType: "solid",
-  bgOpacity: 100,
-  bgHex: document.documentElement.classList.contains("dark") ? "171717" : "FAF9FA",
-});
-
-// Seeded random, so a given frame looks the same every time it's drawn.
-const bgRand = (i, seed = 0) => {
-  const x = Math.sin(i * 127.1 + seed * 311.7) * 43758.5453;
-  return x - Math.floor(x);
-};
-
-const bgScratch = {};
-const bgTmp = (key, w, h) => {
-  const c = (bgScratch[key] ??= document.createElement("canvas"));
-  if (c.width !== w || c.height !== h) {
-    c.width = w;
-    c.height = h;
-  }
-  return c;
-};
-
-// Draws src centered, with optional alpha / offset / scale / rotation (deg) / blur (px).
-function bgLayer(ctx, src, W, H, o = {}) {
-  const { a = 1, tx = 0, ty = 0, s = 1, r = 0, blur = 0 } = o;
-  if (a <= 0) return;
-  ctx.save();
-  ctx.globalAlpha = a;
-  if (blur > 0.1) ctx.filter = `blur(${blur}px)`;
-  ctx.translate(W / 2 + tx, H / 2 + ty);
-  ctx.rotate((r * Math.PI) / 180);
-  ctx.scale(s, s);
-  ctx.drawImage(src, -W / 2, -H / 2, W, H);
-  ctx.restore();
-}
-
-// Draws src through an alpha mask painted by paint(maskCtx).
-function bgMasked(ctx, src, W, H, paint, o, key) {
-  const t = bgTmp(key, W, H);
-  const tc = t.getContext("2d");
-  tc.imageSmoothingEnabled = true;
-  tc.globalCompositeOperation = "source-over";
-  tc.clearRect(0, 0, W, H);
-  bgLayer(tc, src, W, H, o);
-  tc.globalCompositeOperation = "destination-in";
-  paint(tc);
-  tc.globalCompositeOperation = "source-over";
-  ctx.drawImage(t, 0, 0);
-}
-
-// Smooth value noise (used by Dissolve for organic blobs)
-function bgValueNoise(x, y, seed = 0) {
-  const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi;
-  const sm = (t) => t * t * (3 - 2 * t);
-  const r = (a, b) => bgRand(a * 73 + b * 179, seed);
-  const top = r(xi, yi) + (r(xi + 1, yi) - r(xi, yi)) * sm(xf);
-  const bot = r(xi, yi + 1) + (r(xi + 1, yi + 1) - r(xi, yi + 1)) * sm(xf);
-  return top + (bot - top) * sm(yf);
-}
-
-// Draws src through a warped grid. map(u, v) takes 0..1 source coords and returns the destination [x, y] in px.
-function bgMesh(ctx, src, map, nx = 8, ny = 8) {
-  const sw = src.width ?? src.naturalWidth, sh = src.height ?? src.naturalHeight;
-  const tri = (s0, s1, s2, d0, d1, d2) => {
-    const cx = (d0[0] + d1[0] + d2[0]) / 3, cy = (d0[1] + d1[1] + d2[1]) / 3;
-    const grow = (pt) => {
-      const vx = pt[0] - cx, vy = pt[1] - cy, len = Math.hypot(vx, vy) || 1;
-      return [pt[0] + (vx / len) * 0.6, pt[1] + (vy / len) * 0.6]; // hides hairline seams
-    };
-    const [e0, e1, e2] = [grow(d0), grow(d1), grow(d2)];
-    const u1x = s1[0] - s0[0], u1y = s1[1] - s0[1], u2x = s2[0] - s0[0], u2y = s2[1] - s0[1];
-    const v1x = d1[0] - d0[0], v1y = d1[1] - d0[1], v2x = d2[0] - d0[0], v2y = d2[1] - d0[1];
-    const det = u1x * u2y - u2x * u1y;
-    if (!det) return;
-    const a = (v1x * u2y - v2x * u1y) / det;
-    const c = (v2x * u1x - v1x * u2x) / det;
-    const b = (v1y * u2y - v2y * u1y) / det;
-    const d = (v2y * u1x - v1y * u2x) / det;
-    ctx.save();
-    ctx.beginPath();
-    ctx.moveTo(e0[0], e0[1]);
-    ctx.lineTo(e1[0], e1[1]);
-    ctx.lineTo(e2[0], e2[1]);
-    ctx.closePath();
-    ctx.clip();
-    ctx.transform(a, b, c, d, d0[0] - a * s0[0] - c * s0[1], d0[1] - b * s0[0] - d * s0[1]);
-    ctx.drawImage(src, 0, 0);
-    ctx.restore();
-  };
-  const S = (i, j) => [(i / nx) * sw, (j / ny) * sh];
-  const D = (i, j) => map(i / nx, j / ny);
-  for (let i = 0; i < nx; i++) {
-    for (let j = 0; j < ny; j++) {
-      tri(S(i, j), S(i + 1, j), S(i, j + 1), D(i, j), D(i + 1, j), D(i, j + 1));
-      tri(S(i + 1, j), S(i + 1, j + 1), S(i, j + 1), D(i + 1, j), D(i + 1, j + 1), D(i, j + 1));
-    }
-  }
-}
-
-const bgGrainCache = new Map();
-
-// Paints one background snapshot (solid / gradient / image) full-frame. Returns false while an image is still loading.
-function paintBgSnap(ctx, sn, W, H, getImg) {
-  ctx.save();
-  ctx.clearRect(0, 0, W, H);
-  let ready = true;
-  if (sn.bgType === "solid") {
-    ctx.fillStyle = hexRgba(sn.bgHex, sn.bgOpacity);
-    ctx.fillRect(0, 0, W, H);
-  } else if (sn.bgType === "gradient") {
-    ctx.globalAlpha = sn.gradientOpacity / 100;
-    ctx.fillStyle = makeCanvasGradient(ctx, sn.gradientType, sn.gradientAngle, sn.gradientStops, 0, 0, W, H);
-    ctx.fillRect(0, 0, W, H);
-    ctx.globalAlpha = 1;
-    if (sn.grainAmount > 0) {
-      let tile = bgGrainCache.get(sn.grainAmount);
-      if (!tile) bgGrainCache.set(sn.grainAmount, (tile = makeGrainTile(512, sn.grainAmount)));
-      ctx.globalCompositeOperation = "overlay";
-      ctx.fillStyle = ctx.createPattern(tile, "repeat");
-      ctx.fillRect(0, 0, W, H);
-    }
-  } else if (sn.customBgImageUrl) {
-    const img = getImg(sn.customBgImageUrl);
-    if (img) {
-      const sc = Math.max(W / img.naturalWidth, H / img.naturalHeight);
-      const dw = img.naturalWidth * sc, dh = img.naturalHeight * sc;
-      ctx.drawImage(img, (W - dw) / 2, (H - dh) / 2, dw, dh);
-    } else {
-      ctx.fillStyle = "#808080";
-      ctx.fillRect(0, 0, W, H);
-      ready = false;
-    }
-  }
-  ctx.restore();
-  return ready;
-}
-
-// Draws the transition from -> to at progress p (0..1) onto ctx. ns keeps scratch canvases separate between callers.
-function drawBgTransition(ctx, id, from, to, p, W, H, ns = "bg", opts = {}) {
-  const i = 1 - p;
-  const P = (key) => opts[key] ?? bgParamDef(id, key);
-  const dirXY = (d) => ({ left: [-1, 0], right: [1, 0], top: [0, -1], bottom: [0, 1] })[d] ?? [0, 0];
-  const fade = opts.fade !== false;
-  const k = W / 1280; // blur radius scales with the output size
-  const a = fade ? Math.min(1, p * 2.5) : 1; // quick fade-in used by the scale / blur presets
-  // rect that grows from the chosen edge
-  const edge = (dx, dy) => [dx > 0 ? W * i : 0, dy > 0 ? H * i : 0, dx ? W * p : W, dy ? H * p : H];
-  const layer = (src, o) => bgLayer(ctx, src, W, H, o);
-  const clipped = (path, o) => {
-    ctx.save();
-    ctx.beginPath();
-    path();
-    ctx.clip();
-    layer(to, o);
-    ctx.restore();
-  };
-  const masked = (paint, o) => bgMasked(ctx, to, W, H, paint, o, `${ns}-m`);
-  // Reveals `to` cell by cell: a cell shows once p passes its value (0..1). soft = edge softness.
-  const revealCells = (cols, valueAt, smooth, soft) => {
-    const rows = Math.max(1, Math.round((cols * H) / W));
-    const mc = bgTmp(`${ns}-cells`, cols, rows);
-    const mx = mc.getContext("2d");
-    const img = mx.createImageData(cols, rows);
-    for (let y = 0; y < rows; y++) {
-      for (let x = 0; x < cols; x++) {
-        const v = valueAt(x, y, cols);
-        img.data[(y * cols + x) * 4 + 3] = Math.round(255 * Math.min(1, Math.max(0, (p * (1 + soft) - v) / soft)));
-      }
-    }
-    mx.putImageData(img, 0, 0);
-    masked((m) => {
-      m.imageSmoothingEnabled = smooth;
-      m.drawImage(mc, 0, 0, W, H);
-    });
-  };
-
-  ctx.clearRect(0, 0, W, H);
-  if (id === "none") {
-    ctx.drawImage(to, 0, 0, W, H);
-    return;
-  }
-  ctx.drawImage(from, 0, 0, W, H);
-
-  switch (id) {
-    // Fade
-    case "fade": layer(to, { a: p }); break;
-    case "slide": {
-      const [dx, dy] = dirXY(P("dir")), d = P("distance") / 100;
-      layer(to, { a: fade ? p : 1, tx: W * dx * d * i, ty: H * dy * d * i });
-      break;
-    }
-    // Scale
-    case "grow": {
-      const st = P("scale") / 100;
-      layer(to, { a, s: Math.max(0.02, st + (1 - st) * p) });
-      break;
-    }
-    case "shrink": layer(to, { a, s: 1 + (P("scale") / 100 - 1) * i }); break;
-    case "spin":
-    case "twist": {
-      const sign = P("dir") === "ccw" ? 1 : -1;
-      const ang = P("angle") * i;
-      const rad = (ang * Math.PI) / 180;
-      // minimum scale at which a rotated W x H rectangle still covers the frame
-      const cover = Math.abs(Math.cos(rad)) + Math.abs(Math.sin(rad)) * Math.max(W / H, H / W);
-      layer(to, { a, r: sign * ang, s: Math.max(cover, 0.02, 1 + (P("scale") / 100 - 1) * i) });
-      break;
-    }
-    case "move-scale": {
-      const [dx, dy] = dirXY(P("dir")), d = P("distance") / 100, st = P("scale") / 100;
-      layer(to, { a, tx: W * dx * d * i, ty: H * dy * d * i, s: Math.max(0.02, st + (1 - st) * p) });
-      break;
-    }
-    // Mask
-    case "mask-reveal": {
-      const [dx, dy] = dirXY(P("dir"));
-      clipped(() => ctx.rect(...edge(dx, dy)));
-      break;
-    }
-    case "mask-center":
-      clipped(() => (P("axis") === "horizontal" ? ctx.rect((W * i) / 2, 0, W * p, H) : ctx.rect(0, (H * i) / 2, W, H * p)));
-      break;
-    case "mask-resize": clipped(() => ctx.rect((W * i) / 2, (H * i) / 2, W * p, H * p), { s: 1 + (P("zoom") / 100) * i }); break;
-    case "mask-slide": {
-      const [dx, dy] = dirXY(P("dir")), d = P("distance") / 100;
-      clipped(() => ctx.rect(...edge(dx, dy)), { tx: W * dx * d * i, ty: H * dy * d * i });
-      break;
-    }
-    case "mask-expand": {
-      const ox = (P("x") / 100) * W, oy = (P("y") / 100) * H;
-      const far = Math.max(Math.hypot(ox, oy), Math.hypot(W - ox, oy), Math.hypot(ox, H - oy), Math.hypot(W - ox, H - oy));
-      clipped(() => ctx.arc(ox, oy, p * far, 0, Math.PI * 2));
-      break;
-    }
-    // Blur
-    case "blur": layer(to, { a, blur: P("blur") * k * i }); break;
-    case "blur-slide": {
-      const [dx, dy] = dirXY(P("dir")), d = P("distance") / 100;
-      layer(to, { a, blur: P("blur") * k * i, tx: W * dx * d * i, ty: H * dy * d * i });
-      break;
-    }
-    case "blur-scale": layer(to, { a, blur: P("blur") * k * i, s: 1 + (P("scale") / 100 - 1) * i }); break;
-    // Effects
-    case "dissolve":
-      revealCells(Math.round(P("cells")), (x, y, c) => {
-        const n = bgValueNoise((x / c) * 5, (y / c) * 5, 1) * 0.65 + bgValueNoise((x / c) * 11, (y / c) * 11, 2) * 0.35;
-        return Math.min(1, Math.max(0, (n - 0.2) / 0.6));
-      }, true, 0.04);
-      break;
-    case "pixel": revealCells(Math.round(P("cells")), (x, y, c) => bgRand(y * c + x, 2), false, 0.001); break;
-    case "pixel-wipe": {
-      const [dx, dy] = dirXY(P("dir"));
-      revealCells(Math.round(P("cells")), (x, y, c) => {
-        const rows = Math.max(1, Math.round((c * H) / W));
-        const u = dx ? (dx < 0 ? x / c : 1 - x / c) : dy < 0 ? y / rows : 1 - y / rows;
-        return u * 0.75 + bgRand(y * c + x, 3) * 0.25;
-      }, false, 0.001);
-      break;
-    }
-    case "wipe": {
-      const [dx, dy] = dirXY(P("dir"));
-      const f = P("softness") / 100, e = p * (1 + f);
-      masked((m) => {
-        const g = dx
-          ? m.createLinearGradient(dx < 0 ? 0 : W, 0, dx < 0 ? W : 0, 0)
-          : m.createLinearGradient(0, dy < 0 ? 0 : H, 0, dy < 0 ? H : 0);
-        g.addColorStop(Math.min(1, Math.max(0, e - f)), "#000");
-        g.addColorStop(Math.min(1, Math.max(0, e)), "rgba(0,0,0,0)");
-        m.fillStyle = g;
-        m.fillRect(0, 0, W, H);
-      });
-      break;
-    }
-    case "luma": {
-      // dark areas of the incoming background appear first
-      const sw = 48, sh = Math.max(1, Math.round((sw * H) / W));
-      const sc = bgTmp(`${ns}-luma`, sw, sh);
-      const sx = sc.getContext("2d", { willReadFrequently: true });
-      sx.drawImage(to, 0, 0, sw, sh);
-      const d = sx.getImageData(0, 0, sw, sh).data;
-      revealCells(sw, (x, y, c) => {
-        const j = (y * c + x) * 4;
-        const lum = (0.2126 * d[j] + 0.7152 * d[j + 1] + 0.0722 * d[j + 2]) / 255;
-        return (P("order") === "light" ? 1 - lum : lum) * 0.85 + bgRand(y * c + x, 4) * 0.15;
-      }, true, 0.12);
-      break;
-    }
-    case "blink": {
-      const steps = 2 * Math.max(1, Math.round(P("count"))) + 1;
-      const idx = Math.min(steps - 1, Math.floor(p * steps));
-      layer(to, { a: idx === steps - 1 ? 1 : idx % 2 });
-      break;
-    }
-    case "glitch": {
-      const n = Math.max(2, Math.round(P("slices"))), step = Math.floor(p * 18);
-      const grow = 0.15 + 0.85 * p;
-      const w = W * Math.min(1, grow * (1 + 0.9 * i)), h = H * grow; // starts wider than tall
-      const x0 = (W - w) / 2, y0 = (H - h) / 2;
-      const fr = W * 0.02 * i; // red / cyan fringe, fades out
-      const sH = to.height / n;
-      for (let b = 0; b < n; b++) {
-        const live = p < 0.99 && bgRand(b, step) < 0.55 * i + 0.05;
-        if (live && bgRand(b, step + 120) < 0.18) continue; // dropped slice leaves a gap
-        const dx = live ? (bgRand(b, step + 50) - 0.5) * (P("shift") / 100) * w * i * 1.2 : 0;
-        const dy = y0 + (h * b) / n, dh = h / n + 1;
-        if (fr > 0.5) {
-          ctx.fillStyle = "#ff2d2d";
-          ctx.fillRect(x0 + dx + fr, dy, w, dh);
-          ctx.fillStyle = "#19e0ff";
-          ctx.fillRect(x0 + dx - fr, dy, w, dh);
-        }
-        ctx.drawImage(to, 0, sH * b, to.width, sH * (dh / (h / n)), x0 + dx, dy, w, dh);
-      }
-      break;
-    }
-    case "barrel": {
-      const s = 0.12 + 0.88 * p; // grows from small to full size
-      const k = (P("strength") / 100) * i; // warp relaxes to flat
-      bgMesh(ctx, to, (u, v) => {
-        const x = (u - 0.5) * 2, y = (v - 0.5) * 2;
-        const f = Math.max(0.05, 1 - k * 0.5 * (x * x + y * y)); // corners pulled in more, so the edges bow out
-        return [W / 2 + (x * f * s * W) / 2, H / 2 + (y * f * s * H) / 2];
-      }, 12, 12);
-      break;
-    }
-    case "film-roll": {
-      const rolls = Math.max(1, Math.round(P("rolls")));
-      const Pd = H * 1.18; // one reel unit: the image plus its black gap
-      const split = 0.3; // first 30%: the reel rises from the bottom, then it rolls and settles
-      ctx.save();
-      if (P("dir") === "down") {
-        ctx.translate(0, H);
-        ctx.scale(1, -1);
-      }
-      const settle = p <= split ? 0 : 1 - Math.pow(1 - (p - split) / (1 - split), 3);
-      const a = p >= split ? 1 : smoothstep(p / split);
-      const bow = H * 0.12 * (1 - settle);
-      const o = rolls * Pd * (1 - settle);
-      const arch = (u) => bow * (1 - (2 * u - 1) ** 2);
-      ctx.fillStyle = "#000";
-      if (a < 1) {
-        const top = H - a * Pd;
-        ctx.beginPath();
-        ctx.moveTo(0, H);
-        ctx.lineTo(0, top);
-        ctx.quadraticCurveTo(W / 2, top - 2 * bow, W, top);
-        ctx.lineTo(W, H);
-        ctx.closePath();
-        ctx.fill();
-      } else {
-        ctx.fillRect(0, 0, W, H);
-      }
-      const k0 = a < 1 ? rolls : -1, k1 = a < 1 ? rolls : rolls + 1;
-      for (let k = k0; k <= k1; k++) {
-        const y = o - k * Pd;
-        const top = H - a * (H - y) - bow, bottom = H - a * (H - (y + H));
-        if (bottom < -2 || top > H + 2) continue;
-        bgMesh(ctx, to, (u, v) => [u * W, H - a * (H - (y + v * H)) - arch(u)], 10, 8);
-      }
-      ctx.restore();
-      break;
-    }
-    case "custom": {
-      const f = { ...BG_CUSTOM_REST, ...(opts.from ?? {}) };
-      const size = f.w / 100 + (1 - f.w / 100) * p;
-      const radius = (f.cr / 100) * Math.min(W, H) * i;
-      ctx.save();
-      if (f.w < 100 || f.cr > 0) {
-        ctx.beginPath();
-        ctx.roundRect((W * (1 - size)) / 2, (H * (1 - size)) / 2, W * size, H * size, radius);
-        ctx.clip();
-      }
-      layer(to, {
-        a: f.a + (1 - f.a) * p,
-        tx: (f.x / 100) * W * i,
-        ty: (f.y / 100) * H * i,
-        s: Math.max(0.02, f.s + (1 - f.s) * p),
-        r: f.r * i,
-        blur: f.b * k * i,
-      });
-      if (f.c) {
-        ctx.globalAlpha = i; // color wash that fades out
-        ctx.fillStyle = `#${f.c}`;
-        ctx.fillRect(0, 0, W, H);
-      }
-      ctx.restore();
-      break;
-    }
-    default: layer(to, {});
-  }
-}
-
-// Preview tiles: demo artwork, so every effect is visible whatever the real backgrounds are.
-let bgDemoCache = null;
-function bgDemo(W, H) {
-  if (bgDemoCache?.W === W) return bgDemoCache;
-  const mk = (draw) => {
-    const c = document.createElement("canvas");
-    c.width = W;
-    c.height = H;
-    draw(c.getContext("2d"));
-    return c;
-  };
-  const from = mk((x) => {
-    x.fillStyle = "#2A2A30";
-    x.fillRect(0, 0, W, H);
-  });
-  const to = mk((x) => {
-    const g = x.createLinearGradient(0, 0, W, H);
-    g.addColorStop(0, "#FF47BC");
-    g.addColorStop(1, "#6A2EE8");
-    x.fillStyle = g;
-    x.fillRect(0, 0, W, H);
-    x.fillStyle = "rgba(255,255,255,0.9)";
-    x.beginPath();
-    x.arc(W * 0.3, H * 0.4, H * 0.22, 0, Math.PI * 2);
-    x.fill();
-    x.fillStyle = "rgba(255,255,255,0.35)";
-    x.fillRect(W * 0.55, H * 0.25, W * 0.3, H * 0.5);
-  });
-  return (bgDemoCache = { W, from, to });
-}
-function drawBgAnimPreview(canvas, id, p, art, opts) {
-  if (!canvas) return;
-  const { from, to } = art ?? bgDemo(canvas.width, canvas.height);
-  drawBgTransition(canvas.getContext("2d"), id, from, to, p, canvas.width, canvas.height, "thumb", opts);
-}
-
-// ---------- Shot enter / exit animations ----------
-const DEV_ANIM_GROUPS = ["Fade & Scale", "Flip", "Slide"];
-const DEV_ANIMS = [
-  { id: "fade", group: "Fade & Scale", label: (k) => `Fade ${k}` },
-  { id: "scale", group: "Fade & Scale", label: (k) => `Scale ${k}` },
-  { id: "scale-bottom", group: "Fade & Scale", label: (k) => `Scale ${k} bottom` },
-  { id: "flip-h", group: "Flip", label: () => "Flip horizontal" },
-  { id: "flip-v", group: "Flip", label: () => "Flip vertical" },
-  { id: "slide-top", group: "Slide", label: (k) => `Slide ${k} top` },
-  { id: "slide-left", group: "Slide", label: (k) => `Slide ${k} left` },
-  { id: "slide-right", group: "Slide", label: (k) => `Slide ${k} right` },
-  { id: "slide-bottom", group: "Slide", label: (k) => `Slide ${k} bottom` },
-];
-const DEV_ANIM_BY_ID = Object.fromEntries(DEV_ANIMS.map((a) => [a.id, a]));
-const devAnimLabel = (id, k) => DEV_ANIM_BY_ID[id]?.label(k) ?? "None";
-
-// Device pose at progress p (0 = hidden / off-screen, 1 = resting). x / y are in screens (±1 = just off the edge).
-// Exit plays the same pose backwards.
-function devAnimPose(id, p) {
-  const i = 1 - p, a = Math.min(1, p * 2);
-  switch (id) {
-    case "fade": return { a: p };
-    case "scale": return { a: p, s: 0.6 + 0.4 * p };
-    case "scale-bottom": return { a: p, s: 0.6 + 0.4 * p, y: -0.5 * i };
-    case "flip-h": return { a, ry: (Math.PI / 2) * i };
-    case "flip-v": return { a, rx: (Math.PI / 2) * i };
-    case "slide-top": return { y: i };
-    case "slide-left": return { x: -i };
-    case "slide-right": return { x: i };
-    case "slide-bottom": return { y: -i };
-    default: return null;
-  }
-}
-
-function shotAnimPose(s, t) {
-  const L = s.len, u = vidClamp(t - s.start, 0, L);
-  const en = s.enter && s.enter.id !== "none" ? s.enter : null;
-  const ex = s.exit && s.exit.id !== "none" ? s.exit : null;
-  let pose = null;
-  if (en) {
-    const e0 = Math.min(L, en.delay / 1000), e1 = Math.min(L, e0 + en.dur / 1000);
-    const p = u <= e0 ? 0 : u >= e1 ? 1 : (u - e0) / Math.max(1e-6, e1 - e0);
-    pose = devAnimPose(en.id, smoothstep(p));
-  }
-  if (ex) {
-    const x1 = Math.max(0, L - ex.delay / 1000), x0 = Math.max(0, x1 - ex.dur / 1000);
-    const q = u >= x1 ? 1 : u <= x0 ? 0 : (u - x0) / Math.max(1e-6, x1 - x0);
-    if (q > 0) pose = devAnimPose(ex.id, 1 - smoothstep(q));
-  }
-  return pose;
-}
-
-// Later shots win on overlap. Between shots the nearest earlier shot's end state holds
-// (or the next shot's start state, before the first shot).
-// Same pick as the camera: later shots win on overlap, gaps hold the nearest earlier shot.
-function shotForImgAt(shots, t) {
-  const list = shots.filter((s) => !s.hidden);
-  for (let i = list.length - 1; i >= 0; i--) {
-    const s = list[i];
-    if (t >= s.start && t <= s.start + s.len) return s;
-  }
-  let prev = null;
-  list.forEach((s) => {
-    if (s.start + s.len < t && (!prev || s.start + s.len > prev.start + prev.len)) prev = s;
-  });
-  return prev ?? [...list].sort((a, b) => a.start - b.start)[0] ?? null;
-}
-
-function sampleDeviceAnim(shots, t) {
-  const list = shots.filter((s) => !s.hidden);
-  for (let i = list.length - 1; i >= 0; i--) {
-    const s = list[i];
-    if (t >= s.start && t <= s.start + s.len) return shotAnimPose(s, t);
-  }
-  let prev = null, next = null;
-  list.forEach((s) => {
-    if (s.start + s.len < t && (!prev || s.start + s.len > prev.start + prev.len)) prev = s;
-    if (s.start > t && (!next || s.start < next.start)) next = s;
-  });
-  if (prev) return shotAnimPose(prev, prev.start + prev.len);
-  if (next) return shotAnimPose(next, next.start);
-  return null;
 }
 
 // subject:
@@ -8848,251 +3834,6 @@ function CtxMenu({ left, top, width = 190, children, ...rest }) {
   );
 }
 
-// ---------- Video templates ----------
-// VK = camera keyframe (t is relative to the shot). VSHOT = a shot. poster = time (s) shown on the card at rest.
-const VK = (t, o = {}, ease) => ({ t, ...CAM_DEFAULT, ...o, ...(ease ? { ease: vidEaseSpec(ease) } : {}) });
-const VSHOT = (name, start, len, keys, extra = {}) => ({ name, start, len, keys, ...extra });
-
-// Background clip for a template. `at` = start time (s). The clip runs until the next one starts, or to the end of the timeline.
-// bg uses the same shape as TEMPLATE_LIBRARY (solid / gradient / custom). extra: { grain, enter }.
-const VBG = (at, bg, extra = {}) => ({ at, bg, ...extra });
-
-const vtBgSnap = (bg, grain = 0) => {
-  const base = {
-    bgType: "solid", bgHex: "FFFFFF", bgOpacity: 100,
-    gradientType: "Linear", gradientAngle: 90, gradientOpacity: 100,
-    gradientStops: [
-      { id: 1, hex: "FFFFFF", position: 0, opacity: 100 },
-      { id: 2, hex: "000000", position: 100, opacity: 100 },
-    ],
-    grainAmount: 0, customBgImageUrl: null,
-  };
-  if (bg.type === "solid") return { ...base, bgType: "solid", bgHex: bg.hex };
-  if (bg.type === "gradient") {
-    const p = GRADIENT_PRESETS.find((g) => g.value === bg.preset);
-    if (!p?.stops) return base;
-    return { ...base, bgType: "gradient", gradientType: p.type, gradientAngle: p.angle, gradientStops: p.stops.map((s) => ({ ...s })), grainAmount: grain };
-  }
-  const img = IMAGE_PRESETS.find((i) => i.value === bg.preset);
-  return { ...base, bgType: "custom", customBgImageUrl: img?.url ?? null };
-};
-
-const vtBgCss = (sn) =>
-  sn.bgType === "solid"
-    ? hexRgba(sn.bgHex, sn.bgOpacity)
-    : sn.bgType === "gradient"
-    ? buildGradientCss(sn.gradientType, sn.gradientAngle, sn.gradientStops)
-    : sn.customBgImageUrl
-    ? `center / cover url(${sn.customBgImageUrl})`
-    : "transparent";
-
-const VT_RAW = [
-  // Spins a full turn from a wide-angle, far-away start, then lands on a calm close angle
-  { id: "vt-whiplash", label: "Whiplash", tags: "spin 360 fast fov zoom crazy wide", poster: 1.6,
-    bgs: [VBG(0, { type: "gradient", preset: "cobalt-flare" }, { grain: 6 })],
-    shots: [VSHOT("Whiplash", 0, 5, [
-      VK(0, { rotationX: -25, rotationY: -180, rotationZ: -20, zoom: 15, fov: 105 }, "expo-out"),
-      VK(1.6, { rotationX: -10, rotationY: 25, rotationZ: 4, zoom: 78, fov: 30 }, "sine-in-out"),
-      VK(3.2, { rotationX: -6, rotationY: -18, rotationZ: -6, zoom: 88, fov: 24 }, "expo-in-out"),
-      VK(5, { rotationX: -8, rotationY: 360, rotationZ: 0, zoom: 70, fov: 27 }),
-    ], { enter: { id: "flip-h", dur: 900, delay: 0 } })] },
-
-  // Dolly zoom: camera flies in while the lens goes from telephoto to ultra-wide
-  { id: "vt-vertigo", label: "Vertigo", tags: "dolly zoom hitchcock fov warp distortion", poster: 3,
-    bgs: [VBG(0, { type: "gradient", preset: "midnight-magenta" }, { grain: 8 })],
-    shots: [VSHOT("Vertigo", 0, 6, [
-      VK(0, { rotationX: -8, rotationY: 20, zoom: 5, fov: 0 }, "cubic-in-out"),
-      VK(3.5, { rotationX: -14, rotationY: -12, rotationZ: 6, zoom: 100, fov: 120 }, "expo-out"),
-      VK(6, { rotationX: -10, rotationY: 8, rotationZ: 0, zoom: 55, fov: 60 }),
-    ])] },
-
-  // Full roll around the screen axis while swinging sideways and breathing zoom / fov
-  { id: "vt-roll", label: "Barrel Roll", tags: "roll rotate z 360 spin tilt", poster: 2.5,
-    bgs: [VBG(0, { type: "custom", preset: "iridescent-metallic-art" })],
-    shots: [VSHOT("Barrel roll", 0, 5, [
-      VK(0, { rotationX: -10, rotationY: 35, rotationZ: 0, zoom: 60, fov: 27 }, "cubic-in-out"),
-      VK(2.5, { rotationX: -22, rotationY: -35, rotationZ: 180, zoom: 90, fov: 70 }, "cubic-in-out"),
-      VK(5, { rotationX: -10, rotationY: 35, rotationZ: 360, zoom: 60, fov: 27 }),
-    ])] },
-
-  // Starts jammed in one corner at extreme zoom, sweeps across to the opposite corner, then pulls out to hero
-  { id: "vt-corner", label: "Corner Sweep", tags: "macro corner pan close up slide edge detail", poster: 2,
-    bgs: [
-      VBG(0, { type: "solid", hex: "0A0A0C" }),
-      VBG(3.5, { type: "gradient", preset: "amber-dusk" }, { grain: 12, enter: { id: "wipe", dur: 700, delay: 0 } }),
-    ],
-    shots: [
-      VSHOT("Corner sweep", 0, 3.5, [
-        VK(0, { rotationX: -28, rotationY: 50, rotationZ: -8, positionX: 45, positionY: -50, zoom: 100, fov: 18 }, "cubic-in-out"),
-        VK(3.5, { rotationX: 18, rotationY: -48, rotationZ: 8, positionX: -45, positionY: 50, zoom: 100, fov: 18 }),
-      ]),
-      VSHOT("Pull out", 3.5, 3, [
-        VK(0, { rotationX: 18, rotationY: -48, rotationZ: 8, positionX: -45, positionY: 50, zoom: 100, fov: 18 }, "expo-out"),
-        VK(3, { rotationX: -15, rotationY: 25, rotationZ: 0, positionX: 0, positionY: 0, zoom: 62, fov: 27 }),
-      ]),
-    ] },
-
-  // Slams in with a heavy fisheye, then snaps flat with a spring
-  { id: "vt-crash", label: "Fisheye Crash", tags: "fisheye wide fov crash impact spring snap", poster: 0.4,
-    bgs: [VBG(0, { type: "gradient", preset: "sunset-orange" }, { grain: 10, enter: { id: "barrel", dur: 900, delay: 0 } })],
-    shots: [VSHOT("Fisheye crash", 0, 5, [
-      VK(0, { rotationX: -45, rotationY: 70, rotationZ: -35, zoom: 100, fov: 120 }, "spring"),
-      VK(2.4, { rotationX: -10, rotationY: 18, rotationZ: 0, zoom: 70, fov: 27 }, "sine-in-out"),
-      VK(5, { rotationX: -6, rotationY: 8, rotationZ: 2, zoom: 76, fov: 24 }),
-    ], { enter: { id: "scale", dur: 700, delay: 0 } })] },
-
-  // One flip around Y, then one flip around X, each with an overshoot
-  { id: "vt-flips", label: "Double Flip", tags: "flip turn rotate 360 x y back overshoot", poster: 1.8,
-    bgs: [
-      VBG(0, { type: "gradient", preset: "deep-teal" }, { grain: 6 }),
-      VBG(3, { type: "gradient", preset: "violet-noir" }, { grain: 8, enter: { id: "mask-expand", dur: 800, delay: 0 } }),
-    ],
-    shots: [
-      VSHOT("Flip Y", 0, 3, [
-        VK(0, { rotationX: -8, rotationY: 0, zoom: 62 }, "back-in-out"),
-        VK(3, { rotationX: -8, rotationY: 360, zoom: 62 }),
-      ]),
-      VSHOT("Flip X", 3, 3, [
-        VK(0, { rotationX: -8, rotationY: 360, zoom: 62 }, "back-in-out"),
-        VK(3, { rotationX: -368, rotationY: 360, zoom: 62 }),
-      ]),
-    ] },
-
-  // Starts straight above the device, spirals down while winding the roll, ends head-on
-  { id: "vt-spiral", label: "Spiral Down", tags: "overhead top down spiral rotate dive descend", poster: 3,
-    bgs: [VBG(0, { type: "gradient", preset: "dusk-horizon" })],
-    shots: [VSHOT("Spiral down", 0, 6, [
-      VK(0, { rotationX: -88, rotationY: 0, rotationZ: 180, zoom: 20, fov: 75 }, "cubic-in-out"),
-      VK(3, { rotationX: -55, rotationY: 30, rotationZ: -90, zoom: 60, fov: 45 }, "expo-out"),
-      VK(6, { rotationX: -4, rotationY: 0, rotationZ: 0, zoom: 76, fov: 27 }),
-    ])] },
-
-  // Hard cuts between wildly different angles (no easing between poses), then settles
-  { id: "vt-strobe", label: "Strobe Cut", tags: "cut hard angles fast glitch beat jump", poster: 1.2,
-    bgs: [
-      VBG(0, { type: "gradient", preset: "violet-noir" }, { grain: 8 }),
-      VBG(1.5, { type: "gradient", preset: "midnight-magenta" }, { grain: 8, enter: { id: "glitch", dur: 600, delay: 0 } }),
-      VBG(3, { type: "custom", preset: "abstract-glowing-object" }, { enter: { id: "pixel", dur: 600, delay: 0 } }),
-    ],
-    shots: [VSHOT("Strobe cut", 0, 4.5, [
-      VK(0, { rotationX: -15, rotationY: 25, zoom: 70 }, "hold"),
-      VK(0.5, { rotationX: -12, rotationY: 28, rotationZ: -16, zoom: 70 }, "hold"),
-      VK(1, { rotationX: -22, rotationY: 38, positionX: 18, positionY: -42, zoom: 100, fov: 22 }, "hold"),
-      VK(1.5, { rotationX: -18, rotationY: 52, zoom: 88, fov: 105 }, "hold"),
-      VK(2, { rotationX: -88, rotationY: 0, zoom: 55 }, "hold"),
-      VK(2.5, { rotationX: -12, rotationY: 150, zoom: 70 }, "hold"),
-      VK(3, { rotationX: -30, rotationY: -60, rotationZ: 25, zoom: 64 }, "expo-out"),
-      VK(4.5, { rotationX: -8, rotationY: 10, rotationZ: 0, zoom: 74 }),
-    ])] },
-
-  // Big swings left and right that lose energy each time, with the camera pumping in and out
-  { id: "vt-pendulum", label: "Pendulum", tags: "swing sway rock left right pendulum zoom pump", poster: 2,
-    bgs: [VBG(0, { type: "gradient", preset: "burnt-clay" }, { grain: 8 })],
-    shots: [VSHOT("Pendulum", 0, 7, [
-      VK(0, { rotationX: -8, rotationY: -75, rotationZ: 14, zoom: 45, fov: 40 }, "sine-in-out"),
-      VK(1.75, { rotationX: -8, rotationY: 75, rotationZ: -14, zoom: 95, fov: 20 }, "sine-in-out"),
-      VK(3.5, { rotationX: -8, rotationY: -45, rotationZ: 9, zoom: 55, fov: 35 }, "sine-in-out"),
-      VK(5.25, { rotationX: -8, rotationY: 28, rotationZ: -5, zoom: 80, fov: 25 }, "sine-in-out"),
-      VK(7, { rotationX: -6, rotationY: 0, rotationZ: 0, zoom: 70, fov: 27 }),
-    ])] },
-
-  { id: "vt-reveal", label: "Reveal", tags: "macro close pull back two shots", poster: 5,
-    bgs: [
-      VBG(0, { type: "solid", hex: "0C0D10" }),
-      VBG(3, { type: "gradient", preset: "sunset-orange" }, { enter: { id: "mask-expand", dur: 900, delay: 0 } }),
-    ],
-    shots: [
-      VSHOT("Close-up", 0, 3, [VK(0, { rotationX: -22, rotationY: 38, zoom: 100, fov: 22 }, "sine-in-out"), VK(3, { rotationX: -20, rotationY: 34, zoom: 100, fov: 22 })]),
-      VSHOT("Pull back", 3, 3, [VK(0, { rotationX: -20, rotationY: 34, zoom: 100, fov: 22 }, "expo-out"), VK(3, { rotationX: -15, rotationY: 25, zoom: 62 })]),
-    ] },
-  { id: "vt-tumble", label: "Tumble", tags: "tumble spin exit dramatic", poster: 1,
-    bgs: [
-      VBG(0, { type: "gradient", preset: "steel-blue" }),
-      VBG(3, { type: "gradient", preset: "midnight-magenta" }, { grain: 8, enter: { id: "blur", dur: 800, delay: 0 } }),
-    ],
-    shots: [
-      VSHOT("Settle", 0, 3, [VK(0, { rotationX: -15, rotationY: 25 }, "sine-in-out"), VK(3, { rotationX: -12, rotationY: 18 })]),
-      VSHOT("Tumble", 3, 3, [VK(0, { rotationX: -12, rotationY: 18 }, "cubic-in-out"), VK(3, { rotationX: -30, rotationY: -60, rotationZ: 25, zoom: 64 })],
-        { exit: { id: "scale", dur: 800, delay: 0 } }),
-    ] },
-];
-const VIDEO_TEMPLATES = VT_RAW.map((t, i) => ({
-  ...t,
-  no: String(i + 1).padStart(2, "0"),
-  duration: Math.max(...t.shots.map((s) => s.start + s.len)),
-}));
-
-// Frame-mode video templates. A key can carry `fo(i, n, f)`: the offset of frame i (of n) from its resting placement.
-// Returns { dx, dy, k }: dx / dy in canvas-short-side units, k = scale multiplier. f = { x, y } of the resting frame.
-const FK = (t, o = {}, ease, fo) => ({ ...VK(t, o, ease), ...(fo ? { fo } : {}) });
-// Stagger shots: `stagger` is expanded per frame in resolveFrameTplShots (see buildStaggerKeys).
-//   from / out : (i, n, f) => ({ dx, dy, k })  offset of frame i from its resting spot (k = scale multiplier)
-//   step       : seconds between frames      dur : seconds each frame takes
-//   order      : "start" | "end" | "center" | "random"
-//   cam0/cam1  : optional camera drift across the shot
-const STG = (o) => ({ step: 0.25, dur: 1.1, ease: "expo-out", order: "start", ...o });
-const FVT_RAW = [
-  { id: "fvt-cascade", label: "Cascade Rise", tags: "stagger cascade rise enter frames", poster: 4, layout: "triple",
-    bgs: [VBG(0, { type: "gradient", preset: "ocean-blue" })],
-    shots: [VSHOT("Cascade", 0, 5, [], { stagger: STG({ from: () => ({ dy: 1.6 }), step: 0.3, cam0: { zoom: 62 }, cam1: { zoom: 72 } }) })] },
-
-  { id: "fvt-sides", label: "Alternate Sides", tags: "stagger slide left right alternate enter grid", poster: 4, layout: "grid",
-    bgs: [VBG(0, { type: "gradient", preset: "violet-noir" }, { grain: 8 })],
-    shots: [VSHOT("Sides", 0, 5, [], { stagger: STG({ from: (i) => ({ dx: (i % 2 ? 1 : -1) * 1.8 }), step: 0.3, ease: "cubic-out" }) })] },
-
-  { id: "fvt-pop", label: "Pop Stagger", tags: "stagger pop scale bounce enter overlap", poster: 4, layout: "overlap",
-    bgs: [VBG(0, { type: "gradient", preset: "amber-sky" })],
-    shots: [VSHOT("Pop", 0, 5, [], { stagger: STG({ from: () => ({ k: 0.1 }), step: 0.2, dur: 0.9, ease: "back-out" }) })] },
-
-  { id: "fvt-bounce", label: "Drop & Bounce", tags: "stagger drop bounce top enter", poster: 4.5, layout: "trio",
-    bgs: [VBG(0, { type: "gradient", preset: "steel-blue" })],
-    shots: [VSHOT("Drop", 0, 5.5, [], { stagger: STG({ from: () => ({ dy: -1.6 }), step: 0.25, dur: 1.4, ease: "bounce" }) })] },
-
-  { id: "fvt-fan", label: "Fan Out", tags: "stagger fan spread center stack reveal", poster: 4, layout: "overlap",
-    bgs: [VBG(0, { type: "gradient", preset: "midnight-magenta" }, { grain: 8 })],
-    shots: [VSHOT("Fan out", 0, 5, [], { stagger: STG({ from: (i, n, f) => ({ dx: -f.x, dy: -f.y, k: 0.9 }), step: 0.15, dur: 1.2, ease: "cubic-out", order: "center", cam0: { zoom: 58 }, cam1: { zoom: 70 } }) })] },
-
-  { id: "fvt-reverse", label: "Reverse Rise", tags: "stagger reverse last first rise", poster: 4, layout: "bleed",
-    bgs: [VBG(0, { type: "gradient", preset: "burnt-clay" })],
-    shots: [VSHOT("Reverse rise", 0, 5, [], { stagger: STG({ from: () => ({ dy: 1.6 }), order: "end", step: 0.3 }) })] },
-
-  { id: "fvt-converge", label: "Converge", tags: "stagger converge spread together slide", poster: 4, layout: "triple",
-    bgs: [VBG(0, { type: "gradient", preset: "cobalt-flare" })],
-    shots: [VSHOT("Converge", 0, 5, [], { stagger: STG({ from: (i, n) => ({ dx: (i - (n - 1) / 2) * 1.2 }), step: 0.12, dur: 1.4, order: "center" }) })] },
-
-  { id: "fvt-inout", label: "Rise & Exit", tags: "stagger enter exit rise up out loop grid", poster: 2.5, layout: "grid",
-    bgs: [VBG(0, { type: "gradient", preset: "deep-teal" }, { grain: 6 })],
-    shots: [VSHOT("Rise & exit", 0, 6, [], { stagger: STG({ from: () => ({ dy: 1.6 }), out: () => ({ dy: -1.6 }), step: 0.2, dur: 1 }) })] },
-
-  // all four cards travel as one strip: same direction, tiny stagger, slight camera drift
-  { id: "fvt-carousel", label: "Carousel", tags: "carousel strip row slide in out together", poster: 3, layout: "strip",
-    bgs: [VBG(0, { type: "custom", preset: "blue-sky-scene" })],
-    shots: [VSHOT("Carousel", 0, 6, [], { stagger: STG({ from: () => ({ dx: 1.8 }), out: () => ({ dx: -1.8 }), step: 0.1, dur: 1.4, ease: "cubic-out", outEase: "cubic-in", cam0: { positionX: 8 }, cam1: { positionX: -8 } }) })] },
-
-  { id: "fvt-push", label: "Push In", tags: "zoom push close hero", poster: 4, layout: "single",
-    bgs: [VBG(0, { type: "gradient", preset: "sunset-orange" })],
-    shots: [VSHOT("Push in", 0, 5, [], { stagger: STG({ from: () => ({ k: 0.6 }), step: 0, dur: 5, ease: "expo-out" }) })] },
-
-  // panning across frames that bleed off the edges
-  { id: "fvt-pan", label: "Pan", tags: "pan sweep slide horizontal bleed", poster: 2.5, layout: "bleed",
-    bgs: [VBG(0, { type: "custom", preset: "ethereal-gradient-abstraction" })],
-    shots: [VSHOT("Pan", 0, 5, [], { stagger: STG({ from: () => ({ dx: 0.35 }), step: 0, dur: 5, ease: "cubic-in-out" }) })] },
-
-  { id: "fvt-drop", label: "Drop In", tags: "enter exit slide top tilt duo", poster: 2.5, layout: "duo",
-    bgs: [
-      VBG(0, { type: "solid", hex: "0C0D10" }),
-      VBG(2, { type: "gradient", preset: "forest-green" }, { enter: { id: "mask-expand", dur: 900, delay: 0 } }),
-    ],
-    shots: [VSHOT("Drop in", 0, 4, [],
-      { stagger: STG({ from: () => ({ dr: -4 }), step: 0, dur: 4, ease: "back-out" }),
-        enter: { id: "slide-top", dur: 900, delay: 0 }, exit: { id: "slide-bottom", dur: 700, delay: 0 } })] },
-];
-const FRAME_VIDEO_TEMPLATES = FVT_RAW.map((t, i) => ({
-  ...t,
-  no: String(i + 1).padStart(2, "0"),
-  duration: Math.max(...t.shots.map((s) => s.start + s.len)),
-}));
-
 const VT_N = 20; // frames rendered per card when hovered
 const VT_W = 312, VT_H = 416;
 const vtLoad = (src) =>
@@ -9655,7 +4396,7 @@ const rowsFor = (s) => {
     });
   }
   return VID_PROPS
-    .filter(([key]) => !(v.frameMode && ["rotationX", "rotationY", "fov"].includes(key)))
+    .filter(([key]) => !(v.frameMode && key === "fov"))
     .map(([key, label]) => ({ key, label }));
 };
 const rowActive = (s, r) =>
@@ -10353,7 +5094,7 @@ const openEase = (e, sid, kid, prop = null) => {
 };
 
   return (
-    <div ref={rootRef} className="order-last mt-2 shrink-0 rounded-3xl bg-[#FAF9FA] dark:bg-[#171717] flex flex-col overflow-hidden select-none">
+    <div ref={rootRef} data-tour="timeline" className="order-last mt-2 shrink-0 rounded-3xl bg-[#FAF9FA] dark:bg-[#171717] flex flex-col overflow-hidden select-none">
       <input
         ref={imgInputRef}
         type="file"
@@ -10372,7 +5113,7 @@ const openEase = (e, sid, kid, prop = null) => {
 )}
 {/* Toolbar */}
 <div className="flex items-center px-4 py-3 gap-10 bg-[#FAF9FA] dark:bg-[#171717] border-b border-[#222222]/10 dark:border-[#FAF9FA]/10">
-  <div className="flex flex-1 items-center gap-1 min-w-0">
+  <div data-tour="timeline-actions" className="flex flex-1 items-center gap-1 min-w-0">
     <VidBtn label={`Add ${unit}`} shortcut={["S"]} onClick={v.onAddShot} disabled={v.exporting}><Plus size={16} weight="bold" /></VidBtn>
     <VidBtn
       label={keyState === "on" ? "Remove keyframe" : "Add keyframe"}
@@ -10394,7 +5135,7 @@ const openEase = (e, sid, kid, prop = null) => {
     )}
   </div>
 
-  <div className="flex items-center gap-2 shrink-0">
+  <div data-tour="timeline-playback" className="flex items-center gap-2 shrink-0">
     <VidBtn label="Previous marker" tone="strong" onClick={() => v.onSkip(-1)}><SkipBack size={16} weight="bold" /></VidBtn>
     <VidBtn label={v.playing ? "Pause" : "Play"} tone="pink" shortcut={["Space"]} onClick={v.onTogglePlay} disabled={!hasKeys || v.exporting}>
       {v.playing ? <Pause size={16} weight="fill" /> : <Play size={16} weight="fill" />}
@@ -10402,7 +5143,7 @@ const openEase = (e, sid, kid, prop = null) => {
     <VidBtn label="Next marker" tone="strong" onClick={() => v.onSkip(1)}><SkipForward size={16} weight="bold" /></VidBtn>
   </div>
 
-  <div className="flex flex-1 items-center justify-end gap-4 min-w-0">
+  <div data-tour="timeline-duration" className="flex flex-1 items-center justify-end gap-4 min-w-0">
     <div className="flex items-center gap-2">
       <span ref={cntRef} className="tabular-nums whitespace-pre text-[#8C8C8C] dark:text-[#9A9A9A]" />
       <div className="w-[72px]">
@@ -10444,6 +5185,7 @@ const openEase = (e, sid, kid, prop = null) => {
 
     {/* Ruler */}
     <div
+      data-tour="timeline-ruler"
       onPointerDown={scrub}
       className="sticky top-0 z-10 h-[29px] shrink-0 cursor-pointer bg-[#FAF9FA] dark:bg-[#171717] border-b border-[#222222]/10 dark:border-[#FAF9FA]/10"
     >
@@ -10491,6 +5233,7 @@ const openEase = (e, sid, kid, prop = null) => {
       <div className="flex">
         {/* Shot names */}
 <div
+  data-tour="timeline-names"
   className="sticky left-0 z-20 shrink-0 flex flex-col gap-1 pt-2 pb-4 bg-[#FAF9FA] dark:bg-[#171717]"
   style={{ width: VID_LABEL_W }}
 >
@@ -10695,7 +5438,7 @@ const openEase = (e, sid, kid, prop = null) => {
         </div>
 
         {/* Tracks */}
-        <div onPointerDown={scrub} className="relative flex-1 flex flex-col gap-1 pt-2 pb-4 cursor-pointer">
+        <div data-tour="timeline-tracks" onPointerDown={scrub} className="relative flex-1 flex flex-col gap-1 pt-2 pb-4 cursor-pointer">
           {shots.map((s) => {
             const gi = groupInfo[s.group];
             const header = gi && gi.first === s.id ? groupTrack(gi) : null;
@@ -11063,7 +5806,7 @@ const openEase = (e, sid, kid, prop = null) => {
               className="flex items-center justify-between w-full h-8 pl-2 pr-1.5 rounded-lg text-[13px] font-medium tracking-[-0.005em] text-[#3A3A3A] dark:text-[#FAF9FA] hover:bg-[#F04438]/10 hover:text-[#F04438] dark:hover:text-[#F04438] transition-colors duration-100"
             >
               Delete keyframe
-              <KeyCap>⌫</KeyCap>
+              <KeyCombo keys={["⌫"]} />
             </button>
           </div>,
           document.body
@@ -11133,7 +5876,7 @@ const openEase = (e, sid, kid, prop = null) => {
         className={`${CTX_ITEM} justify-between`}
       >
         Duplicate
-        <span className="flex items-center gap-1"><KeyCap>mod</KeyCap><KeyCap>D</KeyCap></span>
+        <KeyCombo keys={["mod", "D"]} />
       </button>
       {selIds.length >= 2 && selIds.includes(shotMenu.sid) && (
         <button
@@ -11145,7 +5888,7 @@ const openEase = (e, sid, kid, prop = null) => {
           className={`${CTX_ITEM} justify-between`}
         >
           Group
-          <span className="flex items-center gap-1"><KeyCap>mod</KeyCap><KeyCap>G</KeyCap></span>
+          <KeyCombo keys={["mod", "G"]} />
         </button>
       )}
       {(shots.find((x) => x.id === shotMenu.sid)?.group || shots.some((x) => selIds.includes(x.id) && x.group)) && (
@@ -11158,7 +5901,7 @@ const openEase = (e, sid, kid, prop = null) => {
           className={`${CTX_ITEM} justify-between`}
         >
           Ungroup
-          <span className="flex items-center gap-1"><KeyCap>mod</KeyCap><KeyCap>⇧</KeyCap><KeyCap>G</KeyCap></span>
+          <KeyCombo keys={["mod", "⇧", "G"]} />
         </button>
       )}
       <button
@@ -11170,7 +5913,7 @@ const openEase = (e, sid, kid, prop = null) => {
         className={CTX_DANGER}
       >
         Delete
-        <KeyCap>⌫</KeyCap>
+        <KeyCombo keys={["⌫"]} />
       </button>
     </CtxMenu>,
     document.body
@@ -11213,7 +5956,7 @@ const openEase = (e, sid, kid, prop = null) => {
         className={`${CTX_ITEM} justify-between`}
       >
         Duplicate
-        <span className="flex items-center gap-1"><KeyCap>mod</KeyCap><KeyCap>D</KeyCap></span>
+        <KeyCombo keys={["mod", "D"]} />
       </button>
       <button
         type="button"
@@ -11234,7 +5977,7 @@ const openEase = (e, sid, kid, prop = null) => {
         className={CTX_DANGER}
       >
         Delete background
-        <KeyCap>⌫</KeyCap>
+        <KeyCombo keys={["⌫"]} />
       </button>
     </CtxMenu>,
     document.body
@@ -11305,7 +6048,7 @@ const openEase = (e, sid, kid, prop = null) => {
         className={`${CTX_ITEM} justify-between`}
       >
         Duplicate
-        <span className="flex items-center gap-1"><KeyCap>mod</KeyCap><KeyCap>D</KeyCap></span>
+        <KeyCombo keys={["mod", "D"]} />
       </button>
       <button
         type="button"
@@ -11316,7 +6059,7 @@ const openEase = (e, sid, kid, prop = null) => {
         className={CTX_DANGER}
       >
         Delete text
-        <KeyCap>⌫</KeyCap>
+        <KeyCombo keys={["⌫"]} />
       </button>
     </CtxMenu>,
     document.body
@@ -11336,11 +6079,56 @@ const openEase = (e, sid, kid, prop = null) => {
   );
 }
 
+// Seeks a video to t (looping by its duration) and resolves once the frame is ready.
+function seekVideo(el, t) {
+  const d = el.duration;
+  const want = d && isFinite(d) ? t % d : 0;
+  if (Math.abs(el.currentTime - want) < 1 / 120) return Promise.resolve();
+  return new Promise((res) => {
+    const done = () => {
+      el.removeEventListener("seeked", done);
+      res();
+    };
+    el.addEventListener("seeked", done);
+    el.currentTime = want;
+  });
+}
+
+// Loads a video file and grabs its first frame as a poster image.
+function loadVideoMeta(file) {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const el = document.createElement("video");
+    el.muted = true;
+    el.loop = true;
+    el.playsInline = true;
+    el.preload = "auto";
+    el.onloadeddata = () => {
+      const c = document.createElement("canvas");
+      c.width = el.videoWidth;
+      c.height = el.videoHeight;
+      c.getContext("2d").drawImage(el, 0, 0);
+      c.toBlob((blob) => {
+        if (!blob) return resolve(null);
+        resolve({
+          el, url, duration: el.duration, w: el.videoWidth, h: el.videoHeight,
+          poster: new File([blob], file.name.replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg" }),
+        });
+      }, "image/jpeg", 0.92);
+    };
+    el.onerror = () => resolve(null);
+    el.src = url;
+  });
+}
+
 export default function App() {
  const sceneRef = useRef(null);
   const fileInputRef = useRef(null);
   const uploadedFileRef = useRef(null);
   const [uploadedMediaLabel, setUploadedMediaLabel] = useState(null);
+  const [mockupVideo, setMockupVideo] = useState(null); // { el, url, duration }
+  const mockupVideoRef = useRef(null);
+  mockupVideoRef.current = mockupVideo;
   const [uploadedMediaThumb, setUploadedMediaThumb] = useState(null);
   const [uploadedImageDims, setUploadedImageDims] = useState(null);
   const [uploadedCrop, setUploadedCrop] = useState(null); // { x, y, width, height } or null
@@ -11367,20 +6155,29 @@ export default function App() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [tourOpen, setTourOpen] = useState(false);
+  const [tourKind, setTourKind] = useState("app"); // "app" | "video"
   const startTour = () => {
     setExportOpen(false);
     setCanvasSizeOpen(false);
+    setTourKind("app");
     if (sidebarOpen) setTourOpen(true);
     else {
       setSidebarOpen(true);
       setTimeout(() => setTourOpen(true), 380);
     }
   };
+  const startVideoTour = () => {
+    setExportOpen(false);
+    setCanvasSizeOpen(false);
+    setTourKind("video");
+    setTourOpen(true);
+  };
     useEffect(() => {
     try {
       if (!localStorage.getItem("bezel:tour-seen")) startTour();
     } catch {}
   }, []);
+
   const [themeMenuOpen, setThemeMenuOpen] = useState(false);
   const [helpAnchor, setHelpAnchor] = useState(null);
   const helpButtonRef = useRef(null);
@@ -11573,6 +6370,43 @@ useEffect(() => {
   };
   const frameRotation = primaryFrame.r ?? 0;
   const setFrameRotation = makeFrameSetter("r");
+
+  // Multi-selection rotates as a group. The scrubber shows the angle applied since the selection was made.
+  const [groupRot, setGroupRot] = useState(0);
+  useEffect(() => setGroupRot(0), [selectedIds.join(",")]);
+
+  const rotateSelection = (target) => {
+    const ids = editIdsRef.current;
+    const box = frameSizeRef.current;
+    if (ids.length <= 1 || !box) {
+      setFrameRotation(target);
+      return;
+    }
+    const short = Math.min(box.w, box.h);
+    const delta = target - groupRot;
+    setGroupRot(target);
+    const sel = framesLatestRef.current.filter((f) => ids.includes(f.id));
+    const rects = new Map(sel.map((f) => [f.id, frameRect(f, box)]));
+    const list = [...rects.values()];
+    const gcx = (Math.min(...list.map((r) => r.left)) + Math.max(...list.map((r) => r.left + r.width))) / 2;
+    const gcy = (Math.min(...list.map((r) => r.top)) + Math.max(...list.map((r) => r.top + r.height))) / 2;
+    const rad = (delta * Math.PI) / 180;
+    const cos = Math.cos(rad), sin = Math.sin(rad);
+    setFrames((prev) =>
+      prev.map((f) => {
+        const r = rects.get(f.id);
+        if (!r) return f;
+        const dx = r.left + r.width / 2 - gcx;
+        const dy = r.top + r.height / 2 - gcy;
+        return {
+          ...f,
+          x: f.x + (dx * cos - dy * sin - dx) / short,
+          y: f.y + (dx * sin + dy * cos - dy) / short,
+          r: (f.r ?? 0) + delta,
+        };
+      })
+    );
+  };
   // moves every selected frame by the same amount, so a multi-selection keeps its spacing
   const moveSelectedFrames = (key, target) => {
     const ids = editIdsRef.current;
@@ -11662,6 +6496,24 @@ const activeSocialMode = modeOf(frameSocial.platform, frameSocial.mode);
   useEffect(() => () => clearTimeout(cameraEaseTimerRef.current), []);
   const nextEffectIdRef = useRef(2);
   const frameSizeRef = useRef(null); // measured size of the canvas, used by Frame export
+    const videoPoolRef = useRef(new Map()); // blob url -> offscreen <video>, used only for export
+  const videoFrameAt = async (url, t) => {
+    let el = videoPoolRef.current.get(url);
+    if (!el) {
+      el = document.createElement("video");
+      el.muted = true;
+      el.playsInline = true;
+      el.preload = "auto";
+      el.src = url;
+      await new Promise((res, rej) => {
+        el.onloadeddata = res;
+        el.onerror = rej;
+      });
+      videoPoolRef.current.set(url, el);
+    }
+    await seekVideo(el, t);
+    return el;
+  };
     // Size inputs: keep the on-canvas scale, so typing a bigger W makes the frame bigger.
   // Size inputs: apply to every selected frame, keeping each one's on-canvas scale.
   const resizeSelectedFrames = (dim, val) => {
@@ -11715,11 +6567,8 @@ const pickFrameFile = (ids = null) => {
 // placeholder frame if there is one, else adds a new frame.
 const addFrameImage = (file, targetIds = null) => {
   const ids = targetIds == null ? [] : Array.isArray(targetIds) ? targetIds : [targetIds];
-  const url = URL.createObjectURL(file);
-  const probe = new Image();
-  probe.onload = () => {
-    const nw = probe.naturalWidth, nh = probe.naturalHeight;
-    const img = { url, label: file.name, nw, nh, crop: null, cropUrl: null };
+  const place = (url, nw, nh, video = null) => {
+    const img = { url, label: file.name, nw, nh, crop: null, cropUrl: null, ...(video ? { video } : {}) };
     const box = frameSizeRef.current;
     const prev = framesLatestRef.current;
     const short = box ? Math.min(box.w, box.h) : 1;
@@ -11779,6 +6628,16 @@ const addFrameImage = (file, targetIds = null) => {
       setVidShots(apply);
     }
   };
+
+  if (file.type.startsWith("video/")) {
+    loadVideoMeta(file).then(
+      (m) => m && place(URL.createObjectURL(m.poster), m.w, m.h, { url: m.url, duration: m.duration })
+    );
+    return;
+  }
+  const url = URL.createObjectURL(file);
+  const probe = new Image();
+  probe.onload = () => place(url, probe.naturalWidth, probe.naturalHeight);
   probe.src = url;
 };
 frameUploadRef.current = addFrameImage;
@@ -12155,6 +7014,18 @@ const [reflectionMatte, setReflectionMatte] = useState(20);
   const [imageOrVideo, setImageOrVideo] = useState("image");
   const imageOrVideoRef = useRef(imageOrVideo);
   imageOrVideoRef.current = imageOrVideo;
+
+  // First time the user switches to Video: wait for the timeline to mount, then run its tour
+  useEffect(() => {
+    if (imageOrVideo !== "video") return;
+    try {
+      if (localStorage.getItem("bezel:video-tour-seen") || !localStorage.getItem("bezel:tour-seen")) return;
+    } catch { return; }
+    const t = setTimeout(() => {
+      if (!tourOpen) startVideoTour();
+    }, 450);
+    return () => clearTimeout(t);
+  }, [imageOrVideo]);
   const [exportWidth, setExportWidth] = useState(1920);
   const [exportFormat, setExportFormat] = useState("png");
   const [videoFormat, setVideoFormat] = useState("mp4");
@@ -12162,7 +7033,7 @@ const [reflectionMatte, setReflectionMatte] = useState(20);
   const [videoSpeed, setVideoSpeed] = useState(1);
   const [videoFps, setVideoFps] = useState(24);
   const [exportProgress, setExportProgress] = useState(null); // 0-1 while a video export runs
-  const [exportTransparent, setExportTransparent] = useState(true);
+  const [exportTransparent, setExportTransparent] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportToast, setExportToast] = useState(null);
   const exportRef = useRef(null);
@@ -12313,16 +7184,16 @@ useEffect(() => {
   const [deviceOrientation, setDeviceOrientation] = useState("portrait");
   const [lightDir, setLightDir] = useState({ x: 126, y: 126 });
   const [isDraggingLight, setIsDraggingLight] = useState(false);
-  const [openSections, setOpenSections] = useState({
-    device: true,
-    screenInterface: true,
-    position: true,
-    appearance: true,
-    social: true,
-    camera: true,
-    scene: true,
-    text: true,
-  });
+const [openSections, setOpenSections] = useState({
+  device: true,
+  screenInterface: false,
+  position: true,
+  appearance: true,
+  social: false,
+  camera: true,
+  scene: true,
+  text: false,
+});
 
   const [gradientStops, setGradientStops] = useState([
     { id: 1, hex: "FFFFFF", position: 0, opacity: 100 },
@@ -13211,11 +8082,14 @@ useEffect(() => {
   const resetFrameCamera = () => {
     const ids = selectedIdsRef.current;
     setFrames((prev) => prev.map((f) => (ids.includes(f.id) ? { ...f, r: 0, s: null } : f)));
+    setGroupRot(0);
     setCameraEase(true);
     clearTimeout(cameraEaseTimerRef.current);
     cameraEaseTimerRef.current = setTimeout(() => setCameraEase(false), 360);
-    handleRotationZChange(0);
-    handlePositionXChange(0);
+handleRotationChange(0);
+handleRotationYChange(0);
+handleRotationZChange(0);
+handlePositionXChange(0);
     handlePositionYChange(0);
     handleZoomChange(70);
   };
@@ -13308,9 +8182,11 @@ useEffect(() => {
     sceneRef.current?.setLightDirection((point.x / 252) * 100, (point.y / 252) * 100);
   }, []);
 
- const handleUpload = useCallback((e) => {
+ const handleUpload = useCallback(async (e) => {
  if (toolbarModeRef.current === "frame") {
-  const files = Array.from(e.target.files ?? []).filter((f) => f.type.startsWith("image/"));
+  const files = Array.from(e.target.files ?? []).filter(
+    (f) => f.type.startsWith("image/") || (imageOrVideoRef.current === "video" && f.type.startsWith("video/"))
+  );
   const isPicker = "value" in e.target; // file input = click, otherwise it's a drop
   const raw = isPicker ? pickTargetRef.current : null;
   const targets = raw == null ? [] : Array.isArray(raw) ? raw : [raw];
@@ -13322,10 +8198,19 @@ useEffect(() => {
     files.forEach((file) => frameUploadRef.current(file, null)); // drops always add new frames
   }
   return;
-}
-  const file = e.target.files?.[0];
-  if (!file) return;
-  if (imageOrVideoRef.current === "video" && vidUploadRef.current?.(file)) {
+ }
+  const picked = e.target.files?.[0];
+  if (!picked) return;
+  let file = picked;
+  let video = null;
+  if (picked.type.startsWith("video/")) {
+    if (imageOrVideoRef.current !== "video") return;
+    const m = await loadVideoMeta(picked);
+    if (!m) return;
+    file = m.poster; // the scene gets the first frame as its still image
+    video = { el: m.el, url: m.url, duration: m.duration };
+    if ("value" in e.target) e.target.value = "";
+  } else if (imageOrVideoRef.current === "video" && vidUploadRef.current?.(picked)) {
     if ("value" in e.target) e.target.value = "";
     return; // Video mode: the image belongs to the shot, not the global upload
   }
@@ -13333,8 +8218,9 @@ useEffect(() => {
   setFrameCropUrl(null);
   setUploadedCrop(null);
   sceneRef.current?.uploadFile(file);
+  setMockupVideo(video);
   const url = URL.createObjectURL(file);
-  setUploadedMediaLabel(file.name);
+  setUploadedMediaLabel(picked.name);
   setUploadedMediaThumb(url);
   setUploadedImageDims(null); // stale dims from a previous image, if any
   // Frame mode's W/H follow the uploaded image's real size, same as the crop modal shows.
@@ -13365,6 +8251,7 @@ useEffect(() => {
 
   const handleClearUpload = useCallback(() => {
     sceneRef.current?.clearScreenshot();
+    setMockupVideo(null);
     uploadedFileRef.current = null;
     setFrameCropUrl(null);
     setUploadedCrop(null);
@@ -13374,8 +8261,23 @@ useEffect(() => {
     if (fileInputRef.current) fileInputRef.current.value = "";
   }, []);
 
+    useEffect(() => {
+    const el = mockupVideo?.el;
+    const on = !!el && imageOrVideo === "video" && toolbarMode === "mockup";
+    sceneRef.current?.setScreenVideo?.(on ? el : null);
+    if (!el) return;
+    const repaint = () => sceneRef.current?.refreshScreen?.();
+    el.addEventListener("seeked", repaint);
+    return () => {
+      el.removeEventListener("seeked", repaint);
+      el.pause();
+    };
+  }, [mockupVideo, imageOrVideo, toolbarMode]);
+
   const handleFileDrop = (files) => {
-    const images = files.filter((f) => f.type.startsWith("image/"));
+    const images = files.filter(
+      (f) => f.type.startsWith("image/") || (imageOrVideo === "video" && f.type.startsWith("video/"))
+    );
     if (!images.length) return;
     handleUpload({ target: { files: images } });
   };
@@ -13419,9 +8321,10 @@ useEffect(() => {
         img.src = src;
       });
     const drawCover = (img, x, y, w, h, target = ctx) => {
-      const s = Math.max(w / img.naturalWidth, h / img.naturalHeight);
-      const dw = img.naturalWidth * s;
-      const dh = img.naturalHeight * s;
+      const iw = img.naturalWidth || img.videoWidth, ih = img.naturalHeight || img.videoHeight;
+      const s = Math.max(w / iw, h / ih);
+      const dw = iw * s;
+      const dh = ih * s;
       target.drawImage(img, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
     };
 
@@ -13492,27 +8395,67 @@ useEffect(() => {
 
       // Each frame is drawn on `layer` (so its stroke/clip stay clean), then composited onto `comp`
       // with its shadows and blur. `comp` is one plane, so the camera warps all frames together.
-      const layer = document.createElement("canvas");
-      layer.width = outW;
-      layer.height = outH;
-      const lctx = layer.getContext("2d");
-      const comp = document.createElement("canvas");
-      comp.width = outW;
-      comp.height = outH;
-      const cctx = comp.getContext("2d");
+      const frameList = ov?.frames ?? frames;
 
-      for (const fr of ov?.frames ?? frames) {
+      // With a camera applied, the flat comp is warped afterwards, so it must cover everything that
+      // can come into view (frames bleeding off the edges, shadows, blur), not just the canvas rect.
+      let padL = 0, padT = 0, padR = 0, padB = 0;
+      if (!isDefaultCamera(cam)) {
+        let minX = 0, minY = 0, maxX = outW, maxY = outH;
+        frameList.forEach((fr) => {
+          const r = frameRect(fr, { w: outW, h: outH });
+          const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+          const half = fr.r ? Math.hypot(r.width, r.height) / 2 : null; // rotated: use the circumscribed circle
+          const hw = half ?? r.width / 2, hh = half ?? r.height / 2;
+          const fx = Math.max(0, ...fr.effects.filter((e) => e.visible && e.type === "dropShadow").map((e) => (Math.abs(e.x) + e.blur * 2 + Math.abs(e.spread)) * k));
+          const fy = Math.max(0, ...fr.effects.filter((e) => e.visible && e.type === "dropShadow").map((e) => (Math.abs(e.y) + e.blur * 2 + Math.abs(e.spread)) * k));
+          const fb = fr.effects.filter((e) => e.visible && e.type === "layerBlur").reduce((s, e) => s + e.blur, 0) * k * 3;
+          minX = Math.min(minX, cx - hw - fx - fb);
+          maxX = Math.max(maxX, cx + hw + fx + fb);
+          minY = Math.min(minY, cy - hh - fy - fb);
+          maxY = Math.max(maxY, cy + hh + fy + fb);
+        });
+        padL = Math.ceil(-minX); padT = Math.ceil(-minY);
+        padR = Math.ceil(maxX - outW); padB = Math.ceil(maxY - outH);
+        // keep memory sane on very large exports
+        const MAX_PX = 120e6;
+        const area = (outW + padL + padR) * (outH + padT + padB);
+        if (area > MAX_PX) {
+          const s = Math.sqrt(MAX_PX / area);
+          padL = Math.floor(padL * s); padT = Math.floor(padT * s);
+          padR = Math.floor(padR * s); padB = Math.floor(padB * s);
+        }
+      }
+      const compW = outW + padL + padR, compH = outH + padT + padB;
+
+      const layer = document.createElement("canvas");
+      layer.width = compW;
+      layer.height = compH;
+      const lctx = layer.getContext("2d");
+      lctx.translate(padL, padT);
+      const comp = document.createElement("canvas");
+      comp.width = compW;
+      comp.height = compH;
+      const cctx = comp.getContext("2d");
+      cctx.translate(padL, padT);
+
+      for (const fr of frameList) {
         const fp = ov?.framePoses?.[fr.id];
         if (fp === "hidden") continue; // outside its row
         const { left: sx, top: sy, width: sw, height: sh } = frameRect(fr, { w: outW, h: outH });
         const rs = cornersOf(fr).map((p) => (Math.min(sw, sh) * p) / 100); // [tl, tr, br, bl]
         const srcUrl = fr.img ? (fr.img.cropUrl ?? fr.img.url) : null;
-        const srcImg = !backFacing && srcUrl ? await loadImg(srcUrl) : null;
+        const srcImg =
+          backFacing || !srcUrl
+            ? null
+            : fr.img?.video && videoOn
+            ? await videoFrameAt(fr.img.video.url, ov?.t ?? vidTimeRef.current)
+            : await loadImg(srcUrl);
         const blurTotal = fr.effects
           .filter((e) => e.visible && e.type === "layerBlur")
           .reduce((sum, e) => sum + e.blur, 0) * k;
 
-        lctx.clearRect(0, 0, outW, outH);
+        lctx.clearRect(-padL, -padT, compW, compH);
         lctx.save();
         lctx.beginPath();
         lctx.roundRect(sx, sy, sw, sh, rs);
@@ -13621,7 +8564,7 @@ if (!backFacing && (fr.statusBar || fr.homeIndicator)) {
         cctx.translate(rcx, rcy);
         cctx.rotate(rot);
         cctx.translate(-rcx, -rcy);
-        cctx.drawImage(layer, 0, 0);
+        cctx.drawImage(layer, -padL, -padT);
         cctx.restore();
       }
 
@@ -13630,7 +8573,10 @@ if (!backFacing && (fr.statusBar || fr.homeIndicator)) {
         deviceLayer = document.createElement("canvas");
         deviceLayer.width = outW;
         deviceLayer.height = outH;
-        drawWarped(deviceLayer.getContext("2d"), comp, getFrameCamera(cam, outH), outW, outH);
+        drawWarped(
+          deviceLayer.getContext("2d"), comp, getFrameCamera(cam, outH), outW, outH, 24,
+          { x: -padL, y: -padT, w: compW, h: compH }
+        );
       }
       ctx.save();
       if (ov?.pose) {
@@ -13855,7 +8801,7 @@ if (!backFacing && (fr.statusBar || fr.homeIndicator)) {
     hasSeededGradientRef.current = false;
 
     // Panel open/closed state
-    setOpenSections({ device: true, screenInterface: true, position: true, appearance: true, social: true, camera: true, scene: true, text: true });
+    setOpenSections({ device: true, screenInterface: false, position: true, appearance: true, social: false, camera: true, scene: true, text: false });
     setFrameRadius(0);
     setFrames([makeFrame(1)]);
     setSelectedIds([1]);
@@ -13970,7 +8916,7 @@ vidLive.current = {
     if (!el || !box || !c) return;
     el.style.transition = "none";
     el.style.transform = frameCameraCss(
-      getFrameCamera({ ...CAM_DEFAULT, rotationZ: c.rotationZ, positionX: c.positionX, positionY: c.positionY, zoom: c.zoom }, box.h)
+      getFrameCamera({ ...CAM_DEFAULT, rotationX: c.rotationX, rotationY: c.rotationY, rotationZ: c.rotationZ, positionX: c.positionX, positionY: c.positionY, zoom: c.zoom }, box.h)
     );
   };
   const applyFrameAnim = (p) => {
@@ -14333,6 +9279,7 @@ const vidRange = () => {
     applyCam(c);
     applyBgAt(tt);
     applyAnimAt(tt);
+    syncVideos(tt, false);
     commitCam(c);
   };
 
@@ -14362,6 +9309,7 @@ const step = (now) => {
   applyBgAt(t);
   applyAnimAt(t);
   syncAudio(t, !exporting);
+  syncVideos(t, !exporting);
   raf = requestAnimationFrame(step);
 };
     raf = requestAnimationFrame(step);
@@ -14369,6 +9317,7 @@ const step = (now) => {
       cancelAnimationFrame(raf);
       commitCam(sampleShots(vidLive.current.shots, vidTimeRef.current));
       syncAudio(0, false);
+      syncVideos(vidTimeRef.current, false);
     };
   }, [vidPlaying]);
 
@@ -15198,6 +10147,28 @@ const minEnd = Math.max(1, ...shots.map((s) => s.start + s.len), ...bgs.map((b) 
       }
     });
   };
+    // Keeps every uploaded video (frame <video>s and the mockup video) on the timeline's clock, looping by its own length.
+  const syncVideos = (t, play) => {
+    const els = [...document.querySelectorAll("video[data-frame-video]")];
+    const mv = mockupVideoRef.current?.el;
+    if (mv && toolbarModeRef.current === "mockup") els.push(mv);
+    els.forEach((el) => {
+      const d = el.duration;
+      if (!d || !isFinite(d)) return;
+      const want = t % d;
+      const diff = Math.abs(el.currentTime - want);
+      if (play) {
+        if (el.paused) {
+          el.currentTime = want;
+          el.play().catch(() => {});
+        } else if (diff > 0.3 && diff < d - 0.3) el.currentTime = want; // jumped (seek / loop); near-wrap is normal looping
+      } else {
+        if (!el.paused) el.pause();
+        if (diff > 1 / 60) el.currentTime = want;
+      }
+    });
+    if (mv) sceneRef.current?.refreshScreen?.();
+  };
   const vidPatchAudio = (id, patch) => {
     const apply = (list) =>
       list.map((a) => {
@@ -15487,7 +10458,7 @@ const vidToggle = () => {
     const bgClip = tpl.bgs ? [...tpl.bgs].sort((a, b) => a.at - b.at).reverse().find((b) => b.at <= t) ?? tpl.bgs[0] : null;
     return renderFrameCanvas(w, false, null, {
       frames: fr,
-      cam: c ? { ...CAM_DEFAULT, rotationZ: c.rotationZ, positionX: c.positionX, positionY: c.positionY, zoom: c.zoom } : CAM_DEFAULT,
+      cam: c ? { ...CAM_DEFAULT, rotationX: c.rotationX, rotationY: c.rotationY, rotationZ: c.rotationZ, positionX: c.positionX, positionY: c.positionY, zoom: c.zoom } : CAM_DEFAULT,
       pose: sampleDeviceAnim(shots.filter((s) => s.frameId == null), t),
       framePoses: frameRowStates(shots, fr.map((f) => f.id), t),
       ...(bgClip ? { bg: { snap: vtBgSnap(bgClip.bg, bgClip.grain) } } : {}),
@@ -15893,10 +10864,18 @@ onBgDelete: vidDeleteBg,
           applyAnimAt(t);
           // let React flush the background / text state this frame depends on
           await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
-          if (!frameExport) return scene.captureFrame(transparent);
+          if (!frameExport) {
+            const mv = mockupVideoRef.current?.el;
+            if (mv) {
+              await seekVideo(mv, t);
+              scene.refreshScreen?.();
+            }
+            return scene.captureFrame(transparent);
+          }
           return renderFrameCanvas(w, transparent, h, {
+            t,
             frames: framesLatestRef.current, // already holds this frame's keyframed placement (set by applyAnimAt above)
-            cam: cam ? { ...CAM_DEFAULT, rotationZ: cam.rotationZ, positionX: cam.positionX, positionY: cam.positionY, zoom: cam.zoom } : undefined,
+            cam: cam ? { ...CAM_DEFAULT, rotationX: cam.rotationX, rotationY: cam.rotationY, rotationZ: cam.rotationZ, positionX: cam.positionX, positionY: cam.positionY, zoom: cam.zoom } : undefined,
             pose: sampleDeviceAnim(vidLive.current.shots.filter((s) => s.frameId == null), t),
             framePoses: frameRowStates(vidLive.current.shots, framesLatestRef.current.map((f) => f.id), t),
             texts: textsAt(t, "frame"),
@@ -15939,6 +10918,7 @@ onBgDelete: vidDeleteBg,
       label: uploadedMediaLabel,
       crop: uploadedCrop,
       frameCropUrl,
+      video: mockupVideoRef.current,
     });
     setShotId(id);
   }, [uploadedMediaThumb, uploadedCrop, frameCropUrl]);
@@ -16083,6 +11063,7 @@ vidDuration,
       if (shot?.file) {
         uploadedFileRef.current = shot.file;
         sceneRef.current?.uploadFile(shot.file, shot.crop ?? undefined);
+        setMockupVideo(shot.video ?? null);
         setUploadedMediaThumb(shot.thumb);
         setUploadedMediaLabel(shot.label);
         setUploadedCrop(shot.crop);
@@ -16401,6 +11382,7 @@ const vidTargetShot = videoMock
 // a shot without its own image shows the Image-mode upload (that's what is on the device)
 const mediaThumb = videoMock ? vidTargetShot?.img?.thumb ?? uploadedMediaThumb : uploadedMediaThumb;
 const mediaLabel = videoMock ? vidTargetShot?.img?.label ?? uploadedMediaLabel : uploadedMediaLabel;
+const mediaIsVideo = !!mockupVideo && !(videoMock && vidTargetShot?.img);
 const clearMedia = videoMock && vidTargetShot?.img
   ? () => vidSetShotImg(vidTargetShot.id, null)
   : handleClearUpload;
@@ -16419,7 +11401,7 @@ const modeTexts = textItems.filter((t) => (t.mode ?? "mockup") === toolbarMode);
 const frameRatio = Math.max(1, frameWidth) / Math.max(1, frameHeight);
 const cornerPcts = frameCorners ?? [frameRadius, frameRadius, frameRadius, frameRadius];
 // Frame mode only uses Z rotation, X/Y position and zoom. X/Y rotation and FoV stay flat.
-const frameCam = { rotationX: 0, rotationY: 0, rotationZ, positionX, positionY, zoom, fov: CAM_DEFAULT.fov };
+const frameCam = { rotationX, rotationY, rotationZ, positionX, positionY, zoom, fov: CAM_DEFAULT.fov };
 
 const backGradientCss = buildGradientCss(backGradientType, backGradientAngle, backStops);
 const frameBackFill = frameBackType === "solid" ? hexToRgba(frameBackHex, frameBackOpacity) : backGradientCss;
@@ -16678,15 +11660,18 @@ body .shortcut-keys.shortcut-keys.shortcut-keys * {
       {/* Top bar */}
       <div className={`flex items-center justify-between p-4 gap-3 h-16 bg-[#FAF9FA] dark:bg-[#171717] rounded-b-2xl shrink-0 mx-2`}>
         <div className="flex items-center gap-2 flex-1 h-8">
-          <div
-            className="flex items-center justify-center gap-2 w-[35px] h-8 pl-2.5 pr-2 py-1 rounded-lg bg-[#FF47BC] border border-[#3A3A3A]/10"
-            style={{ boxShadow: "inset 0 4px 4px rgba(255,240,255,0.5), inset 0 -2px 4px rgba(255,71,188,0.25)" }}
-          >
-            <span className="keep-size font-semibold text-[20px] leading-[26px] tracking-[-0.03em] text-[#FAF9FA]">b.</span>
-          </div>
-          <span className="keep-size font-semibold text-[20px] leading-[26px] tracking-[-0.03em] text-[#3A3A3A] dark:text-[#FAF9FA]">
-            Bezel
-          </span>
+          <img
+            src={`${import.meta.env.BASE_URL}logo-light.svg`}
+            alt="Bezel"
+            draggable={true}
+            className="h-8 w-auto select-none dark:hidden"
+          />
+          <img
+            src={`${import.meta.env.BASE_URL}logo-dark.svg`}
+            alt="Bezel"
+            draggable={true}
+            className="hidden h-8 w-auto select-none dark:block"
+          />
         </div>
 
         {isEditingTitle ? (
@@ -16745,10 +11730,12 @@ body .shortcut-keys.shortcut-keys.shortcut-keys * {
 </Tooltip>
 <div className="relative" data-tour="export" ref={exportRef}>
 <div className="flex items-center">
-  <Tooltip label={videoOn ? "Export video" : "Export image"} placement="bottom">
-    <button
-      onClick={handleExport}
-      disabled={exporting}
+<Tooltip label={exportOpen ? "" : videoOn ? "Export video" : "Export image"} shortcut={exportOpen ? undefined : ["mod", "E"]} placement="bottom">
+  <button
+    onClick={() => setExportOpen((v) => !v)}
+    aria-haspopup="menu"
+    aria-expanded={exportOpen}
+    disabled={exporting}
       className="flex items-center justify-center gap-2 w-fit h-8 pl-2.5 pr-2.5 py-1.5 rounded-l-2xl border border-[#FCFCFC]/20 bg-[#FF47BC] text-[13px] leading-5 font-medium tracking-[0.01em] text-[#FCFCFC] enabled:hover:bg-[#F230AE] transition-[background-color,transform] duration-150 enabled:active:scale-[0.97] disabled:opacity-70 disabled:cursor-wait"
       style={{ boxShadow: "0px 4px 4px rgba(255,71,188,0.06), inset 0px 4px 4px rgba(255,240,255,0.25), inset 0px -2px 4px rgba(71,0,45,0.25)" }}
     >
@@ -16806,7 +11793,7 @@ body .shortcut-keys.shortcut-keys.shortcut-keys * {
   };
 
   return (
-    <div className="pop-enter absolute right-0 mt-1 w-[280px] p-4 flex flex-col gap-4 rounded-2xl border border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10 bg-[#FAF9FA] dark:bg-[#171717] shadow-[0_8px_24px_rgba(0,0,0,0.08),0_2px_6px_rgba(0,0,0,0.04)] dark:shadow-[0_8px_24px_rgba(0,0,0,0.5),0_2px_6px_rgba(0,0,0,0.3)] z-10">
+    <div className="pop-enter absolute right-0 mt-1 w-[340px] p-4 flex flex-col gap-4 rounded-2xl border border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10 bg-[#FAF9FA] dark:bg-[#171717] shadow-[0_8px_24px_rgba(0,0,0,0.08),0_2px_6px_rgba(0,0,0,0.04)] dark:shadow-[0_8px_24px_rgba(0,0,0,0.5),0_2px_6px_rgba(0,0,0,0.3)] z-10">
       <div className="flex flex-col gap-2">
         <label className={labelCls}>File type</label>
         {videoOn ? (
@@ -17052,6 +12039,24 @@ body .shortcut-keys.shortcut-keys.shortcut-keys * {
                       </span>
                     </button>
 
+                    <button
+                      type="button"
+                      onClick={() => {
+                        closeHelp();
+                        if (imageOrVideo !== "video") {
+                          setImageOrVideo("video");
+                          setTimeout(startVideoTour, 450); // let the timeline mount
+                        } else startVideoTour();
+                      }}
+                      onMouseEnter={() => setThemeMenuOpen(false)}
+                      className="flex items-center w-full h-8 pl-2 pr-1.5 rounded-lg text-[13px] font-medium tracking-[-0.005em] text-[#3A3A3A] dark:text-[#FAF9FA] hover:bg-[#F2F2F2] dark:hover:bg-[#1F1F1F] transition-colors duration-100"
+                    >
+                      <span className="flex items-center gap-2">
+                        <Play size={16} weight="regular" className="shrink-0" />
+                        Video timeline tour
+                      </span>
+                    </button>
+
                     <div className="w-full" onMouseEnter={() => setThemeMenuOpen(true)}>
                       <button
                         type="button"
@@ -17066,10 +12071,10 @@ body .shortcut-keys.shortcut-keys.shortcut-keys * {
                           <Palette size={16} weight="regular" className="shrink-0" />
                           Theme
                         </span>
-                        <span className="flex items-center gap-1">
-                          <KeyCap>C</KeyCap>
-                          <CaretRight size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A]" />
-                        </span>
+<span className="flex items-center gap-1">
+  <KeyCombo keys={["C"]} />
+  <CaretRight size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A]" />
+</span>
                       </button>
 
                       {themeMenuOpen && (
@@ -17120,7 +12125,7 @@ body .shortcut-keys.shortcut-keys.shortcut-keys * {
                         <Keyboard size={14} weight="regular" className="shrink-0" />
                         Keyboard shortcuts
                       </span>
-                      <KeyCap>?</KeyCap>
+                      <KeyCombo keys={["?"]} />
                     </button>
                   </div>
 
@@ -17541,6 +12546,8 @@ body .shortcut-keys.shortcut-keys.shortcut-keys * {
                         onZoom={undefined}
                         nextFrameId={() => nextFrameIdRef.current++}
                         backVisible={isFrameBackFacing(frameCam)}
+                        videoMode={videoOn}
+                        onVideoReady={() => syncVideos(vidTimeRef.current, vidLive.current.playing)}
                       />
                     )}
                     {modeTexts
@@ -17595,12 +12602,11 @@ body .shortcut-keys.shortcut-keys.shortcut-keys * {
             {/* Save project — top-left overlay */}
 <div data-save-menu className="absolute top-4 left-4 z-10">
   <div className="flex items-center">
-    <Tooltip label={selectedProjectId ? "Save changes" : "Save project"} shortcut={["mod", "S"]} placement="bottom">
-      <button
-        onClick={() => {
-          setSaveMenuOpen(false);
-          handleSaveProject(false);
-        }}
+<Tooltip label={saveMenuOpen ? "" : selectedProjectId ? "Save changes" : "Save project"} shortcut={saveMenuOpen ? undefined : ["mod", "S"]} placement="bottom">
+  <button
+    onClick={() => setSaveMenuOpen((v) => !v)}
+    aria-haspopup="menu"
+    aria-expanded={saveMenuOpen}
         className="flex items-center justify-center gap-2 h-8 pl-2 pr-2.5 shrink-0 rounded-l-2xl border border-[#3A3A3A]/10 dark:border-[#FCFCFC]/10 bg-white dark:bg-[#292929] shadow-[0px_4px_4px_rgba(0,0,0,0.02)] hover:bg-[#F5F5F5] dark:hover:bg-[#333333] text-[13px] leading-5 font-medium tracking-[0.01em] text-[#3A3A3A] dark:text-[#FCFCFC] transition-[background-color,transform] duration-150 active:scale-[0.97]"
       >
         <FloppyDisk size={16} weight="regular" className="shrink-0" /> Save project
@@ -17639,7 +12645,7 @@ body .shortcut-keys.shortcut-keys.shortcut-keys * {
         className={`${CTX_ITEM} justify-between`}
       >
         {selectedProjectId ? "Save" : "Save new"}
-        <span className="flex items-center gap-1"><KeyCap>mod</KeyCap><KeyCap>S</KeyCap></span>
+        <KeyCombo keys={["mod", "S"]} />
       </button>
       <button
         type="button"
@@ -17650,7 +12656,7 @@ body .shortcut-keys.shortcut-keys.shortcut-keys * {
         className={`${CTX_ITEM} justify-between`}
       >
         Save as copy
-        <span className="flex items-center gap-1"><KeyCap>mod</KeyCap><KeyCap>⇧</KeyCap><KeyCap>S</KeyCap></span>
+        <KeyCombo keys={["mod", "⇧", "S"]} />
       </button>
     </div>
   )}
@@ -17814,7 +12820,7 @@ style={{ backgroundImage: `url(${mediaThumb})` }}
                         e.stopPropagation();
                         handleCropClick();
                       }}
-                      disabled={!mediaThumb}
+                      disabled={!mediaThumb || mediaIsVideo}
                       className="group flex items-center justify-center w-6 h-6 shrink-0 rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                     >
                      <Crop size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
@@ -17931,11 +12937,12 @@ style={{ backgroundImage: `url(${mediaThumb})` }}
                             <button
                               type="button"
                               aria-label="Crop image"
+                              disabled={!!f.img.video}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setFrameCropId(f.id);
                               }}
-                              className="flex items-center justify-center w-7 h-7 rounded-md hover:bg-black/10 dark:hover:bg-white/10 transition-[background-color,transform] duration-150 active:scale-[0.9]"
+                              className="flex items-center justify-center w-7 h-7 rounded-md hover:bg-black/10 dark:hover:bg-white/10 transition-[background-color,transform] duration-150 active:scale-[0.9] disabled:opacity-30 disabled:cursor-not-allowed"
                             >
                               <Crop size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A]" />
                             </button>
@@ -17957,21 +12964,12 @@ style={{ backgroundImage: `url(${mediaThumb})` }}
                 </FadeScroller>
               )}
             </div>
-            <input ref={fileInputRef} type="file" accept="image/*" onChange={handleUpload} className="hidden" />
+            <input ref={fileInputRef} type="file" accept={imageOrVideo === "video" ? "image/*,video/*" : "image/*"} onChange={handleUpload} className="hidden" />
           </div>
 
-                    {/* Position (Frame mode only) */}
-          <div className={`flex flex-col p-4 border-b border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10 ${toolbarMode === "frame" ? "" : "hidden"}`}>
-            <SectionHeader label="Position" open={openSections.position} onToggle={() => toggleSection("position")} />
-
-            <div
-              className={`grid transition-[grid-template-rows] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] ${
-                openSections.position ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
-              }`}
-            >
-              <div className="overflow-hidden">
-                <div className="pt-4 flex flex-col gap-2">
-                  <div className="flex items-center justify-between">
+{/* Position (Frame mode only) */}
+<div className={`flex flex-col p-4 border-b border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10 ${toolbarMode === "frame" ? "" : "hidden"}`}>
+  <div className="flex items-center justify-between">
                     {ALIGN_ACTIONS.map(({ key, label, Icon, shortcut }, i) => (
                       <React.Fragment key={key}>
                         {i === 3 && <div className="w-px h-4 bg-[#3A3A3A]/10 dark:bg-[#FAF9FA]/10 shrink-0" />}
@@ -18016,9 +13014,6 @@ style={{ backgroundImage: `url(${mediaThumb})` }}
                     </button>
                   </div>
                 </div>
-              </div>
-            </div>
-          </div>
 
           {/* Appearance (Frame mode only) */}
           <div className={`flex flex-col p-4 border-b border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10 ${toolbarMode === "frame" ? "" : "hidden"}`}>
@@ -18538,19 +13533,19 @@ style={{ backgroundImage: `url(${mediaThumb})` }}
 
                   {cameraTab === "manual" || toolbarMode === "frame" ? (
                     <div className="flex flex-col gap-2">
-                      {toolbarMode === "mockup" && (
-                        <Scrubber label="X - Rotation" value={rotationX} min={-360} max={360} onChange={handleRotationChange} />
-                      )}
-                      {toolbarMode === "mockup" && (
-                        <Scrubber label="Y - Rotation" value={rotationY} min={-360} max={360} onChange={handleRotationYChange} />
-                      )}
-                      <Scrubber
-                        label="Z - Rotation"
-                        value={toolbarMode === "frame" ? Math.round(frameRotation) : rotationZ}
-                        min={-360}
-                        max={360}
-                        onChange={toolbarMode === "frame" ? setFrameRotation : handleRotationZChange}
-                      />
+<Scrubber label="X - Rotation" value={rotationX} min={-360} max={360} onChange={handleRotationChange} />
+<Scrubber label="Y - Rotation" value={rotationY} min={-360} max={360} onChange={handleRotationYChange} />
+<Scrubber
+  label="Z - Rotation"
+  value={
+    toolbarMode === "frame"
+      ? selectedFrames.length > 1 ? groupRot : Math.round(frameRotation)
+      : rotationZ
+  }
+  min={-360}
+  max={360}
+  onChange={toolbarMode === "frame" ? rotateSelection : handleRotationZChange}
+/>
                       <Scrubber
                         label="X - Position"
                         value={toolbarMode === "frame" ? Math.round(primaryFrame.x * 100) : positionX}
@@ -18581,8 +13576,8 @@ style={{ backgroundImage: `url(${mediaThumb})` }}
                       <button
                         onClick={() => (toolbarMode === "frame" ? resetFrameCamera() : sceneRef.current?.resetView())}
                         disabled={
-                          toolbarMode === "frame"
-                            ? selectedFrames.every((f) => !f.r && f.s == null)
+toolbarMode === "frame"
+  ? rotationX === 0 && rotationY === 0 && rotationZ === 0 && positionX === 0 && positionY === 0 && zoom === 70 && selectedFrames.every((f) => !f.r && f.s == null)
                             : rotationX === 0 && rotationY === 0 && fov === 27 && rotationZ === 0 && positionX === 0 && positionY === 0 && zoom === 70
                         }
                         className="w-full h-8 flex items-center justify-center gap-2 pl-2 pr-2.5 rounded-2xl border border-[#3A3A3A]/10 dark:border-[#FCFCFC]/10 bg-white dark:bg-[#292929] shadow-[0px_4px_4px_rgba(0,0,0,0.02)] enabled:hover:bg-[#F5F5F5] dark:enabled:hover:bg-[#333333] text-[13px] leading-5 font-medium tracking-[0.01em] text-[#3A3A3A] dark:text-[#FCFCFC] transition-[background-color,transform] duration-150 active:scale-[0.97] disabled:opacity-30 disabled:cursor-not-allowed disabled:active:scale-100"
@@ -18986,11 +13981,7 @@ className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed borde
                 <Icon size={14} weight="regular" className="shrink-0" />
                 {label}
               </span>
-              <span className="flex items-center gap-1 shrink-0">
-                {keys.map((k) => (
-                  <KeyCap key={k}>{k}</KeyCap>
-                ))}
-              </span>
+              <KeyCombo keys={keys} />
             </button>
           ))}
         </div>
@@ -19197,9 +14188,12 @@ className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed borde
 
       {tourOpen && (
         <AppTour
+          kind={tourKind}
           onClose={() => {
             setTourOpen(false);
-            try { localStorage.setItem("bezel:tour-seen", "1"); } catch {}
+            try {
+              localStorage.setItem(tourKind === "video" ? "bezel:video-tour-seen" : "bezel:tour-seen", "1");
+            } catch {}
           }}
         />
       )}

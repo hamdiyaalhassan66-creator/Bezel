@@ -5296,11 +5296,31 @@ function paintScreenTexture(img, cropRect, deviceLabel, overlays) {
 }
 
 // Placeholder if nothing's uploaded, otherwise repaint the uploaded image for this device.
+// Draws the video's current frame onto a reusable canvas shaped like an <img>
+// (naturalWidth / naturalHeight), so paintScreenTexture and the social overlay
+// can use it unchanged. Returns null until the video has a decoded frame.
+function videoFrameSource(s, el) {
+  const w = el.videoWidth, h = el.videoHeight;
+  if (!w || !h || el.readyState < 2) return null;
+  const c = (s.videoFrameCanvas ??= document.createElement("canvas"));
+  if (c.width !== w || c.height !== h) {
+    c.width = w;
+    c.height = h;
+  }
+  c.getContext("2d").drawImage(el, 0, 0, w, h);
+  c.naturalWidth = w;
+  c.naturalHeight = h;
+  s.lastVideoT = el.currentTime;
+  return c;
+}
+
 function resolveScreenTexture(s, deviceLabel) {
   const overlays = s.screenOverlays;
   if (s.screenSource) {
     s.screenTexture?.dispose();
-    s.screenTexture = paintScreenTexture(s.screenSource.img, s.screenSource.cropRect, deviceLabel, overlays);
+    // video frame if one is active and ready, otherwise the still (poster) image
+    const src = (s.screenVideo && videoFrameSource(s, s.screenVideo)) || s.screenSource.img;
+    s.screenTexture = paintScreenTexture(src, s.screenSource.cropRect, deviceLabel, overlays);
     return s.screenTexture;
   }
   return makePlaceholderTexture(deviceLabel, overlays);
@@ -7105,12 +7125,7 @@ if (lidarOverlay) {
         if (s.uploadToken !== token) return;
         // Keep the source so the texture can be repainted when the device model changes.
         s.screenSource = { img, cropRect };
-        s.screenTexture?.dispose();
-        const tex = paintScreenTexture(img, cropRect, s.currentDeviceLabel, s.screenOverlays);
-        s.materials.screen.map = tex;
-        s.materials.screen.emissiveMap = tex;
-        s.materials.screen.needsUpdate = true;
-        s.screenTexture = tex;
+        refreshScreenTexture();
       };
       img.src = objectUrl;
     },
@@ -7126,6 +7141,25 @@ if (lidarOverlay) {
       s.screenTexture?.dispose();
       s.screenTexture = null;
       s.screenSource = null;
+    },
+
+    // <video> element to show on the screen, or null for the still image.
+    // The poster passed to uploadFile stays as the fallback until the video has a frame.
+    setScreenVideo(el) {
+      const s = stateRef.current;
+      s.screenVideo = el || null;
+      refreshScreenTexture();
+    },
+
+    // Repaints the screen from the video's current frame. App calls this on every
+    // "seeked", during timeline playback, and per frame during export.
+    // Skips the repaint if the video is still on the frame we already painted.
+    refreshScreen() {
+      const s = stateRef.current;
+      const el = s.screenVideo;
+      if (!el || !s.screenSource || el.readyState < 2) return;
+      if (s.lastVideoT === el.currentTime) return;
+      refreshScreenTexture();
     },
 
     // Frame mode pauses rendering (the 2D layer covers the scene). On the way out, the

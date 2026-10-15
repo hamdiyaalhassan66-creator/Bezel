@@ -2,8 +2,9 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import { X, MagnifyingGlass } from "@phosphor-icons/react";
 import Tooltip from "./Tooltip.jsx";
 import { IS_MAC, KeyCap } from "./KeyCap.jsx";
+import KeyCombo from "./KeyCombo.jsx";
 
-export { IS_MAC, KeyCap };
+export { IS_MAC, KeyCap }; // kept in case other files import KeyCap from here
 export const ALT = IS_MAC ? "⌥" : "Alt";
 
 // Single source of truth: the modal renders this, and the key handler in App.jsx acts on the same ids.
@@ -247,11 +248,7 @@ export default function ShortcutsModal({ onClose }) {
                   <span className="text-[13px] font-medium tracking-[-0.005em] text-[#3A3A3A] dark:text-[#FAF9FA]">
                     {item.label}
                   </span>
-                  <span className="shortcut-keys flex items-center gap-1 shrink-0">
-                    {item.keys.map((k) => (
-                      <KeyCap key={k}>{k}</KeyCap>
-                    ))}
-                  </span>
+                  <KeyCombo keys={item.keys} className="shortcut-keys" />
                 </div>
               ))}
             </section>

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { X } from "@phosphor-icons/react";
 import { KeyCap } from "./ShortcutsModal.jsx";
 
@@ -7,7 +7,55 @@ const GAP = 12; // space between spotlight and card
 const MARGIN = 12; // min distance from the viewport edge
 const CARD_W = 280;
 
-const STEPS = [
+const VIDEO_STEPS = [
+  {
+    target: "timeline-actions",
+    placement: "top",
+    title: "Build your shots",
+    body: "Add a shot, drop keyframes on the camera moves you make, add backgrounds, and loop playback.",
+    keys: [["S"], ["K"], ["⇧", "L"]],
+  },
+  {
+    target: "timeline-playback",
+    placement: "top",
+    title: "Play it back",
+    body: "Play, pause, or jump between shots and keyframes. Select a shot to loop just that part.",
+    keys: [["Space"]],
+  },
+  {
+    target: "timeline-names",
+    placement: "top",
+    title: "Shots, backgrounds and text",
+    body: "Each shot, background and text layer gets its own row. Double-click to rename, drag to reorder, expand a shot for per-property tracks.",
+  },
+  {
+    target: "timeline-tracks",
+    placement: "top-center",
+    title: "Drag clips and keyframes",
+    body: "Drag a clip to move it, pull its edges to trim, and drag diamonds to retime. Right-click for enter / exit animations and easing.",
+  },
+  {
+    target: "timeline-ruler",
+    placement: "top-center",
+    title: "Scrub the playhead",
+    body: "Click or drag the ruler to scrub. Hold Ctrl / Cmd and scroll to zoom the timeline.",
+  },
+  {
+    target: "timeline-duration",
+    placement: "top",
+    title: "Length, audio and collapse",
+    body: "Set the total duration, add an audio track, or collapse the timeline to get more canvas.",
+  },
+  {
+    target: "export",
+    placement: "bottom",
+    title: "Export your video",
+    body: "Pick MP4, WebM or another format, then choose resolution, speed and frame rate.",
+    keys: [["mod", "E"]],
+  },
+];
+
+const APP_STEPS = [
   {
     target: "left-toolbar",
     placement: "right",
@@ -73,6 +121,10 @@ function place(r, placement, cw, ch) {
       x = right - cw;
       y = bottom + GAP;
       break;
+    case "top-center":
+      x = r.left + (r.width - cw) / 2;
+      y = r.top - ch - GAP;
+      break;
     default: // center
       x = r.left + (r.width - cw) / 2;
       y = r.top + (r.height - ch) / 2;
@@ -80,21 +132,31 @@ function place(r, placement, cw, ch) {
   return { x: clamp(x, MARGIN, vw - cw - MARGIN), y: clamp(y, MARGIN, vh - ch - MARGIN) };
 }
 
-export default function AppTour({ onClose }) {
+export default function AppTour({ onClose, kind = "app" }) {
   const [index, setIndex] = useState(0);
   const [rect, setRect] = useState(null);
   const [size, setSize] = useState({ w: CARD_W, h: 180 });
   const cardRef = useRef(null);
   const nextRef = useRef(null);
-  const step = STEPS[index];
-  const last = index === STEPS.length - 1;
+  // Only keep steps whose target is actually on screen (e.g. timeline collapsed / hidden)
+  const steps = useMemo(
+    () => (kind === "video" ? VIDEO_STEPS : APP_STEPS).filter((s) => document.querySelector(`[data-tour="${s.target}"]`)),
+    [kind]
+  );
+  const step = steps[index];
+  const last = index === steps.length - 1;
+
+  useEffect(() => {
+    if (!steps.length) onClose();
+  }, []);
 
   const measure = useCallback(() => {
+    if (!step) return;
     const el = document.querySelector(`[data-tour="${step.target}"]`);
     if (!el) return;
     const r = el.getBoundingClientRect();
     setRect({ left: r.left - PAD, top: r.top - PAD, width: r.width + PAD * 2, height: r.height + PAD * 2 });
-  }, [step.target]);
+  }, [step?.target]);
 
   useLayoutEffect(() => {
     measure();
@@ -141,7 +203,7 @@ export default function AppTour({ onClose }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [last, onClose]);
 
-  if (!rect) return null;
+  if (!rect || !step) return null;
   const pos = place(rect, step.placement, size.w, size.h);
 
   return (
@@ -196,8 +258,8 @@ export default function AppTour({ onClose }) {
         )}
 
         <div className="flex items-center justify-between pt-1">
-          <div className="flex items-center gap-1.5" aria-label={`Step ${index + 1} of ${STEPS.length}`}>
-            {STEPS.map((_, i) => (
+          <div className="flex items-center gap-1.5" aria-label={`Step ${index + 1} of ${steps.length}`}>
+            {steps.map((_, i) => (
               <span
                 key={i}
                 className={`w-1.5 h-1.5 rounded-full transition-colors duration-150 ${
