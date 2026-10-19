@@ -33,7 +33,14 @@ body *:where(:not(.social-ui, .social-ui *, .keep-size, .keep-size *, [style*="f
   font-weight: 450 !important;
   letter-spacing: -0.003em !important;
 }
-  /* Devices panel category titles: 10px / 600 / 0.02em */
+  /* Template card titles: 10px / 450 / -0.003em */
+body .tpl-title.tpl-title.tpl-title {
+  font-size: 10px !important;
+  font-weight: 450 !important;
+  letter-spacing: -0.003em !important;
+}
+
+/* Devices panel category titles: 10px / 600 / 0.02em */
 body .device-title.device-title.device-title {
   font-size: 10px !important;
   font-weight: 600 !important;

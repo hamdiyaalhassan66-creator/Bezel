@@ -687,7 +687,10 @@ export function PopupDropdown({ value, options, onChange }) {
   return (
     <div className="relative w-full" ref={ref}>
 <button type="button" onClick={() => setOpen((v) => !v)} className={`${DROPDOWN_TRIGGER} w-full`}>
-  <span className="truncate text-[13px] font-medium tracking-[-0.005em] text-[#3A3A3A] dark:text-[#FAF9FA]">{selected?.label ?? value}</span>
+  <span className="flex items-center gap-2 min-w-0">
+    {selected?.Icon && <selected.Icon size={16} weight="regular" className="shrink-0 text-[#8C8C8C] dark:text-[#9A9A9A]" />}
+    <span className="truncate text-[13px] font-medium tracking-[-0.005em] text-[#3A3A3A] dark:text-[#FAF9FA]">{selected?.label ?? value}</span>
+  </span>
   <CaretDown size={16} weight="regular" style={{ transform: open ? "rotate(180deg)" : "rotate(0deg)" }} className={DROPDOWN_CARET} />
 </button>
       {open && popupRect && createPortal(
@@ -705,6 +708,7 @@ export function PopupDropdown({ value, options, onChange }) {
             <OptionRow
               key={opt.value}
               label={opt.label}
+              leading={opt.Icon ? <opt.Icon size={16} weight="regular" className="shrink-0" /> : undefined}
               selected={value === opt.value}
               onClick={() => {
                 onChange(opt.value);
@@ -836,7 +840,7 @@ export function FadeScrollerY({ children, className = "", wrapClassName = "", fa
 
   return (
     <div className={`relative min-h-0 ${wrapClassName}`}>
-      <div ref={ref} className="absolute inset-0 overflow-y-auto custom-scroll">
+      <div ref={ref} className="absolute inset-0 overflow-y-auto custom-scroll [overflow-anchor:none]">
         <div ref={innerRef} className={className}>
           {children}
         </div>

@@ -42,13 +42,15 @@ export function frameAppearanceOf(f, env, rx, ry) {
   f.effects
     .filter((e) => e.visible && e.type === "dropShadow")
     .forEach((e) => outer.push(`${e.x}px ${e.y}px ${e.blur}px ${e.spread}px ${hexRgba(e.hex, e.opacity)}`));
-  const blur = f.effects.filter((e) => e.visible && e.type === "layerBlur").reduce((sum, e) => sum + e.blur, 0);
+  const blur = f.effects.filter((e) => e.visible && e.type === "layerBlur" && e.mode !== "progressive").reduce((sum, e) => sum + e.blur, 0);
+  const progressive = f.effects.filter((e) => e.visible && e.type === "layerBlur" && e.mode === "progressive" && e.blur > 0).map((e) => e.blur);
   return {
     radiiFrac: cornersOf(f).map((p) => p / 100),
     sheen: sheenCss(env, rx, ry),
     sheenKey: env,
     boxShadow: outer.length ? outer.join(", ") : "none",
     filter: blur > 0 ? `blur(${blur}px)` : "none",
+    progressive,
     insetStroke:
       strokeOn && s.position !== "outside"
         ? `inset 0 0 0 ${s.position === "center" ? s.width / 2 : s.width}px ${strokeCss}`

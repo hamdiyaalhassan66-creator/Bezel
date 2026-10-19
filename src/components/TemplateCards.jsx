@@ -1,7 +1,10 @@
 import { useRef, useState, useEffect } from "react";
 import { hexRgba } from "../lib/frameUtils.js";
 import { sampleShots, vidClamp } from "../lib/videoMath.js";
-import { sampleDeviceAnim } from "../lib/shotAnim.js";
+import { sampleDeviceAnim, shotAnimPose } from "../lib/shotAnim.js";
+import { sampleShotFrames } from "../lib/frameKeys.js";
+import { frameRect, cornersOf } from "../lib/frameModel.js";
+import { frameFade } from "../lib/frameFade.js";
 import { layoutOf } from "../constants/templates.js";
 import { GRADIENT_PRESETS, IMAGE_PRESETS } from "../constants/presets.js";
 
@@ -48,12 +51,21 @@ export function templateBackground(t) {
   return { backgroundImage: `url(${img?.thumb})`, backgroundSize: "cover", backgroundPosition: "center" };
 }
 
-const VT_N = 20; // frames rendered per card when hovered
+// ~18 stills per second of preview, so neighbouring frames are nearly identical and the blend reads as motion
+const vtCount = (tpl) => Math.min(90, Math.max(30, Math.round(Math.min(tpl.duration, 5) * 18)));
 const VT_W = 312, VT_H = 416;
+const HOLD_FADE = 200; // ms the end of the loop eases back into the start
+const reduceMotion = () => !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+// p (0-1) -> [index of the frame, blend toward the next one]
+const framePos = (p, n) => {
+  const x = p * (n - 1);
+  const i = Math.min(n - 2, Math.floor(x));
+  return [i, x - i];
+};
 const vtLoad = (src) =>
   new Promise((res) => {
     const im = new Image();
-    im.onload = () => res(im);
+    im.onload = () => (im.decode ? im.decode().catch(() => {}).then(() => res(im)) : res(im));
     im.onerror = () => res(null);
     im.src = src;
   });
@@ -72,21 +84,26 @@ export function VideoTemplateCard({ tpl, index, label, active, renderKey, render
   };
 
   // Draws a render with the template's enter / exit pose at time t (cover-fit, same maths as the shot animation previews).
-  const paint = (img, t) => {
-    const cv = canvasRef.current;
-    if (!cv) return;
-    const ctx = cv.getContext("2d");
-    ctx.clearRect(0, 0, VT_W, VT_H);
+  const drawOne = (ctx, img, t, alpha) => {
     if (!img) return;
     const { a = 1, x = 0, y = 0, s = 1, rx = 0, ry = 0 } = sampleDeviceAnim(tpl.shots, t) ?? {};
     const k = Math.max(VT_W / img.naturalWidth, VT_H / img.naturalHeight);
     const w = img.naturalWidth * k, h = img.naturalHeight * k;
     ctx.save();
-    ctx.globalAlpha = vidClamp(a, 0, 1);
+    ctx.globalAlpha = vidClamp(a, 0, 1) * alpha;
     ctx.translate(VT_W / 2 + x * VT_W, VT_H / 2 - y * VT_H);
     ctx.scale(Math.max(0.02, Math.abs(s * Math.cos(ry))), Math.max(0.02, Math.abs(s * Math.cos(rx))));
     ctx.drawImage(img, -w / 2, -h / 2, w, h);
     ctx.restore();
+  };
+  // img2 fades in over img at amount f, so the stills blend instead of jumping
+  const paint = (img, t, img2 = null, t2 = t, f = 0) => {
+    const cv = canvasRef.current;
+    if (!cv) return;
+    const ctx = cv.getContext("2d");
+    ctx.clearRect(0, 0, VT_W, VT_H);
+    drawOne(ctx, img, t, 1);
+    if (img2 && f > 0) drawOne(ctx, img2, t2, f);
   };
 
   // Poster. Re-renders when the device, body colour or screenshot changes.
@@ -114,7 +131,7 @@ export function VideoTemplateCard({ tpl, index, label, active, renderKey, render
 
   useEffect(() => {
     const c = cache.current;
-    if (!hover) {
+    if (!hover || reduceMotion()) {
       if (c.poster) paint(c.poster, tpl.poster);
       return;
     }
@@ -122,18 +139,28 @@ export function VideoTemplateCard({ tpl, index, label, active, renderKey, render
     const play = () => {
       const T = Math.min(tpl.duration, 5) * 1000, HOLD = 500, t0 = performance.now();
       const loop = (now) => {
-        const p = Math.min(1, ((now - t0) % (T + HOLD)) / T);
-        paint(c.frames[Math.round(p * (VT_N - 1))], p * tpl.duration);
+        const fr = c.frames;
+        const cyc = Math.max(0, (now - t0) % (T + HOLD));
+        if (cyc < T) {
+          const p = cyc / T;
+          const [i, f] = framePos(p, fr.length);
+          paint(fr[i], p * tpl.duration, fr[i + 1], p * tpl.duration, f);
+        } else {
+          // hold on the last frame, then ease into the first so the loop doesn't cut
+          const f = vidClamp((cyc - T - (HOLD - HOLD_FADE)) / HOLD_FADE, 0, 1);
+          paint(fr[fr.length - 1], tpl.duration, fr[0], 0, f);
+        }
         raf = requestAnimationFrame(loop);
       };
       raf = requestAnimationFrame(loop);
     };
     // Renders the frames in small batches so the UI stays responsive, and keeps them for the next hover.
+    const N = vtCount(tpl);
     const build = async (tries = 0) => {
       if (dead) return;
       if (c.frames) return play();
       const have = c.imgs.length;
-      const cams = Array.from({ length: Math.min(4, VT_N - have) }, (_, i) => camAt((tpl.duration * (have + i)) / (VT_N - 1)));
+      const cams = Array.from({ length: Math.min(4, N - have) }, (_, i) => camAt((tpl.duration * (have + i)) / (N - 1)));
       const urls = stillsRef.current(cams);
       if (!urls) {
         if (tries < 24) timer = setTimeout(() => build(tries + 1), 250);
@@ -142,7 +169,7 @@ export function VideoTemplateCard({ tpl, index, label, active, renderKey, render
       const ims = await Promise.all(urls.map(vtLoad));
       if (dead) return;
       c.imgs.push(...ims);
-      if (c.imgs.length >= VT_N) c.frames = c.imgs.map((im) => im ?? c.poster);
+      if (c.imgs.length >= N) c.frames = c.imgs.map((im) => im ?? c.poster);
       timer = setTimeout(() => build(0), 16);
     };
     build();
@@ -175,7 +202,7 @@ export function VideoTemplateCard({ tpl, index, label, active, renderKey, render
         <canvas ref={canvasRef} width={VT_W} height={VT_H} className="absolute inset-0 w-full h-full" />
       </div>
       <span
-        className={`truncate text-center leading-4 transition-colors ${
+        className={`tpl-title truncate text-left leading-4 transition-colors ${
           active ? "text-[#FF47BC]" : "text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
         }`}
       >
@@ -186,26 +213,93 @@ export function VideoTemplateCard({ tpl, index, label, active, renderKey, render
 }
 
 // Frame-mode card: a still of the real frames at rest, and on hover a loop of renders along the template's path.
-const FVT_N = 16;
-export function FrameVideoTemplateCard({ tpl, index, label, active, renderKey, renderStill, onApply }) {
+// Draws the real frames at time t straight onto the card canvas (cover-fit, same maths as renderFrameCanvas).
+// Not drawn live: drop shadows, blur, noise, status bar and social UI.
+function drawLiveScene(ctx, live, t) {
+  const { box, frames, shots, bg, imgs } = live;
+  ctx.clearRect(0, 0, VT_W, VT_H);
+  const k = Math.max(VT_W / box.w, VT_H / box.h);
+  ctx.save();
+  ctx.translate((VT_W - box.w * k) / 2, (VT_H - box.h * k) / 2);
+  ctx.scale(k, k);
+  if (bg) ctx.drawImage(bg, 0, 0, box.w, box.h);
+  const poses = sampleShotFrames(shots, t) ?? {};
+  frames.forEach((f) => {
+    if (f.hidden) return;
+    const p = poses[f.id];
+    const fr = p ? { ...f, x: p.x, y: p.y, w: Math.round(p.w), h: Math.round(p.h), s: p.s, r: p.r ?? 0 } : f;
+    // a frame with its own row is hidden outside that row and animates with it
+    let a = 1, ax = 0, ay = 0, sc = 1, rx = 0, ry = 0;
+    const rows = shots.filter((s) => s.frameId === f.id);
+    if (rows.length) {
+      const row = [...rows].reverse().find((s) => !s.hidden && t >= s.start - 1e-6 && t <= s.start + s.len + 1e-6);
+      if (!row) return;
+      const q = shotAnimPose(row, t) ?? {};
+      a = q.a ?? 1; ax = q.x ?? 0; ay = q.y ?? 0; sc = q.s ?? 1; rx = q.rx ?? 0; ry = q.ry ?? 0;
+    }
+    const r = frameRect(fr, box);
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    const radii = cornersOf(fr).map((c) => (Math.min(r.width, r.height) * c) / 100);
+    ctx.save();
+    ctx.globalAlpha = vidClamp(a, 0, 1) * frameFade(fr, box);
+    ctx.translate(ax * box.w, -ay * box.h);
+    ctx.translate(cx, cy);
+    ctx.scale(Math.max(0.001, Math.abs(sc * Math.cos(ry))), Math.max(0.001, Math.abs(sc * Math.cos(rx))));
+    ctx.rotate(((fr.r ?? 0) * Math.PI) / 180);
+    ctx.translate(-cx, -cy);
+    ctx.beginPath();
+    ctx.roundRect(r.left, r.top, r.width, r.height, radii);
+    ctx.clip();
+    const im = imgs.get(f.id);
+    if (im) {
+      const s = Math.max(r.width / im.naturalWidth, r.height / im.naturalHeight);
+      const dw = im.naturalWidth * s, dh = im.naturalHeight * s;
+      ctx.drawImage(im, r.left + (r.width - dw) / 2, r.top + (r.height - dh) / 2, dw, dh);
+    } else {
+      const g = ctx.createLinearGradient(0, r.top, 0, r.top + r.height);
+      g.addColorStop(0, "#FFFFFF");
+      g.addColorStop(1, "#FF47BC");
+      ctx.fillStyle = g;
+      ctx.fillRect(r.left, r.top, r.width, r.height);
+    }
+    const st = fr.stroke;
+    if (st?.on && st.width > 0) {
+      ctx.lineWidth = st.width * 2; // half is clipped away, so this reads as an inside stroke of st.width
+      ctx.strokeStyle = hexRgba(st.hex, st.opacity);
+      ctx.stroke();
+    }
+    ctx.restore();
+  });
+  ctx.restore();
+}
+export function FrameVideoTemplateCard({ tpl, index, label, active, renderKey, renderStill, prepareLive, onApply }) {
   const canvasRef = useRef(null);
-  const cache = useRef({ poster: null, frames: null });
+  const cache = useRef({ poster: null, live: null });
   const stillRef = useRef(renderStill);
   stillRef.current = renderStill;
+  const prepareRef = useRef(prepareLive);
+  prepareRef.current = prepareLive;
   const [hover, setHover] = useState(false);
 
-  const paint = (src) => {
+  const paint = (src, src2 = null, f = 0) => {
     const cv = canvasRef.current;
     if (!cv) return;
     const ctx = cv.getContext("2d");
     ctx.clearRect(0, 0, VT_W, VT_H);
-    if (!src) return;
-    const k = Math.max(VT_W / src.width, VT_H / src.height);
-    ctx.drawImage(src, (VT_W - src.width * k) / 2, (VT_H - src.height * k) / 2, src.width * k, src.height * k);
+    const draw = (s) => {
+      const k = Math.max(VT_W / s.width, VT_H / s.height);
+      ctx.drawImage(s, (VT_W - s.width * k) / 2, (VT_H - s.height * k) / 2, s.width * k, s.height * k);
+    };
+    if (src) draw(src);
+    if (src2 && f > 0) {
+      ctx.globalAlpha = f;
+      draw(src2);
+      ctx.globalAlpha = 1;
+    }
   };
 
   useEffect(() => {
-    cache.current = { poster: null, frames: null };
+    cache.current = { poster: null, live: null };
     let dead = false;
     const timer = setTimeout(async () => {
       const c = await stillRef.current(tpl, tpl.poster, VT_W);
@@ -221,25 +315,49 @@ export function FrameVideoTemplateCard({ tpl, index, label, active, renderKey, r
 
   useEffect(() => {
     const c = cache.current;
-    if (!hover) {
+    if (!hover || reduceMotion()) {
       if (c.poster) paint(c.poster);
       return;
     }
     let dead = false, raf;
     (async () => {
-      if (!c.frames) {
-        const out = [];
-        for (let i = 0; i < FVT_N; i++) {
-          const im = await stillRef.current(tpl, (tpl.duration * i) / (FVT_N - 1), VT_W);
-          if (dead) return;
-          out.push(im || c.poster);
-        }
-        c.frames = out;
+      let live = c.live;
+      if (!live) {
+        live = await prepareRef.current?.(tpl, VT_W);
+        if (dead || !live) return;
+        const imgs = new Map();
+        await Promise.all(
+          live.frames.map(async (f) => {
+            const u = f.img ? (f.img.cropUrl ?? f.img.url) : null;
+            const im = u ? await vtLoad(u) : null;
+            if (im) imgs.set(f.id, im);
+          })
+        );
+        if (dead) return;
+        live.imgs = imgs;
+        c.live = live;
       }
-      const T = Math.min(tpl.duration, 5) * 1000, HOLD = 500, t0 = performance.now();
+      const T = Math.min(live.duration, 5) * 1000, HOLD = 500, t0 = performance.now();
+      const buf = document.createElement("canvas"); // second layer, only used to ease the loop end into its start
+      buf.width = VT_W;
+      buf.height = VT_H;
       const loop = (now) => {
-        const p = Math.min(1, ((now - t0) % (T + HOLD)) / T);
-        paint(c.frames[Math.round(p * (FVT_N - 1))]);
+        const cv = canvasRef.current;
+        if (!cv) return;
+        const ctx = cv.getContext("2d");
+        const cyc = Math.max(0, (now - t0) % (T + HOLD));
+        if (cyc < T) {
+          drawLiveScene(ctx, live, (cyc / T) * live.duration);
+        } else {
+          drawLiveScene(ctx, live, live.duration);
+          const f = vidClamp((cyc - T - (HOLD - HOLD_FADE)) / HOLD_FADE, 0, 1);
+          if (f > 0) {
+            drawLiveScene(buf.getContext("2d"), live, 0);
+            ctx.globalAlpha = f;
+            ctx.drawImage(buf, 0, 0);
+            ctx.globalAlpha = 1;
+          }
+        }
         raf = requestAnimationFrame(loop);
       };
       raf = requestAnimationFrame(loop);
@@ -265,7 +383,7 @@ export function FrameVideoTemplateCard({ tpl, index, label, active, renderKey, r
         <canvas ref={canvasRef} width={VT_W} height={VT_H} className="absolute inset-0 w-full h-full" />
       </div>
       <span
-        className={`truncate text-center leading-4 transition-colors ${
+        className={`tpl-title truncate text-left leading-4 transition-colors ${
           active ? "text-[#FF47BC]" : "text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
         }`}
       >

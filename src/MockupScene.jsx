@@ -5480,6 +5480,358 @@ export function paintTextItem(ctx, item, w, h, scale = 1) {
   ctx.restore();
 }
 
+// ---------- Post effects (layer blur, glow, chromatic, fish eye, vignette, glass) ----------
+const FX_VERT = `
+varying vec2 vUv;
+void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }
+`;
+
+// Layer blur: blurs the device only, then lays it back over the untouched background.
+const BLUR_FRAG = `
+precision highp float;
+varying vec2 vUv;
+uniform sampler2D tBg;
+uniform sampler2D tDev;
+uniform vec2 uRes;
+uniform float uScale;
+uniform float uBlur;
+uniform float uProg;
+uniform float uBlur0; // start blur
+uniform vec2 uP0;     // handle points, % of canvas
+uniform vec2 uP1;
+void main() {
+  vec4 bg = texture2D(tBg, vUv);
+  float k = uBlur * uScale;
+  if (uProg > 0.5) {
+    vec2 q = vec2(vUv.x, 1.0 - vUv.y) * uRes;
+    vec2 a = uP0 * 0.01 * uRes;
+    vec2 v = uP1 * 0.01 * uRes - a;
+    float t = clamp(dot(q - a, v) / max(dot(v, v), 1.0), 0.0, 1.0);
+    k = mix(uBlur0, uBlur, t) * uScale;
+  }
+  vec2 r = vec2(k) / uRes;
+  // per-pixel rotation breaks up the ring pattern
+  float ign = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+  vec4 s = vec4(0.0);
+  float w = 0.0;
+  for (int i = 0; i < 64; i++) {
+    float fi = float(i) + 0.5;
+    float rr = sqrt(fi / 64.0);
+    float a = fi * 2.39996323 + ign * 6.2831853;
+    float wt = exp(-1.5 * rr * rr);
+    s += texture2D(tDev, vUv + vec2(cos(a), sin(a)) * r * rr) * wt;
+    w += wt;
+  }
+  s /= w;
+  gl_FragColor = vec4(s.rgb + bg.rgb * (1.0 - s.a), s.a + bg.a * (1.0 - s.a));
+}
+`;
+
+const FX_FRAG = `
+precision highp float;
+varying vec2 vUv;
+uniform sampler2D tScene;
+uniform sampler2D tDev;
+uniform vec2 uRes;
+uniform float uScale;
+uniform float uGlowOn;
+uniform vec2 uGlowOff;
+uniform float uGlowBlur;
+uniform float uGlowSpread;
+uniform vec4 uGlowCol;
+uniform float uChromaOn;
+uniform float uChromaAmt;
+uniform float uChromaAng;
+uniform float uFishAmt;
+uniform float uVigAmt;
+uniform float uVigSize;
+uniform float uVigFeather;
+uniform float uGlassOn;
+uniform vec4 uGlassA; // width %, height %, radius %, frost px
+uniform vec4 uGlassB; // refraction, depth, dispersion, splay (0-1)
+uniform vec4 uGlassC; // x %, y %, light angle (rad), light intensity (0-1)
+
+vec4 sceneAt(vec2 uv) {
+  vec2 u = clamp(uv, 0.0, 1.0);
+  if (uChromaOn < 0.5) return texture2D(tScene, u);
+  vec2 o = vec2(cos(uChromaAng), -sin(uChromaAng)) * uChromaAmt * uScale / uRes;
+  vec4 c = texture2D(tScene, u);
+  c.r = texture2D(tScene, clamp(u + o, 0.0, 1.0)).r;
+  c.b = texture2D(tScene, clamp(u - o, 0.0, 1.0)).b;
+  return c;
+}
+
+vec4 blurAt(vec2 uv, float rpx) {
+  vec2 r = vec2(rpx) / uRes;
+  vec4 s = sceneAt(uv);
+  float w = 1.0;
+  for (int k = 1; k <= 4; k++) {
+    float rr = float(k) / 4.0;
+    for (int i = 0; i < 16; i++) {
+      float a = float(i) * 0.3927 + float(k) * 0.6;
+      s += sceneAt(uv + vec2(cos(a), sin(a)) * r * rr);
+      w += 1.0;
+    }
+  }
+  return s / w;
+}
+
+vec4 frostAt(vec2 uv, float fpx) {
+  return fpx > 0.5 ? blurAt(uv, fpx) : sceneAt(uv);
+}
+
+float glowAlpha(vec2 uv) {
+  vec2 r = vec2(uGlowBlur * uScale) / uRes;
+  vec2 base = uv - vec2(uGlowOff.x, -uGlowOff.y) * uScale / uRes;
+  float s = texture2D(tDev, base).a;
+  float w = 1.0;
+  for (int k = 1; k <= 3; k++) {
+    float rr = float(k) / 3.0;
+    for (int i = 0; i < 8; i++) {
+      float a = float(i) * 0.785398 + float(k) * 0.4;
+      s += texture2D(tDev, base + vec2(cos(a), sin(a)) * r * rr).a;
+      w += 1.0;
+    }
+  }
+  s /= w;
+  return clamp(s * (1.0 + max(uGlowSpread, 0.0) / 15.0), 0.0, 1.0);
+}
+
+void main() {
+  vec2 uv = vUv;
+
+  if (uFishAmt > 0.0) {
+    vec2 c = uv - 0.5;
+    float asp = uRes.x / uRes.y;
+    vec2 ca = vec2(c.x * asp, c.y);
+    float r2n = dot(ca, ca) / ((asp * asp + 1.0) * 0.25);
+    c *= 1.0 - uFishAmt * 0.5 * (1.0 - r2n);
+    uv = 0.5 + c;
+  }
+
+  vec4 col = sceneAt(uv);
+
+  if (uGlowOn > 0.5) {
+    float g = glowAlpha(uv) * uGlowCol.a;
+    float dev = texture2D(tDev, clamp(uv, 0.0, 1.0)).a;
+    float k = g * (1.0 - dev);
+    col.rgb = mix(col.rgb, uGlowCol.rgb, k);
+    col.a = max(col.a, k);
+  }
+
+  // Glass: a lens laid over the whole canvas (background + device + everything drawn so far)
+  // Glass: full-width bands on the top and bottom canvas edges, fading to 0 towards the middle
+  // Glass: bands on the top and bottom canvas edges, same maths as glassProfile() in canvasFx.js
+  if (uGlassOn > 0.5) {
+    float bandH = max(1.0, floor(clamp(uGlassA.y / 100.0, 0.0, 0.5) * uRes.y + 0.5));
+    float py = (1.0 - uv.y) * uRes.y;
+    float dTop = py;
+    float dBot = uRes.y - py;
+    float d = min(dTop, dBot);
+    if (d < bandH) {
+      float ny = dTop < dBot ? 1.0 : -1.0;                 // outward, uv space (y up)
+float splay = uGlassB.w;
+float baseDepth = min(bandH, max(1.0, bandH * uGlassB.y));
+float depth = baseDepth + (bandH - baseDepth) * splay;
+float curve = 3.0 - splay;
+float dspAmt = uGlassB.z * 0.25;
+float dspPx = dspAmt * (uGlassB.x * 0.9 * baseDepth / (3.0 * (1.0 + dspAmt)));
+float slope = 0.9 + 0.7 * splay;   // keep in sync with GLASS_SLOPE
+float shift = max(0.001, uGlassB.x * slope * depth / curve - dspPx);
+float dsp = dspPx / shift;
+float off = pow(1.0 - min(1.0, d / depth), curve) * shift;
+float gx = uv.x * uRes.x;
+float flare = uGlassB.x * (0.2 + 0.25 * splay);
+float kx = flare * pow(1.0 - min(1.0, d / depth), curve);
+vec2 o = vec2((gx - 0.5 * uRes.x) * kx, ny * off) / uRes;
+float fr = uGlassA.w * uScale * pow(max(0.0, 1.0 - d / bandH), 1.6);   // same easing as FROST_POW
+vec4 gr = frostAt(uv - o * (1.0 + dsp), fr);
+vec4 gg = frostAt(uv - o, fr);
+vec4 gb = frostAt(uv - o * (1.0 - dsp), fr);
+vec4 g = vec4(gr.r, gg.g, gb.b, gg.a);
+
+      vec2 L = vec2(cos(uGlassC.z), -sin(uGlassC.z));
+      float rim = 1.0 - smoothstep(0.0, max(2.0 * uScale, baseDepth * 0.25), d);
+      float facing = ny * L.y;
+      g.rgb += (max(facing, 0.0) + max(-facing, 0.0) * 0.35) * rim * uGlassC.w * 0.9;
+
+      col = g;   // no crossfade, refraction + frost already ease to 0 at the band end
+    }
+  }
+
+  if (uVigAmt > 0.0) {
+    float d = length((vUv - 0.5) * 2.0) / 1.41421;
+    float s0 = uVigSize / 100.0;
+    float f = max(uVigFeather / 100.0, 0.01);
+    col.rgb *= 1.0 - smoothstep(s0, s0 + f, d) * uVigAmt / 100.0;
+  }
+
+  gl_FragColor = col;
+  #include <colorspace_fragment>
+}
+`;
+
+function createPostFx(renderer, backText, getDevice) {
+  const mk = () => new THREE.WebGLRenderTarget(1, 1, { samples: 4, colorSpace: THREE.SRGBColorSpace });
+  const rtScene = mk();
+  const rtDev = mk();
+  const rtBg = mk();
+  const u = {
+    tScene: { value: rtScene.texture },
+    tDev: { value: rtDev.texture },
+    uRes: { value: new THREE.Vector2(1, 1) },
+    uScale: { value: 1 },
+    uGlowOn: { value: 0 },
+    uGlowOff: { value: new THREE.Vector2() },
+    uGlowBlur: { value: 0 },
+    uGlowSpread: { value: 0 },
+    uGlowCol: { value: new THREE.Vector4() },
+    uChromaOn: { value: 0 },
+    uChromaAmt: { value: 0 },
+    uChromaAng: { value: 0 },
+    uFishAmt: { value: 0 },
+    uVigAmt: { value: 0 },
+    uVigSize: { value: 0 },
+    uVigFeather: { value: 0 },
+    uGlassOn: { value: 0 },
+    uGlassA: { value: new THREE.Vector4() },
+    uGlassB: { value: new THREE.Vector4() },
+    uGlassC: { value: new THREE.Vector4() },
+  };
+  const bu = {
+    tBg: { value: rtBg.texture },
+    tDev: { value: rtDev.texture },
+    uRes: u.uRes,
+    uScale: u.uScale,
+    uBlur: { value: 0 },
+    uProg: { value: 0 },
+    uBlur0: { value: 0 },
+    uP0: { value: new THREE.Vector2(50, 0) },
+    uP1: { value: new THREE.Vector2(50, 100) },
+  };
+  const mat = new THREE.ShaderMaterial({ uniforms: u, vertexShader: FX_VERT, fragmentShader: FX_FRAG, depthTest: false, depthWrite: false });
+  const blurMat = new THREE.ShaderMaterial({ uniforms: bu, vertexShader: FX_VERT, fragmentShader: BLUR_FRAG, depthTest: false, depthWrite: false });
+  const quadGeo = new THREE.PlaneGeometry(2, 2);
+  const mkScene = (m) => {
+    const q = new THREE.Mesh(quadGeo, m);
+    q.frustumCulled = false;
+    const s = new THREE.Scene();
+    s.add(q);
+    return s;
+  };
+  const quadScene = mkScene(mat);
+  const blurScene = mkScene(blurMat);
+  const quadCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  const size = new THREE.Vector2();
+  const tint = new THREE.Color();
+
+  return {
+    render(scene, camera, effects) {
+      const on = (t) => effects.find((e) => e.visible !== false && e.type === t);
+      const glow = on("glow");
+      const ch = on("chromatic");
+      const fish = on("fishEye");
+      const vig = on("vignette");
+      const glass = on("liquidGlass");
+      const blur = on("layerBlur");
+      const chOn = !!ch && ch.amount > 0;
+      const fishOn = !!fish && fish.amount > 0;
+      const vigOn = !!vig && vig.amount > 0;
+      const blurOn = !!blur && (blur.blur > 0 || (blur.startBlur ?? 0) > 0);
+      if (!glow && !chOn && !fishOn && !vigOn && !glass && !blurOn) {
+        renderer.render(scene, camera);
+        return;
+      }
+
+      renderer.getDrawingBufferSize(size);
+      if (rtScene.width !== size.x || rtScene.height !== size.y) {
+        rtScene.setSize(size.x, size.y);
+        rtDev.setSize(size.x, size.y);
+        rtBg.setSize(size.x, size.y);
+      }
+      u.uRes.value.set(size.x, size.y);
+      u.uScale.value = size.x / Math.max(1, renderer.domElement.clientWidth);
+
+      u.uGlowOn.value = glow ? 1 : 0;
+      if (glow) {
+        tint.set(`#${glow.hex}`); // converted to linear, the final pass converts back
+        u.uGlowCol.value.set(tint.r, tint.g, tint.b, glow.opacity / 100);
+        u.uGlowOff.value.set(glow.x ?? 0, glow.y ?? 0);
+        u.uGlowBlur.value = glow.blur;
+        u.uGlowSpread.value = glow.spread;
+      }
+      u.uChromaOn.value = chOn ? 1 : 0;
+      if (chOn) {
+        u.uChromaAmt.value = ch.amount;
+        u.uChromaAng.value = THREE.MathUtils.degToRad(ch.angle ?? 0);
+      }
+      u.uFishAmt.value = fishOn ? fish.amount / 100 : 0;
+      u.uVigAmt.value = vigOn ? vig.amount : 0;
+      if (vigOn) {
+        u.uVigSize.value = vig.size;
+        u.uVigFeather.value = vig.feather;
+      }
+      u.uGlassOn.value = glass ? 1 : 0;
+      if (glass) {
+        u.uGlassA.value.set(0, glass.height ?? 12, 0, (glass.frost ?? 4) * 0.5);
+        u.uGlassB.value.set(
+          (glass.refraction ?? 80) / 100, (glass.depth ?? 73) / 100,
+          (glass.dispersion ?? 50) / 100, (glass.splay ?? 0) / 100
+        );
+        u.uGlassC.value.set(
+          glass.x ?? 0, glass.y ?? 0,
+          THREE.MathUtils.degToRad(glass.lightAngle ?? -102), (glass.lightIntensity ?? 80) / 100
+        );
+      }
+
+      const prevRT = renderer.getRenderTarget();
+      const device = getDevice();
+
+      if (glow || blurOn) {
+        // device only, transparent background
+        const bg = scene.background;
+        const vis = backText.visible;
+        scene.background = null;
+        backText.visible = false;
+        renderer.setRenderTarget(rtDev);
+        renderer.render(scene, camera);
+        scene.background = bg;
+        backText.visible = vis;
+      }
+
+      if (blurOn) {
+        // everything except the device, then blur the device over it
+        const dv = device?.visible;
+        if (device) device.visible = false;
+        renderer.setRenderTarget(rtBg);
+        renderer.render(scene, camera);
+        if (device) device.visible = dv;
+        bu.uBlur.value = blur.blur;
+        bu.uProg.value = blur.mode === "progressive" ? 1 : 0;
+        bu.uBlur0.value = blur.startBlur ?? 0;
+        bu.uP0.value.set(blur.x0 ?? 50, blur.y0 ?? 0);
+        bu.uP1.value.set(blur.x1 ?? 50, blur.y1 ?? 100);
+        renderer.setRenderTarget(rtScene);
+        renderer.render(blurScene, quadCam);
+      } else {
+        renderer.setRenderTarget(rtScene);
+        renderer.render(scene, camera);
+      }
+
+      renderer.setRenderTarget(prevRT);
+      renderer.render(quadScene, quadCam);
+    },
+    dispose() {
+      rtScene.dispose();
+      rtDev.dispose();
+      rtBg.dispose();
+      mat.dispose();
+      blurMat.dispose();
+      quadGeo.dispose();
+    },
+  };
+}
+
 const MockupScene = forwardRef(function MockupScene({ onViewChange, deviceType }, ref) {
   const mountRef = useRef(null);
   const stateRef = useRef({});
@@ -6237,6 +6589,10 @@ renderer.setClearColor(0x000000, 0);
     camera.add(backTextMesh);
     stateRef.current.backTextMesh = backTextMesh;
 
+    const post = createPostFx(renderer, backTextMesh, () => stateRef.current.animGroup);
+    const renderFinal = () => post.render(scene, camera, stateRef.current.effects ?? []);
+    stateRef.current.renderFinal = renderFinal;
+
     const group = new THREE.Group();
     const deviceH = 5;
 
@@ -6960,7 +7316,7 @@ if (lidarOverlay) {
     const animate = () => {
       raf = requestAnimationFrame(animate);
       if (stateRef.current.frameMode) return; // Frame mode: the 2D layer covers the scene
-      renderer.render(scene, camera);
+      renderFinal();
     };
     animate();
 
@@ -6980,7 +7336,7 @@ if (lidarOverlay) {
       refreshBackText();
       // setSize clears the canvas, and ResizeObserver fires after the animation-frame render,
       // so redraw now or the canvas flashes blank while the sidebar animates.
-      renderer.render(scene, camera);
+      renderFinal();
     };
     const resizeObserver = new ResizeObserver(onResize);
     resizeObserver.observe(mount);
@@ -7099,6 +7455,7 @@ if (lidarOverlay) {
       el.removeEventListener("pointerleave", onPointerUp);
       el.removeEventListener("wheel", onWheel);
       stateRef.current.envRenderTarget?.dispose();
+      post.dispose();
       renderer.dispose();
       mount.removeChild(renderer.domElement);
     };
@@ -7185,6 +7542,11 @@ if (lidarOverlay) {
     setText(item) {
       stateRef.current.textItem = item;
       refreshBackText();
+    },
+
+    // list of { type, visible, ...params } from the Mockup Effects section
+    setEffects(list) {
+      stateRef.current.effects = list ?? [];
     },
 
     setDeviceType(deviceLabel) {
@@ -7611,7 +7973,7 @@ setStrapStyle(key) {
       s.camera.aspect = exportWidth / exportHeight;
       s.camera.updateProjectionMatrix();
       rebuildBackText(exportWidth, exportHeight, exportScale); // behind text, crisp at export size
-      s.renderer.render(s.scene, s.camera);
+      s.renderFinal();
       const url = snapshotWithText(exportScale, mime); // front text composited on top
 
       if (clear) s.scene.background = prevBg; // restore the live background
@@ -7658,7 +8020,7 @@ setStrapStyle(key) {
       if (!c) return null;
       const bg = s.scene.background;
       if (transparent) s.scene.background = null; // restored right after the render, so animated backgrounds still work
-      s.renderer.render(s.scene, s.camera);
+      s.renderFinal();
       s.scene.background = bg;
       const ctx = c.canvas.getContext("2d");
       ctx.clearRect(0, 0, c.w, c.h);
@@ -7796,7 +8158,7 @@ setStrapStyle(key) {
       s.camera.aspect = w / h;
       s.camera.updateProjectionMatrix();
       rebuildBackText(w, h, thumbScale);
-      s.renderer.render(s.scene, s.camera);
+      s.renderFinal();
       const url = snapshotWithText(thumbScale);
 
       s.renderer.setPixelRatio(prevPixelRatio);

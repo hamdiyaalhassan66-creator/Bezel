@@ -323,7 +323,8 @@ const ppsRef = useRef(pps);
 ppsRef.current = pps;
 const anchorRef = useRef(null); // keeps the time under the cursor fixed while zooming
 
-const x0 = VID_LABEL_W + VID_PAD; // where 0s sits inside the scroll content
+const labelW = v.animMode ? 0 : VID_LABEL_W; // Animation has no names column
+const x0 = labelW + VID_PAD; // where 0s sits inside the scroll content
 const axisW = duration * pps;
 const innerW = Math.max(x0 + axisW + VID_GRAY, viewW);
 // label every 1s when zoomed in, every 2s / 5s / 10s... when zoomed out so labels never crowd
@@ -370,7 +371,7 @@ shots.forEach((s) => {
 });
 Object.keys(groupInfo).forEach((k) => groupInfo[k].ids.length < 2 && delete groupInfo[k]);
 const [closedGroups, setClosedGroups] = useState({}); // default = open
-const groupOpen = (gid) => !closedGroups[gid];
+const groupOpen = (gid) => (closedGroups[gid] === undefined ? !v.animMode : !closedGroups[gid]);
 const [groupEditId, setGroupEditId] = useState(null);
 const [groupDraft, setGroupDraft] = useState("");
 const groupCancelRef = useRef(false);
@@ -519,7 +520,7 @@ useEffect(() => {
   };
   el.addEventListener("wheel", onWheel, { passive: false });
   return () => el.removeEventListener("wheel", onWheel);
-}, [collapsed]);
+}, [collapsed, v.animMode]);
 
 // typing a duration zooms the timeline so the whole duration fits the view
 const fitToDuration = (d) => {
@@ -587,7 +588,7 @@ useLayoutEffect(() => {
         g.on = false;
         g.shown = t;
       }
-      if (headRef.current) headRef.current.style.transform = `translateX(${VID_LABEL_W + VID_PAD + shown * ppsRef.current}px)`;
+      if (headRef.current) headRef.current.style.transform = `translateX(${(live.current.animMode ? 0 : VID_LABEL_W) + VID_PAD + shown * ppsRef.current}px)`;
       if (tcRef.current) tcRef.current.textContent = fmtTC(shown);
       if (cntRef.current) {
         const s = ss.find((x) => x.id === sel);
@@ -609,6 +610,13 @@ useLayoutEffect(() => {
       const fromScrubber = t instanceof HTMLInputElement && (t.type === "range" || t.inputMode === "numeric");
       if (inField && !(fromScrubber && /^Key[KSL]$/.test(e.code))) return;
       const l = live.current;
+      if (l.animMode) {
+        if (!e.metaKey && !e.ctrlKey && e.code === "Space" && !t.closest?.("button")) {
+          e.preventDefault();
+          l.onTogglePlay();
+        }
+        return;
+      }
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.code === "KeyD") {
         const bgIds = l.selBg?.ids ?? [];
         const textIds = l.selText?.ids ?? [];
@@ -1061,15 +1069,22 @@ const openEase = (e, sid, kid, prop = null) => {
           e.target.value = "";
         }}
       />
-{!collapsed && (
+{!collapsed && !v.animMode && (
   <div onPointerDown={resizeDown} className="group/rs h-2 shrink-0 flex items-center justify-center cursor-ns-resize">
     <i className="w-10 h-1 rounded-full bg-[#D0D0D0] dark:bg-[#45454C] group-hover/rs:bg-[#FF47BC] transition-colors" />
   </div>
 )}
 {/* Toolbar */}
 <div className="flex items-center px-4 py-3 gap-10 bg-[#FAF9FA] dark:bg-[#171717] border-b border-[#222222]/10 dark:border-[#FAF9FA]/10">
-  <div data-tour="timeline-actions" className="flex flex-1 items-center gap-1 min-w-0">
-    <VidBtn label={`Add ${unit}`} shortcut={["S"]} onClick={v.onAddShot} disabled={v.exporting}><Plus size={16} weight="bold" /></VidBtn>
+  {v.animMode && (
+    <div className="flex flex-1 items-center min-w-0">
+      <span className="truncate text-[14px] font-medium tracking-[-0.005em] text-[#3A3A3A] dark:text-[#FAF9FA]">
+        {v.animName ?? ""}
+      </span>
+    </div>
+  )}
+  <div data-tour="timeline-actions" className={`flex flex-1 items-center gap-1 min-w-0 ${v.animMode ? "hidden" : ""}`}>
+    <VidBtn label={`Add ${unit}`} shortcut={["S"]} onClick={v.onAddShot} disabled={v.exporting || v.animMode}><Plus size={16} weight="bold" /></VidBtn>
     <VidBtn
       label={keyState === "on" ? "Remove keyframe" : "Add keyframe"}
       shortcut={keyState === "on" ? ["⇧", "K"] : ["K"]}
@@ -1091,11 +1106,11 @@ const openEase = (e, sid, kid, prop = null) => {
   </div>
 
   <div data-tour="timeline-playback" className="flex items-center gap-2 shrink-0">
-    <VidBtn label="Previous marker" tone="strong" onClick={() => v.onSkip(-1)}><SkipBack size={16} weight="bold" /></VidBtn>
+    {!v.animMode && <VidBtn label="Previous marker" tone="strong" onClick={() => v.onSkip(-1)}><SkipBack size={16} weight="bold" /></VidBtn>}
     <VidBtn label={v.playing ? "Pause" : "Play"} tone="pink" shortcut={["Space"]} onClick={v.onTogglePlay} disabled={!hasKeys || v.exporting}>
       {v.playing ? <Pause size={16} weight="fill" /> : <Play size={16} weight="fill" />}
     </VidBtn>
-    <VidBtn label="Next marker" tone="strong" onClick={() => v.onSkip(1)}><SkipForward size={16} weight="bold" /></VidBtn>
+    {!v.animMode && <VidBtn label="Next marker" tone="strong" onClick={() => v.onSkip(1)}><SkipForward size={16} weight="bold" /></VidBtn>}
   </div>
 
   <div data-tour="timeline-duration" className="flex flex-1 items-center justify-end gap-4 min-w-0">
@@ -1106,9 +1121,11 @@ const openEase = (e, sid, kid, prop = null) => {
       </div>
     </div>
     <div className="flex items-center gap-1">
-      <VidBtn label="Add audio" onClick={() => audioInputRef.current?.click()} disabled={v.exporting}>
-        <MusicNoteSimple size={16} weight="bold" />
-      </VidBtn>
+      {!v.animMode && (
+        <VidBtn label="Add audio" onClick={() => audioInputRef.current?.click()} disabled={v.exporting}>
+          <MusicNoteSimple size={16} weight="bold" />
+        </VidBtn>
+      )}
       <input
         ref={audioInputRef}
         type="file"
@@ -1132,10 +1149,10 @@ const openEase = (e, sid, kid, prop = null) => {
     {/* Full-height divider between the names column and the tracks */}
     <div
       aria-hidden
-      className="absolute top-0 bottom-0 z-[25] w-px pointer-events-none bg-[#222222]/10 dark:bg-[#FAF9FA]/10"
+      className={`absolute top-0 bottom-0 z-[25] w-px pointer-events-none bg-[#222222]/10 dark:bg-[#FAF9FA]/10 ${v.animMode ? "hidden" : ""}`}
       style={{ left: VID_LABEL_W - 1 }}
     />
-    <div ref={scrollRef} style={{ height: tlH }} className="relative overflow-auto custom-scroll">
+    <div ref={scrollRef} style={{ height: v.animMode ? 48 : tlH }} className="relative overflow-auto custom-scroll">
       <div className="relative" style={{ width: innerW, minHeight: "100%" }}>
 
     {/* Ruler */}
@@ -1154,14 +1171,14 @@ const openEase = (e, sid, kid, prop = null) => {
   onPointerDown={durDown}
   onPointerEnter={() => setDurHover(true)}
   onPointerLeave={() => setDurHover(false)}
-  className="absolute top-0 bottom-0 w-2 z-[12] flex justify-center cursor-ew-resize"
+  className={`absolute top-0 bottom-0 w-2 z-[12] flex justify-center cursor-ew-resize ${v.animMode ? "pointer-events-none" : ""}`}
   style={{ left: x0 + axisW - 4 }}
 >
   <i className={`w-px h-full transition-colors ${durHover ? "bg-[#FF47BC]" : "bg-transparent"}`} />
 </div>
 <div
   className="sticky left-0 z-10 h-full bg-[#FAF9FA] dark:bg-[#171717]"
-  style={{ width: VID_LABEL_W }}
+  style={{ width: labelW }}
 />
 {Array.from({ length: nTicks }, (_, i) => {
   const s = i * tickStep;
@@ -1185,7 +1202,7 @@ const openEase = (e, sid, kid, prop = null) => {
 })}
       </div>
 
-      <div className="flex">
+      <div className={v.animMode ? "hidden" : "flex"}>
         {/* Shot names */}
 <div
   data-tour="timeline-names"
@@ -1708,7 +1725,7 @@ const openEase = (e, sid, kid, prop = null) => {
           onPointerDown={durDown}
           onPointerEnter={() => setDurHover(true)}
           onPointerLeave={() => setDurHover(false)}
-          className="absolute top-0 bottom-0 -left-1 w-2 flex justify-center cursor-ew-resize pointer-events-auto"
+          className={`absolute top-0 bottom-0 -left-1 w-2 flex justify-center cursor-ew-resize ${v.animMode ? "" : "pointer-events-auto"}`}
         >
           <i className={`w-px h-full transition-colors ${durHover ? "bg-[#FF47BC]" : "bg-transparent"}`} />
         </div>

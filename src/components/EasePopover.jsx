@@ -105,7 +105,7 @@ function EaseRow({ spec, label, active, onClick, onEdit }) {
 }
 
 // Draggable cubic-bezier editor + numeric fields
-function EaseBezierEditor({ p, onChange }) {
+export function EaseBezierEditor({ p, onChange }) {
   const svgRef = useRef(null);
   const VW = 252, VH = 200, X0 = 16, PW = 220, Y0 = 12, PH = 176;
   const X = (x) => X0 + x * PW;
