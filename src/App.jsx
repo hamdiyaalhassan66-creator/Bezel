@@ -86,6 +86,8 @@ import { TextOverlay, TextEditor } from "./components/TextOverlay.jsx";
 import { TextPopup } from "./components/TextPopup.jsx";
 import { ProjectsPage } from "./components/ProjectsPage.jsx";
 import { ProjectCard } from "./components/ProjectCard.jsx";
+import { MoveModal } from "./components/MoveModal.jsx";
+import { RenameModal } from "./components/RenameModal.jsx";
 import { useDismissable, CTX_ITEM } from "./components/timelineParts.jsx";
 import { FrameTemplateThumb, templateBackground, VideoTemplateCard, FrameVideoTemplateCard } from "./components/TemplateCards.jsx";
 import { SocialControls } from "./components/SocialControls.jsx";
@@ -205,7 +207,10 @@ const NAV = (() => {
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const PROJECTS_PATH = `${BASE}/projects`;
-const isProjectsPath = () => window.location.pathname.replace(/\/+$/, "") === PROJECTS_PATH;
+const isProjectsPath = () => {
+  const p = window.location.pathname.replace(/\/+$/, "");
+  return p === PROJECTS_PATH || p.startsWith(`${PROJECTS_PATH}/`);
+};
 
 export default function App() {
  const sceneRef = useRef(null);
@@ -798,14 +803,14 @@ frameUploadRef.current = addFrameImage;
     return (
       <div className="flex flex-col gap-1">
         <div className="flex items-center justify-between h-8">
-          <span className="text-[12px] font-medium tracking-[-0.005em] text-[#8C8C8C] dark:text-[#9A9A9A]">
+          <span className="text-[12px] font-medium tracking-[-0.005em] text-[#737373] dark:text-[#ABABAB]">
             {n} {n === 1 ? "Asset" : "Assets"}
           </span>
           <button
             type="button"
             disabled={!frames.some((f) => f.img) && n <= 1}
             onClick={() => deleteFrames(frames.map((f) => f.id))}
-            className="h-6 px-1.5 rounded-md text-[12px] font-medium tracking-[-0.005em] text-[#8C8C8C] dark:text-[#9A9A9A] hover:bg-[#F04438]/10 hover:text-[#F04438] transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[#8C8C8C]"
+            className="h-6 px-1.5 rounded-md text-[12px] font-medium tracking-[-0.005em] text-[#737373] dark:text-[#ABABAB] hover:bg-[#F04438]/10 hover:text-[#F04438] transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[#737373]"
           >
             Clear all
           </button>
@@ -863,7 +868,7 @@ frameUploadRef.current = addFrameImage;
                     <span className="absolute -left-0.5 -top-[3px] w-2 h-2 rounded-full bg-[#FAF9FA] dark:bg-[#171717] border-2 border-[#FF47BC]" />
                   </div>
                 )}
-                <span className="w-4 shrink-0 text-center text-[12px] font-medium tabular-nums text-[#8C8C8C] dark:text-[#9A9A9A]">{i + 1}</span>
+                <span className="w-4 shrink-0 text-center text-[12px] font-medium tabular-nums text-[#737373] dark:text-[#ABABAB]">{i + 1}</span>
                 <div
                   aria-label={f.img ? "Replace image" : "Add image"}
                   onClick={(e) => {
@@ -876,7 +881,7 @@ frameUploadRef.current = addFrameImage;
                 />
                 <span
                   className={`flex-1 min-w-0 truncate text-[13px] font-medium tracking-[-0.005em] transition-colors ${
-                    selected ? "text-[#3A3A3A] dark:text-[#FAF9FA]" : "text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
+                    selected ? "text-[#3A3A3A] dark:text-[#FAF9FA]" : "text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
                   }`}
                 >
                   {f.img?.label ?? "Empty frame"}
@@ -892,7 +897,7 @@ frameUploadRef.current = addFrameImage;
                     }}
                     className="flex items-center justify-center w-6 h-6 shrink-0 rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition-[background-color,transform] duration-150 active:scale-[0.94] disabled:opacity-30 disabled:cursor-not-allowed"
                   >
-                    <Crop size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A]" />
+                    <Crop size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB]" />
                   </button>
                 </Tooltip>
                 <Tooltip label="Delete frame" placement="bottom" className="shrink-0">
@@ -906,7 +911,7 @@ frameUploadRef.current = addFrameImage;
                     }}
                     className="group/x flex items-center justify-center w-6 h-6 shrink-0 rounded-md hover:bg-[#F04438]/10 transition-[background-color,transform] duration-150 active:scale-[0.94] disabled:opacity-30 disabled:cursor-not-allowed"
                   >
-                    <X size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover/x:text-[#F04438] transition-colors" />
+                    <X size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover/x:text-[#F04438] transition-colors" />
                   </button>
                 </Tooltip>
               </div>
@@ -935,14 +940,14 @@ frameUploadRef.current = addFrameImage;
     return (
       <div className="flex flex-col gap-1">
         <div className="flex items-center justify-between h-8">
-          <span className="text-[12px] font-medium tracking-[-0.005em] text-[#8C8C8C] dark:text-[#9A9A9A]">
+          <span className="text-[12px] font-medium tracking-[-0.005em] text-[#737373] dark:text-[#ABABAB]">
             {n} {n === 1 ? "Asset" : "Assets"}
           </span>
           <button
             type="button"
             disabled={!filled}
             onClick={clearAnimAssets}
-            className="h-6 px-1.5 rounded-md text-[12px] font-medium tracking-[-0.005em] text-[#8C8C8C] dark:text-[#9A9A9A] hover:bg-[#F04438]/10 hover:text-[#F04438] transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[#8C8C8C]"
+            className="h-6 px-1.5 rounded-md text-[12px] font-medium tracking-[-0.005em] text-[#737373] dark:text-[#ABABAB] hover:bg-[#F04438]/10 hover:text-[#F04438] transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[#737373]"
           >
             Clear all
           </button>
@@ -1004,7 +1009,7 @@ frameUploadRef.current = addFrameImage;
                     <span className="absolute -left-0.5 -top-[3px] w-2 h-2 rounded-full bg-[#FAF9FA] dark:bg-[#171717] border-2 border-[#FF47BC]" />
                   </div>
                 )}
-                <span className="w-4 shrink-0 text-center text-[12px] font-medium tabular-nums text-[#8C8C8C] dark:text-[#9A9A9A]">{i + 1}</span>
+                <span className="w-4 shrink-0 text-center text-[12px] font-medium tabular-nums text-[#737373] dark:text-[#ABABAB]">{i + 1}</span>
                 <div
                   aria-label={img ? "Replace image" : "Add image"}
                   onClick={(e) => {
@@ -1016,7 +1021,7 @@ frameUploadRef.current = addFrameImage;
                 />
                 <span
                   className={`flex-1 min-w-0 truncate text-[13px] font-medium tracking-[-0.005em] transition-colors ${
-                    selected || animHover === i ? "text-[#3A3A3A] dark:text-[#FAF9FA]" : "text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
+                    selected || animHover === i ? "text-[#3A3A3A] dark:text-[#FAF9FA]" : "text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
                   } ${hidden ? "opacity-50" : ""}`}
                 >
                   {img?.label ?? "Empty slot"}
@@ -1032,7 +1037,7 @@ frameUploadRef.current = addFrameImage;
                     }}
                     className="flex items-center justify-center w-6 h-6 shrink-0 rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition-[background-color,transform] duration-150 active:scale-[0.94] disabled:opacity-30 disabled:cursor-not-allowed"
                   >
-                    <Crop size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A]" />
+                    <Crop size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB]" />
                   </button>
                 </Tooltip>
                 <Tooltip label={hidden ? "Show" : "Hide"} placement="bottom" className="shrink-0">
@@ -1047,9 +1052,9 @@ frameUploadRef.current = addFrameImage;
                     className="flex items-center justify-center w-6 h-6 shrink-0 rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition-[background-color,transform] duration-150 active:scale-[0.94] disabled:opacity-30 disabled:cursor-not-allowed"
                   >
                     {hidden ? (
-                      <EyeSlash size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A]" />
+                      <EyeSlash size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB]" />
                     ) : (
-                      <Eye size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A]" />
+                      <Eye size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB]" />
                     )}
                   </button>
                 </Tooltip>
@@ -1064,7 +1069,7 @@ frameUploadRef.current = addFrameImage;
                     }}
                     className="group/x flex items-center justify-center w-6 h-6 shrink-0 rounded-md hover:bg-[#F04438]/10 transition-[background-color,transform] duration-150 active:scale-[0.94] disabled:opacity-30 disabled:cursor-not-allowed"
                   >
-                    <X size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover/x:text-[#F04438] transition-colors" />
+                    <X size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover/x:text-[#F04438] transition-colors" />
                   </button>
                 </Tooltip>
               </div>
@@ -1416,7 +1421,7 @@ useEffect(() => {
 }, []);
 useEffect(() => {
   if (isProjectsPath() === projectsPageOpen) return;
-  window.history.pushState(null, "", projectsPageOpen ? PROJECTS_PATH : `${BASE}/`);
+  window.history.pushState(null, "", projectsPageOpen ? `${PROJECTS_PATH}/recent` : `${BASE}/`);
 }, [projectsPageOpen]);
 const [folders, setFolders] = useState(() => {
   try { return JSON.parse(localStorage.getItem("bezel:folders")) ?? []; } catch { return []; }
@@ -1449,6 +1454,7 @@ useEffect(() => {
 const [selectedProjectId, setSelectedProjectId] = useState(null);
 const [projectMenu, setProjectMenu] = useState(null); // { id, left, top?, bottom? }
 const projectMenuRef = useRef(null);
+const [moveTarget, setMoveTarget] = useState(null); // { list, done } waiting in the Move modal
 const [renamingProjectId, setRenamingProjectId] = useState(null);
 const [renameDraft, setRenameDraft] = useState("");
 const renameCancelRef = useRef(false);
@@ -1509,20 +1515,14 @@ const handleDuplicateProject = (p) =>
     next.splice(i + 1, 0, copy);
     return next;
   });
-const startRenameProject = (p) => {
-  setRenameDraft(p.title);
-  setRenamingProjectId(p.id);
-};
-const commitRenameProject = () => {
-  if (renameCancelRef.current) {
-    renameCancelRef.current = false;
-    setRenamingProjectId(null);
-    return;
+const startRenameProject = (p) => setRenamingProjectId(p.id);
+const commitRenameProject = (name) => {
+  const title = name.trim();
+  const id = renamingProjectId;
+  if (title) {
+    setSavedProjects((prev) => prev.map((x) => (x.id === id ? { ...x, title, editedAt: new Date() } : x)));
+    if (id === selectedProjectId) setProjectTitle(title); // so the next manual save doesn't restore the old name
   }
-  const title = renameDraft.trim();
-  setSavedProjects((prev) =>
-    prev.map((x) => (x.id === renamingProjectId ? { ...x, title, editedAt: new Date() } : x))
-  );
   setRenamingProjectId(null);
 };
 const handleDeleteProject = (id) => {
@@ -1536,6 +1536,11 @@ const handleTogglePin = (id) =>
   setSavedProjects((prev) => prev.map((x) => (x.id === id ? { ...x, pinned: !x.pinned } : x)));
 const handleMoveProject = (id, folderId) =>
   setSavedProjects((prev) => prev.map((x) => (x.id === id ? { ...x, folderId: folderId ?? null } : x)));
+const handleCreateFolder = (name) => {
+  const id = `folder-${Date.now()}`;
+  setFolders((prev) => [...prev, { id, name, createdAt: Date.now(), parentId: null }]);
+  return id;
+};
 const handleDeleteFolder = (id) => {
   setFolders((prev) => {
     const gone = prev.find((f) => f.id === id);
@@ -6107,6 +6112,13 @@ const unpackBgs = (bgs) =>
     shotId,
     textItems,
     mockupEffects,
+    ...(animTab
+      ? {
+          animPool: animPool().map((a) => (a && a.cropUrl ? { ...a, cropUrl: assetId(a.cropUrl) } : a)),
+          tplParams,
+          vidTplId,
+        }
+      : {}),
     selectedTextId,
 vidShots,
 vidBgs: packBgs(vidBgs),
@@ -6235,7 +6247,7 @@ vidDuration,
     );
     setSelectedTextId(s.selectedTextId ?? null);
     if (s.mockupEffects !== undefined || !scoped) setMockupEffects(s.mockupEffects ?? []);
-    if (scoped && s.animPool !== undefined) {
+    if (s.animPool !== undefined) {
       assetPoolRef.current = s.animPool.map((a) => (a && a.cropUrl ? { ...a, cropUrl: assetValue(a.cropUrl) } : a));
       setTplParams(s.tplParams ?? {});
       setVidTplId(s.vidTplId ?? null);
@@ -6413,9 +6425,16 @@ if (s.vidShots) {
     }
   };
 
+  // tab / media mode the user was on before the reload, re-applied after the saved project restores
+const reloadTabRef = useRef(
+  NAV.projectId
+    ? { tab: NAV.animTab ? "animation" : NAV.toolbarMode ?? "mockup", media: NAV.imageOrVideo ?? "image" }
+    : null
+);
+
   useEffect(() => {
     const p = pendingOpenRef.current;
-    if (!p || toolbarMode !== p.data.toolbarMode || imageOrVideo !== p.data.imageOrVideo) return;
+    if (!p || toolbarMode !== p.data.toolbarMode || imageOrVideo !== p.data.imageOrVideo || !!animTab !== !!p.data.animTab) return;
     pendingOpenRef.current = null;
     const d = p.data;
     const s = JSON.parse(d.snap);
@@ -6457,7 +6476,18 @@ if (s.vidShots) {
     historyRef.current = { past: [], future: [], committed: null };
     restoreUntilRef.current = Date.now() + 600;
     setHistoryTick((n) => n + 1);
-  }, [openTick, toolbarMode, imageOrVideo]);
+
+    // after a reload: go back to the tab / mode the user was on, not the one the project was saved in
+    const want = reloadTabRef.current;
+    if (want) {
+      reloadTabRef.current = null;
+      const savedTab = d.animTab ? "animation" : d.toolbarMode;
+      setTimeout(() => {
+        if (want.tab !== savedTab) selectTab(want.tab);
+        if (want.tab !== "animation") setImageOrVideo(want.media);
+      }, 700); // after the restore window above has settled
+    }
+  }, [openTick, toolbarMode, imageOrVideo, animTab]);
 
     // Always-current handlers, so the single window listener below never goes stale.
   const shortcutRef = useRef({});
@@ -6490,7 +6520,7 @@ if (s.vidShots) {
       shortcutsOpen,
       tourOpen,
       projectsPage: projectsPageOpen,
-      cropOpen: cropModalOpen || customCropModalOpen || frameCropId !== null || shotCrop !== null,
+      cropOpen: cropModalOpen || customCropModalOpen || frameCropId !== null || shotCrop !== null || moveTarget !== null || renamingProjectId !== null,
       frameMode: toolbarMode === "frame" && !animTab,
       mockupMode: toolbarMode === "mockup",
       deleteFrames: deleteSelected,
@@ -6517,6 +6547,12 @@ if (s.vidShots) {
       if (key === "?" && !typing && !h.cropOpen && !h.tourOpen) {
         e.preventDefault();
         h.toggleShortcuts();
+        return;
+      }
+      // the Projects page blocks editor shortcuts, except theme cycling
+      if (h.projectsPage && !typing && !h.shortcutsOpen && !h.tourOpen && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && key.toLowerCase() === "c") {
+        e.preventDefault();
+        h.cycleTheme();
         return;
       }
       if (h.shortcutsOpen || h.cropOpen || h.tourOpen || h.projectsPage) return;
@@ -6858,8 +6894,8 @@ const chrome = {
   appBg: "bg-[#EFEFF0] dark:bg-[#0D0B0C]",
   panelBg: "bg-[#FAF9FA] dark:bg-[#171717]",
   border: "border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10",
-  text: "text-[#8C8C8C] dark:text-[#9A9A9A]",
-  subtext: "text-[#8C8C8C] dark:text-[#9A9A9A]",
+  text: "text-[#737373] dark:text-[#ABABAB]",
+  subtext: "text-[#737373] dark:text-[#ABABAB]",
   inputBg: "bg-[#f3f3f4] dark:bg-[#292929]",
   hover: "hover:bg-[#eaeaec] dark:hover:bg-[#333333]",
 };
@@ -6891,13 +6927,13 @@ const chrome = {
             src={`${import.meta.env.BASE_URL}logo-light.svg`}
             alt="Bezel"
             draggable={true}
-            className="h-8 w-auto select-none dark:hidden"
+            className="h-6 w-auto select-none dark:hidden"
           />
           <img
             src={`${import.meta.env.BASE_URL}logo-dark.svg`}
             alt="Bezel"
             draggable={true}
-            className="hidden h-8 w-auto select-none dark:block"
+            className="hidden h-6 w-auto select-none dark:block"
           />
         </div>
 
@@ -6991,7 +7027,7 @@ const chrome = {
   </Tooltip>
 </div>
 {exportOpen && (() => {
-  const labelCls = "text-[13px] font-medium tracking-[0.01em] text-[#8C8C8C] dark:text-[#9A9A9A]";
+  const labelCls = "text-[13px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]";
   const segWrap = "flex items-center p-0.5 w-full h-8 bg-[#F0F0F0] dark:bg-black rounded-2xl";
   const segBtn = (on, off = false) =>
     `seg-tab flex-1 h-7 flex items-center justify-center px-2.5 py-1 rounded-[14px] leading-5 transition-colors duration-200 ${
@@ -7085,7 +7121,7 @@ const chrome = {
                 );
               })}
             </div>
-            <div className="flex flex-col gap-0.5 text-[12px] font-medium text-[#8C8C8C] dark:text-[#9A9A9A]">
+            <div className="flex flex-col gap-0.5 text-[12px] font-medium text-[#737373] dark:text-[#ABABAB]">
               <span className="tabular-nums">{dims.w} × {dims.h} px · ~{estimate}</span>
               {videoFormat === "lottie" && <span>Lottie is exported as an image sequence, so files get large.</span>}
             </div>
@@ -7101,7 +7137,7 @@ const chrome = {
               </button>
             ))}
           </div>
-          <div className="flex flex-col gap-0.5 text-[12px] font-medium text-[#8C8C8C] dark:text-[#9A9A9A]">
+          <div className="flex flex-col gap-0.5 text-[12px] font-medium text-[#737373] dark:text-[#ABABAB]">
             <span className="tabular-nums">
               {dims ? `${dims.w} × ${dims.h} px` : "—"}{estimate ? ` · ~${estimate}` : ""}
             </span>
@@ -7160,12 +7196,12 @@ const chrome = {
     <Devices
       size={20}
       weight={sidebarPanel === "create" && sidebarOpen && !devicesDisabled ? "fill" : "regular"}
-      className={`transition-colors duration-200 ${
+      className={`rail-icon rail-devices ${
         devicesDisabled
-          ? "text-[#8C8C8C] dark:text-[#9A9A9A]"
+          ? "text-[#737373] dark:text-[#ABABAB]"
           : sidebarPanel === "create" && sidebarOpen
           ? "text-[#FF47BC]"
-          : "text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
+          : "text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
       }`}
     />
   </button>
@@ -7185,10 +7221,10 @@ const chrome = {
                   <FolderOpen
                     size={20}
                     weight={sidebarPanel === "projects" && sidebarOpen ? "fill" : "regular"}
-                    className={`transition-colors duration-200 ${
+                    className={`rail-icon rail-projects ${
                       sidebarPanel === "projects" && sidebarOpen
                         ? "text-[#FF47BC]"
-                        : "text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
+                        : "text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
                     }`}
                   />
                 </button>
@@ -7208,10 +7244,10 @@ const chrome = {
                 <CardsThree
                   size={20}
                   weight={sidebarPanel === "templates" && sidebarOpen ? "fill" : "regular"}
-                  className={`transition-colors duration-200 ${
+                  className={`rail-icon rail-templates ${
                     sidebarPanel === "templates" && sidebarOpen
                       ? "text-[#FF47BC]"
-                      : "text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
+                      : "text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
                   }`}
                 />
               </button>
@@ -7236,10 +7272,10 @@ const chrome = {
                   <Info
                     size={20}
                     weight="regular"
-                    className={`transition-colors duration-200 ${
+                    className={`rail-icon rail-help ${
                       helpOpen
                         ? "text-[#FF47BC]"
-                        : "text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
+                        : "text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
                     }`}
                   />
                 </button>
@@ -7302,13 +7338,13 @@ const chrome = {
                         </span>
 <span className="flex items-center gap-1">
   <KeyCombo keys={["C"]} />
-  <CaretRight size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A]" />
+  <CaretRight size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB]" />
 </span>
                       </button>
 
                       {themeMenuOpen && (
                         <div className="side-enter absolute left-[calc(100%+5px)] bottom-[-1px] w-[200px] p-2 gap-1 flex flex-col items-start bg-[#FAF9FA] dark:bg-[#171717] border border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10 rounded-2xl shadow-[0_4px_8px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_12px_rgba(0,0,0,0.4)]">
-                          <span className="block px-2 pt-1 pb-1 text-[11px] font-semibold tracking-[0.02em] text-[#8C8C8C] dark:text-[#9A9A9A]">
+                          <span className="block px-2 pt-1 pb-1 text-[11px] font-semibold tracking-[0.02em] text-[#737373] dark:text-[#ABABAB]">
                             Theme
                           </span>
                           {THEME_OPTIONS.map((opt) => {
@@ -7391,7 +7427,7 @@ const chrome = {
                   onClick={() => setSidebarOpen(false)}
                   className="group flex flex-row items-center justify-center w-7 h-7 p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
                 >
-                  <SidebarSimple size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
+                  <SidebarSimple size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
 </button>
               </Tooltip>
             </div>
@@ -7411,7 +7447,7 @@ const chrome = {
     <div className="flex flex-col items-start w-full gap-4 pr-2">
     {DEVICE_CATEGORIES.filter((cat) => (CATEGORY_DEVICE_OPTIONS[cat.key] || []).length > 0).map((cat) => (
       <div key={cat.key} className="flex flex-col items-start w-full gap-1">
-<span className="device-title block px-2 pt-1 pb-1 uppercase text-[#8C8C8C] dark:text-[#9A9A9A]">
+<span className="device-title block px-2 pt-1 pb-1 uppercase text-[#737373] dark:text-[#ABABAB]">
   {cat.label}
 </span>
         {CATEGORY_DEVICE_OPTIONS[cat.key].map((opt) => {
@@ -7426,7 +7462,7 @@ const chrome = {
               className={`w-full shrink-0 flex items-center justify-between px-2 py-2 rounded-lg text-[12px] font-medium tracking-[-0.005em] transition-colors duration-100 ease-in-out ${
                 isSelected
                   ? "bg-[#FF47BC]/10 text-[#FF47BC]"
-                  : "text-[#8C8C8C] dark:text-[#9A9A9A] hover:bg-[#F2F2F2] dark:hover:bg-[#1F1F1F] hover:text-[#3A3A3A] dark:hover:text-[#FAF9FA]"
+                  : "text-[#737373] dark:text-[#ABABAB] hover:bg-[#F2F2F2] dark:hover:bg-[#1F1F1F] hover:text-[#3A3A3A] dark:hover:text-[#FAF9FA]"
               }`}
             >
               <span className="truncate">{opt.label}</span>
@@ -7472,7 +7508,7 @@ const chrome = {
               ) : filteredTemplates.length === 0 ? (
                 <div className="flex flex-col items-center justify-center gap-3 w-full flex-1 py-8">
                   <CardsThree size={40} weight="fill" className="folder-enter text-[#D9D9D9] dark:text-[#3A3A40]" />
-                  <span className="text-[12px] font-medium tracking-[-0.005em] text-[#8C8C8C] dark:text-[#9A9A9A] text-center px-4 leading-4">
+                  <span className="text-[12px] font-medium tracking-[-0.005em] text-[#737373] dark:text-[#ABABAB] text-center px-4 leading-4">
                     No templates match your search
                   </span>
                 </div>
@@ -7548,7 +7584,7 @@ const chrome = {
                                 className={`tpl-title flex-1 min-w-0 text-left leading-4 truncate transition-colors duration-150 ${
                                   activeTemplateId === tpl.id
                                     ? "text-[#FF47BC]"
-                                    : "text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
+                                    : "text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
                                 }`}
                               >
                                 {tpl.label}
@@ -7576,7 +7612,7 @@ const chrome = {
               {liveProjects.length === 0 ? (
                 <div className="flex flex-col items-center justify-center gap-3 w-full flex-1 py-8">
                   <Folder size={40} weight="fill" className="folder-enter text-[#D9D9D9] dark:text-[#3A3A40]" />
-                  <span className="text-[12px] font-medium tracking-[-0.005em] text-[#8C8C8C] dark:text-[#9A9A9A] text-center px-4 leading-4">
+                  <span className="text-[12px] font-medium tracking-[-0.005em] text-[#737373] dark:text-[#ABABAB] text-center px-4 leading-4">
                     No projects yet — save one to see it here
                   </span>
                 </div>
@@ -7590,11 +7626,6 @@ const chrome = {
     onOpen={openProject}
     onMenu={toggleProjectMenu}
     menuOpen={projectMenu?.id === p.id}
-    renaming={renamingProjectId === p.id}
-    renameDraft={renameDraft}
-    onRenameDraft={setRenameDraft}
-    onRenameCommit={commitRenameProject}
-    onRenameCancel={() => { renameCancelRef.current = true; }}
   />
 ))}
                 </FadeScrollerY>
@@ -7670,7 +7701,7 @@ const chrome = {
                         canvasDrop.dragOver ? "opacity-100" : "opacity-0"
                       }`}
                     >
-                      <span className="flex items-center gap-2 h-8 px-3 rounded-2xl bg-[#FAF9FA] dark:bg-[#171717] border border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10 text-[13px] font-medium tracking-[0.01em] text-[#8C8C8C] dark:text-[#9A9A9A]">
+                      <span className="flex items-center gap-2 h-8 px-3 rounded-2xl bg-[#FAF9FA] dark:bg-[#171717] border border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10 text-[13px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]">
                         <UploadSimple size={14} weight="regular" /> Drop image to upload
                       </span>
                     </div>
@@ -7820,7 +7851,7 @@ const chrome = {
           size={14}
           weight="regular"
           style={{ transform: saveMenuOpen ? "rotate(180deg)" : "rotate(0deg)" }}
-          className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-[transform,color] duration-200"
+          className="text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-[transform,color] duration-200"
         />
       </button>
     </Tooltip>
@@ -7867,7 +7898,7 @@ const chrome = {
       disabled={!canUndo}
       className="group flex items-center justify-center w-8 h-8 rounded-2xl border border-[#3A3A3A]/10 dark:border-[#FCFCFC]/10 bg-white dark:bg-[#292929] shadow-[0px_4px_4px_rgba(0,0,0,0.02)] enabled:hover:bg-[#F5F5F5] dark:enabled:hover:bg-[#333333] transition-[background-color,transform,opacity] duration-150 active:scale-[0.94] disabled:opacity-30 disabled:cursor-not-allowed disabled:active:scale-100"
     >
-      <ArrowUUpLeft size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-enabled:group-hover:text-[#3A3A3A] dark:group-enabled:group-hover:text-[#FAF9FA] transition-colors" />
+      <ArrowUUpLeft size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-enabled:group-hover:text-[#3A3A3A] dark:group-enabled:group-hover:text-[#FAF9FA] transition-colors" />
     </button>
   </Tooltip>
   <Tooltip label="Redo" shortcut={["mod", "⇧", "Z"]} placement="bottom">
@@ -7878,7 +7909,7 @@ const chrome = {
       disabled={!canRedo}
       className="group flex items-center justify-center w-8 h-8 rounded-2xl border border-[#3A3A3A]/10 dark:border-[#FCFCFC]/10 bg-white dark:bg-[#292929] shadow-[0px_4px_4px_rgba(0,0,0,0.02)] enabled:hover:bg-[#F5F5F5] dark:enabled:hover:bg-[#333333] transition-[background-color,transform,opacity] duration-150 active:scale-[0.94] disabled:opacity-30 disabled:cursor-not-allowed disabled:active:scale-100"
     >
-      <ArrowUUpRight size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-enabled:group-hover:text-[#3A3A3A] dark:group-enabled:group-hover:text-[#FAF9FA] transition-colors" />
+      <ArrowUUpRight size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-enabled:group-hover:text-[#3A3A3A] dark:group-enabled:group-hover:text-[#FAF9FA] transition-colors" />
     </button>
   </Tooltip>
 </div>
@@ -7887,7 +7918,7 @@ const chrome = {
   <div
     role="status"
     aria-live="polite"
-    className="pop-enter pointer-events-none absolute top-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 h-8 px-3 rounded-2xl border border-[#3A3A3A]/10 dark:border-[#FCFCFC]/10 bg-white dark:bg-[#292929] shadow-[0px_4px_4px_rgba(0,0,0,0.02)] text-[13px] font-medium tracking-[0.01em] text-[#8C8C8C] dark:text-[#9A9A9A]"
+    className="pop-enter pointer-events-none absolute top-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 h-8 px-3 rounded-2xl border border-[#3A3A3A]/10 dark:border-[#FCFCFC]/10 bg-white dark:bg-[#292929] shadow-[0px_4px_4px_rgba(0,0,0,0.02)] text-[13px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]"
   >
     <CircleNotch size={14} weight="regular" className="animate-spin text-[#FF47BC]" />
     {saving ? "Saving project…" : mediaLoading > 0 ? "Loading media…" : "Rendering filters…"}
@@ -7898,7 +7929,7 @@ const chrome = {
             <div className="absolute bottom-4 right-4 flex items-start gap-1 z-10" ref={canvasSizeRef} data-tour="canvas-size">
 <Tooltip label={canvasSizeOpen ? "" : "Canvas size"} placement="vertical">
   <button type="button" onClick={() => setCanvasSizeOpen((v) => !v)} className={`${DROPDOWN_TRIGGER} min-w-[88px]`}>
-    <span className="whitespace-nowrap text-[13px] font-medium tracking-[-0.005em] text-[#8C8C8C] dark:text-[#9A9A9A]">{canvasSize}</span>
+    <span className="whitespace-nowrap text-[13px] font-medium tracking-[-0.005em] text-[#737373] dark:text-[#ABABAB]">{canvasSize}</span>
     <CaretDown size={16} weight="regular" style={{ transform: canvasSizeOpen ? "rotate(180deg)" : "rotate(0deg)" }} className={DROPDOWN_CARET} />
   </button>
 </Tooltip>
@@ -7933,10 +7964,10 @@ const chrome = {
                       }}
                       className="group/hdr flex items-center justify-between w-full h-[26px] pl-2 cursor-pointer select-none"
                     >
-                      <span className="text-[12px] font-medium tracking-[-0.005em] text-[#8C8C8C] dark:text-[#9A9A9A]">Custom</span>
+                      <span className="text-[12px] font-medium tracking-[-0.005em] text-[#737373] dark:text-[#ABABAB]">Custom</span>
                       <span
                         aria-hidden
-                        className="flex items-center justify-center w-[22px] h-[22px] rounded-lg text-[#8C8C8C] dark:text-[#9A9A9A] transition-[background-color,color,transform] duration-150 group-hover/hdr:bg-black/5 dark:group-hover/hdr:bg-white/5 group-hover/hdr:text-[#3A3A3A] dark:group-hover/hdr:text-white group-active/hdr:scale-[0.94]"
+                        className="flex items-center justify-center w-[22px] h-[22px] rounded-lg text-[#737373] dark:text-[#ABABAB] transition-[background-color,color,transform] duration-150 group-hover/hdr:bg-black/5 dark:group-hover/hdr:bg-white/5 group-hover/hdr:text-[#3A3A3A] dark:group-hover/hdr:text-white group-active/hdr:scale-[0.94]"
                       >
                         {customSectionOpen ? <CaretUp size={16} weight="regular" /> : <CaretDown size={16} weight="regular" />}
                       </span>
@@ -7965,7 +7996,7 @@ const chrome = {
         <div ref={toolbarRef} data-tour="right-toolbar" className={`w-[300px] mr-[8px] my-[8px] bg-[#FAF9FA] dark:bg-[#171717] rounded-2xl flex flex-col overflow-hidden shrink-0`}>
           <div
             role="tablist" data-tour="mode-tabs"
-            className="flex items-center h-11 border-b border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10 shrink-0"
+            className="flex items-center gap-1 h-11 px-2 border-b border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10 shrink-0"
           >
             {[
               { key: "mockup", label: "Mockup", k: "M" },
@@ -7979,10 +8010,10 @@ const chrome = {
                   role="tab"
                   aria-selected={active}
                   onClick={() => selectTab(t.key)}
-                  className={`seg-tab flex items-center justify-center h-[43px] px-4 leading-[17px] border-b transition-colors duration-150 ${
+                  className={`flex items-center justify-center h-7 px-3 rounded-lg text-[12px] leading-4 font-medium tracking-[-0.005em] transition-colors duration-150 ${
                     active
-                      ? "border-[#FF47BC] text-[#3A3A3A] dark:text-[#FAF9FA]"
-                      : "border-transparent text-[#8C8C8C] dark:text-[#9A9A9A] hover:text-[#3A3A3A] dark:hover:text-[#FAF9FA]"
+                      ? "bg-[#EDEDED] dark:bg-[#292929] text-[#3A3A3A] dark:text-[#FAF9FA]"
+                      : "text-[#737373] dark:text-[#ABABAB] hover:text-[#3A3A3A] dark:hover:text-[#FAF9FA]"
                   }`}
                 >
                   {t.label}
@@ -8038,7 +8069,7 @@ const chrome = {
                       disabled={!mediaThumb || mediaIsVideo}
                       className="group flex items-center justify-center w-6 h-6 shrink-0 rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                     >
-                     <Crop size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
+                     <Crop size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
 </button>
                   </Tooltip>
                   <Tooltip label="Remove image" placement="bottom">
@@ -8050,7 +8081,7 @@ const chrome = {
                       }}
                       className="group flex items-center justify-center w-6 h-6 shrink-0 rounded-md hover:bg-[#F04438]/10 transition-colors"
                     >
-                      <X size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#F04438] transition-colors" />
+                      <X size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover:text-[#F04438] transition-colors" />
                     </button>
                   </Tooltip>
                 </div>
@@ -8069,11 +8100,11 @@ const chrome = {
                 <UploadSimple
                   size={16}
                   weight="regular"
-                  className={uploadDrop.dragOver ? "text-[#FF47BC]" : "text-[#8C8C8C] dark:text-[#9A9A9A]"}
+                  className={uploadDrop.dragOver ? "text-[#FF47BC]" : "text-[#737373] dark:text-[#ABABAB]"}
                 />
                 <span
                   className={`text-[13px] font-medium tracking-[-0.005em] ${
-                    uploadDrop.dragOver ? "text-[#FF47BC]" : "text-[#8C8C8C] dark:text-[#9A9A9A]"
+                    uploadDrop.dragOver ? "text-[#FF47BC]" : "text-[#737373] dark:text-[#ABABAB]"
                   }`}
                 >
                   {uploadDrop.dragOver ? "Drop to upload" : "Click or drag & drop to upload"}
@@ -8115,7 +8146,7 @@ const chrome = {
               onChange={(k, v) => changeTplParam(activeParamTpl, k, v)}
             />
           ) : (
-            <span className="text-[12px] font-medium tracking-[-0.005em] text-[#8C8C8C] dark:text-[#9A9A9A]">
+            <span className="text-[12px] font-medium tracking-[-0.005em] text-[#737373] dark:text-[#ABABAB]">
               Pick a template on the left to see its controls
             </span>
           )}
@@ -8173,7 +8204,7 @@ const chrome = {
               fxMenu ? "bg-black/5 dark:bg-white/10" : "hover:bg-black/5 dark:hover:bg-white/5"
             }`}
           >
-            <Plus size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A]" />
+            <Plus size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB]" />
           </button>
         </Tooltip>
       </div>
@@ -8201,7 +8232,7 @@ const chrome = {
                     type="button"
                     onClick={() => toggleEffectPopup(key)}
                     className={`flex-1 min-w-0 h-full flex items-center gap-2 text-left text-[12px] font-medium tracking-[-0.005em] ${
-                      active ? "text-[#FF47BC]" : "text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
+                      active ? "text-[#FF47BC]" : "text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
                     } ${x.on ? "" : "opacity-50"}`}
                   >
                     <Icon size={16} weight="regular" className="shrink-0" />
@@ -8215,9 +8246,9 @@ const chrome = {
                       className="flex items-center justify-center w-6 h-6 shrink-0 rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition-[background-color,transform] duration-150 active:scale-[0.94]"
                     >
                       {x.on ? (
-                        <Eye size={16} weight="regular" className={active ? "text-[#FF47BC]" : "text-[#8C8C8C] dark:text-[#9A9A9A]"} />
+                        <Eye size={16} weight="regular" className={active ? "text-[#FF47BC]" : "text-[#737373] dark:text-[#ABABAB]"} />
                       ) : (
-                        <EyeSlash size={16} weight="regular" className={active ? "text-[#FF47BC]" : "text-[#8C8C8C] dark:text-[#9A9A9A]"} />
+                        <EyeSlash size={16} weight="regular" className={active ? "text-[#FF47BC]" : "text-[#737373] dark:text-[#ABABAB]"} />
                       )}
                     </button>
                   </Tooltip>
@@ -8231,7 +8262,7 @@ const chrome = {
                       }}
                       className="group/x flex items-center justify-center w-6 h-6 shrink-0 rounded-md hover:bg-[#F04438]/10 transition-[background-color,transform] duration-150 active:scale-[0.94]"
                     >
-                      <X size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover/x:text-[#F04438] transition-colors" />
+                      <X size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover/x:text-[#F04438] transition-colors" />
                     </button>
                   </Tooltip>
                 </div>
@@ -8264,7 +8295,7 @@ const chrome = {
   className={`transition-colors ${
     isFrameAligned(key)
       ? "text-[#FF47BC]"
-      : "text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
+      : "text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
   }`}
 />
                           </button>
@@ -8287,7 +8318,7 @@ const chrome = {
                         distMenu ? "bg-black/5 dark:bg-white/10" : "hover:bg-black/5 dark:hover:bg-white/5"
                       }`}
                     >
-                      <Rows size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
+                      <Rows size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
                     </button>
                   </div>
                 </div>
@@ -8419,12 +8450,12 @@ const chrome = {
                             ))}
                           </div>
                           <div className="flex flex-col gap-2">
-                            <label className="text-[13px] font-medium tracking-[0.01em] text-[#8C8C8C] dark:text-[#9A9A9A]">Browser</label>
+                            <label className="text-[13px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]">Browser</label>
                             <ToolbarDropdown value={browserType} options={browserOptions} onChange={setBrowserType} />
                           </div>
                           {browserType === "safari" && (
                             <div className="flex flex-col gap-2">
-                              <label className="text-[13px] font-medium tracking-[0.01em] text-[#8C8C8C] dark:text-[#9A9A9A]">Tabs</label>
+                              <label className="text-[13px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]">Tabs</label>
                               <div className="flex items-center p-0.5 w-full h-8 bg-[#F0F0F0] dark:bg-black rounded-2xl">
                                 {SAFARI_TABS_OPTIONS.map((o) => (
                                   <button
@@ -8444,13 +8475,13 @@ const chrome = {
                       )}
                       {showBrowser && (
                         <div className="flex flex-col gap-2">
-                          <label className="text-[12px] font-medium tracking-[0.01em] text-[#8C8C8C] dark:text-[#9A9A9A]">Address</label>
+                          <label className="text-[12px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]">Address</label>
                           <div className="flex items-center px-2 py-2 bg-[#EDEDED] hover:bg-[#E3E3E3] focus-within:bg-[#E3E3E3] dark:focus-within:bg-[#333333] rounded-[10px] border border-transparent focus-within:border-[#FF47BC] transition-colors">
                             <input
                               value={browserUrl}
                               onChange={(e) => setBrowserUrl(e.target.value)}
                               placeholder="bezel.app"
-                              className="flex-1 min-w-0 bg-transparent text-[13px] font-medium tracking-[-0.005em] text-[#3A3A3A] placeholder:text-[#8C8C8C] dark:text-[#FAF9FA] outline-none"
+                              className="flex-1 min-w-0 bg-transparent text-[13px] font-medium tracking-[-0.005em] text-[#3A3A3A] placeholder:text-[#737373] dark:text-[#FAF9FA] outline-none"
                             />
                           </div>
                         </div>
@@ -8565,7 +8596,7 @@ toolbarMode === "frame"
                             className={`flex-1 flex items-center justify-between px-2.5 py-2 rounded-[10px] text-[13px] leading-4 font-medium tracking-[-0.005em] transition-[background-color,color,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.98] ${
                               activeCameraView === p.key
                                 ? "bg-[#FF47BC]/10 text-[#FF47BC]"
-                                : "bg-[#EDEDED] dark:bg-[#292929] hover:bg-[#EAEAEA] dark:hover:bg-[#333333] hover:text-[#3A3A3A] dark:hover:text-[#FAF9FA] text-[#8C8C8C] dark:text-[#9A9A9A]"
+                                : "bg-[#EDEDED] dark:bg-[#292929] hover:bg-[#EAEAEA] dark:hover:bg-[#333333] hover:text-[#3A3A3A] dark:hover:text-[#FAF9FA] text-[#737373] dark:text-[#ABABAB]"
                             }`}
                           >
                             {p.label}
@@ -8581,7 +8612,7 @@ toolbarMode === "frame"
                             className={`flex-1 flex items-center justify-between px-2.5 py-2 rounded-[10px] text-[13px] leading-4 font-medium tracking-[-0.005em] transition-[background-color,color,transform] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.98] ${
                               activeCameraView === p.key
                                 ? "bg-[#FF47BC]/10 text-[#FF47BC]"
-                                : "bg-[#EDEDED] dark:bg-[#292929] hover:bg-[#EAEAEA] dark:hover:bg-[#333333] hover:text-[#3A3A3A] dark:hover:text-[#FAF9FA] text-[#8C8C8C] dark:text-[#9A9A9A]"
+                                : "bg-[#EDEDED] dark:bg-[#292929] hover:bg-[#EAEAEA] dark:hover:bg-[#333333] hover:text-[#3A3A3A] dark:hover:text-[#FAF9FA] text-[#737373] dark:text-[#ABABAB]"
                             }`}
                           >
                             {p.label}
@@ -8608,7 +8639,7 @@ toolbarMode === "frame"
               <div className="overflow-hidden">
                 <div className="pt-4 flex flex-col gap-4">
                   <div className="flex flex-col gap-2">
-                    <label className="text-[13px] font-medium tracking-[0.01em] text-[#8C8C8C] dark:text-[#9A9A9A]">Background</label>
+                    <label className="text-[13px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]">Background</label>
                     <div className="flex items-center p-0.5 w-full h-8 bg-[#F0F0F0] dark:bg-black rounded-2xl">
                       {["solid", "gradient", "custom"].map((t) => (
                         <button
@@ -8684,7 +8715,7 @@ className="w-full h-[66px] flex items-center justify-between py-2 pl-2 pr-1 gap-
                                   }}
                                   className="group flex items-center justify-center w-6 h-6 shrink-0 rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
                                 >
-                                  <Crop size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
+                                  <Crop size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
                                 </button>
                               </Tooltip>
                               <Tooltip label="Remove image" placement="bottom">
@@ -8696,7 +8727,7 @@ className="w-full h-[66px] flex items-center justify-between py-2 pl-2 pr-1 gap-
                                   }}
                                   className="group flex items-center justify-center w-6 h-6 shrink-0 rounded-md hover:bg-[#F04438]/10 transition-colors"
                                 >
-                                  <X size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#F04438] transition-colors" />
+                                  <X size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover:text-[#F04438] transition-colors" />
                                 </button>
                               </Tooltip>
                             </div>
@@ -8707,8 +8738,8 @@ className="w-full h-[66px] flex items-center justify-between py-2 pl-2 pr-1 gap-
                             onClick={() => customImageInputRef.current?.click()}
 className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10 rounded-[10px] flex flex-col items-center justify-center gap-1 hover:bg-[#EAEAEA] dark:hover:bg-[#333333] transition-colors"
                           >
-                            <UploadSimple size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A]" />
-                            <span className="text-[13px] font-medium tracking-[-0.005em] text-[#8C8C8C] dark:text-[#9A9A9A]">Click or drag & drop to upload</span>
+                            <UploadSimple size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB]" />
+                            <span className="text-[13px] font-medium tracking-[-0.005em] text-[#737373] dark:text-[#ABABAB]">Click or drag & drop to upload</span>
                           </button>
                         )}
                         <input
@@ -8720,7 +8751,7 @@ className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed borde
                         />
 
                         <div className="flex flex-col gap-2 w-full">
-                          <label className="text-[12px] font-medium tracking-[0.01em] text-[#8C8C8C] dark:text-[#9A9A9A]">Presets</label>
+                          <label className="text-[12px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]">Presets</label>
                           <ImagePresetDropdown
   value={customImagePreset}
   options={IMAGE_PRESETS}
@@ -8787,7 +8818,7 @@ className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed borde
 
                         {bgType === "gradient" && (
                     <div className="flex flex-col gap-2 w-full">
-                      <label className="text-[12px] font-medium tracking-[0.01em] text-[#8C8C8C] dark:text-[#9A9A9A]">Presets</label>
+                      <label className="text-[12px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]">Presets</label>
                       <GradientPresetDropdown
   value={gradientPreset}
   options={GRADIENT_PRESETS}
@@ -8824,7 +8855,7 @@ className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed borde
                                 type="button"
                                 onClick={() => toggleEffectPopup(key)}
                                 className={`flex-1 min-w-0 h-full flex items-center gap-2 text-left text-[12px] font-medium tracking-[-0.005em] ${
-                                  active ? "text-[#FF47BC]" : "text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
+                                  active ? "text-[#FF47BC]" : "text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
                                 } ${fx.visible ? "" : "opacity-50"}`}
                               >
                                 <Icon size={16} weight="regular" className="shrink-0" />
@@ -8839,9 +8870,9 @@ className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed borde
                                     className="flex items-center justify-center w-6 h-6 shrink-0 rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition-[background-color,transform] duration-150 active:scale-[0.94]"
                                   >
                                     {fx.visible ? (
-                                      <Eye size={16} weight="regular" className={active ? "text-[#FF47BC]" : "text-[#8C8C8C] dark:text-[#9A9A9A]"} />
+                                      <Eye size={16} weight="regular" className={active ? "text-[#FF47BC]" : "text-[#737373] dark:text-[#ABABAB]"} />
                                     ) : (
-                                      <EyeSlash size={16} weight="regular" className={active ? "text-[#FF47BC]" : "text-[#8C8C8C] dark:text-[#9A9A9A]"} />
+                                      <EyeSlash size={16} weight="regular" className={active ? "text-[#FF47BC]" : "text-[#737373] dark:text-[#ABABAB]"} />
                                     )}
                                   </button>
                                 </Tooltip>
@@ -8853,7 +8884,7 @@ className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed borde
                                   onClick={() => removeGradFx(fx.id)}
                                   className="group/x flex items-center justify-center w-6 h-6 shrink-0 rounded-md hover:bg-[#F04438]/10 transition-[background-color,transform] duration-150 active:scale-[0.94]"
                                 >
-                                  <X size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover/x:text-[#F04438] transition-colors" />
+                                  <X size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover/x:text-[#F04438] transition-colors" />
                                 </button>
                               </Tooltip>
                             </div>
@@ -8864,7 +8895,7 @@ className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed borde
                   )}
 
                   <div className="flex flex-col gap-2">
-                    <label className="text-[13px] font-medium tracking-[0.01em] text-[#8C8C8C] dark:text-[#9A9A9A]">Environment</label>
+                    <label className="text-[13px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]">Environment</label>
                     <ToolbarDropdown value={environment} options={ENVIRONMENT_OPTIONS} onChange={setEnvironment} dropUp />
                   </div>
                 </div>
@@ -8936,7 +8967,7 @@ className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed borde
                           className={`flex-1 min-w-0 h-full text-left truncate text-[12px] font-medium tracking-[-0.005em] transition-colors duration-100 ${
                             active
                               ? "text-[#FF47BC]"
-                              : "text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
+                              : "text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
                           } ${hidden ? "opacity-50" : ""}`}
                         >
                           {textLabel(t)}
@@ -8951,9 +8982,9 @@ className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed borde
                             }`}
                           >
                             {hidden ? (
-                              <EyeSlash size={16} weight="regular" className={active ? "text-[#FF47BC]" : "text-[#8C8C8C] dark:text-[#9A9A9A]"} />
+                              <EyeSlash size={16} weight="regular" className={active ? "text-[#FF47BC]" : "text-[#737373] dark:text-[#ABABAB]"} />
                             ) : (
-                              <Eye size={16} weight="regular" className={active ? "text-[#FF47BC]" : "text-[#8C8C8C] dark:text-[#9A9A9A]"} />
+                              <Eye size={16} weight="regular" className={active ? "text-[#FF47BC]" : "text-[#737373] dark:text-[#ABABAB]"} />
                             )}
                           </button>
                         </Tooltip>
@@ -8966,7 +8997,7 @@ className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed borde
                               active ? "opacity-100" : "opacity-0"
                             }`}
                           >
-                            <X size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover/x:text-[#F04438] transition-colors" />
+                            <X size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover/x:text-[#F04438] transition-colors" />
                           </button>
                         </Tooltip>
                       </div>
@@ -9006,7 +9037,7 @@ className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed borde
                     fxMenu ? "bg-black/5 dark:bg-white/10" : "hover:bg-black/5 dark:hover:bg-white/5"
                   }`}
                 >
-                  <Plus size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A]" />
+                  <Plus size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB]" />
                 </button>
               </Tooltip>
             </div>
@@ -9034,7 +9065,7 @@ className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed borde
                           type="button"
                           onClick={() => toggleEffectPopup(fx.id)}
                           className={`flex-1 min-w-0 h-full flex items-center gap-2 text-left text-[12px] font-medium tracking-[-0.005em] ${
-                            active ? "text-[#FF47BC]" : "text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
+                            active ? "text-[#FF47BC]" : "text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
                           } ${fx.visible ? "" : "opacity-50"}`}
                         >
                           <Icon size={16} weight="regular" className="shrink-0" />
@@ -9048,9 +9079,9 @@ className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed borde
                             className="flex items-center justify-center w-6 h-6 shrink-0 rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition-[background-color,transform] duration-150 active:scale-[0.94]"
                           >
                             {fx.visible ? (
-                              <Eye size={16} weight="regular" className={active ? "text-[#FF47BC]" : "text-[#8C8C8C] dark:text-[#9A9A9A]"} />
+                              <Eye size={16} weight="regular" className={active ? "text-[#FF47BC]" : "text-[#737373] dark:text-[#ABABAB]"} />
                             ) : (
-                              <EyeSlash size={16} weight="regular" className={active ? "text-[#FF47BC]" : "text-[#8C8C8C] dark:text-[#9A9A9A]"} />
+                              <EyeSlash size={16} weight="regular" className={active ? "text-[#FF47BC]" : "text-[#737373] dark:text-[#ABABAB]"} />
                             )}
                           </button>
                         </Tooltip>
@@ -9061,7 +9092,7 @@ className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed borde
                             onClick={() => removeEffect(fx.id)}
                             className="group/x flex items-center justify-center w-6 h-6 shrink-0 rounded-md hover:bg-[#F04438]/10 transition-[background-color,transform] duration-150 active:scale-[0.94]"
                           >
-                            <X size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover/x:text-[#F04438] transition-colors" />
+                            <X size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover/x:text-[#F04438] transition-colors" />
                           </button>
                         </Tooltip>
                       </div>
@@ -9093,7 +9124,7 @@ className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed borde
                 else if (animTplRef.current) addAnimFx(animTplRef.current, type);
                 setFxMenu(null);
               }}
-              className="group flex items-center w-full h-8 pl-2 pr-2 gap-2 rounded-lg text-[12px] font-medium tracking-[-0.005em] text-[#8C8C8C] dark:text-[#9A9A9A] hover:text-[#3A3A3A] dark:hover:text-[#FAF9FA] hover:bg-[#F2F2F2] dark:hover:bg-[#1F1F1F] transition-colors duration-100"
+              className="group flex items-center w-full h-8 pl-2 pr-2 gap-2 rounded-lg text-[12px] font-medium tracking-[-0.005em] text-[#737373] dark:text-[#ABABAB] hover:text-[#3A3A3A] dark:hover:text-[#FAF9FA] hover:bg-[#F2F2F2] dark:hover:bg-[#1F1F1F] transition-colors duration-100"
             >
               <Icon size={16} weight="regular" className="shrink-0" />
               {label}
@@ -9121,7 +9152,7 @@ className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed borde
                 distributeSelected(axis);
                 setDistMenu(null);
               }}
-              className="flex items-center justify-between w-full h-8 pl-2 pr-2 gap-4 rounded-lg text-[12px] font-medium tracking-[-0.005em] whitespace-nowrap text-[#8C8C8C] dark:text-[#9A9A9A] enabled:hover:text-[#3A3A3A] dark:enabled:hover:text-[#FAF9FA] enabled:hover:bg-[#F2F2F2] dark:enabled:hover:bg-[#1F1F1F] transition-colors duration-100 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="flex items-center justify-between w-full h-8 pl-2 pr-2 gap-4 rounded-lg text-[12px] font-medium tracking-[-0.005em] whitespace-nowrap text-[#737373] dark:text-[#ABABAB] enabled:hover:text-[#3A3A3A] dark:enabled:hover:text-[#FAF9FA] enabled:hover:bg-[#F2F2F2] dark:enabled:hover:bg-[#1F1F1F] transition-colors duration-100 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <span className="flex items-center gap-2">
                 <Icon size={14} weight="regular" className="shrink-0" />
@@ -9183,6 +9214,9 @@ className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed borde
                   <button type="button" className={itemClass} onClick={run(() => startRenameProject(p))}>
                     <PencilSimple size={16} weight="regular" className="shrink-0" /> Rename
                   </button>
+                  <button type="button" className={itemClass} onClick={run(() => setMoveTarget({ list: [p] }))}>
+                    <FolderOpen size={16} weight="regular" className="shrink-0" /> Move
+                  </button>
                 </div>
                 <div className="my-1 h-px w-full bg-[#3A3A3A]/10 dark:bg-[#FAF9FA]/10" />
                 <div className="flex flex-col gap-1 w-full">
@@ -9225,14 +9259,14 @@ className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed borde
     className="panel-enter w-[240px] px-3 pb-3 flex flex-col gap-2 bg-[#FAF9FA] dark:bg-[#171717] border border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10 rounded-2xl shadow-[0_4px_8px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_12px_rgba(0,0,0,0.4)] z-[9000]"
   >
     <div className="-mx-3 mb-1 flex items-center justify-between h-11 pl-4 pr-2 shrink-0 border-b border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10">
-      <span className="text-[14px] font-medium tracking-[-0.005em] text-[#8C8C8C] dark:text-[#9A9A9A]">Effect</span>
+      <span className="text-[14px] font-medium tracking-[-0.005em] text-[#737373] dark:text-[#ABABAB]">Effect</span>
       <button
         type="button"
         onClick={closeEffectPopup}
         aria-label="Close"
         className="group flex items-center justify-center w-7 h-7 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
       >
-        <X size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
+        <X size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
       </button>
     </div>
     <PopupDropdown
@@ -9320,7 +9354,7 @@ className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed borde
             className="panel-enter w-[240px] px-3 pb-3 flex flex-col gap-2 bg-[#FAF9FA] dark:bg-[#171717] border border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10 rounded-2xl shadow-[0_4px_8px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_12px_rgba(0,0,0,0.4)] z-[9000]"
           >
             <div className="-mx-3 mb-1 flex items-center justify-between h-11 pl-4 pr-2 shrink-0 border-b border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10">
-              <span className="flex items-center gap-2 text-[14px] font-medium tracking-[-0.005em] text-[#8C8C8C] dark:text-[#9A9A9A]">
+              <span className="flex items-center gap-2 text-[14px] font-medium tracking-[-0.005em] text-[#737373] dark:text-[#ABABAB]">
                 <Icon size={16} weight="regular" className="shrink-0" />
                 {label}
               </span>
@@ -9330,7 +9364,7 @@ className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed borde
                 aria-label="Close"
                 className="group flex items-center justify-center w-7 h-7 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
               >
-                <X size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
+                <X size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
               </button>
             </div>
             {fx.type === "fade" && <Scrubber label="Fade" value={fx.fade} min={0} max={100} onChange={(fade) => set({ fade })} />}
@@ -9389,7 +9423,7 @@ className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed borde
             className="panel-enter w-[240px] px-3 pb-3 flex flex-col gap-2 overflow-y-auto custom-scroll bg-[#FAF9FA] dark:bg-[#171717] border border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10 rounded-2xl shadow-[0_4px_8px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_12px_rgba(0,0,0,0.4)] z-[9000]"
           >
             <div className="-mx-3 mb-1 flex items-center justify-between h-11 pl-4 pr-2 shrink-0 sticky top-0 z-10 bg-[#FAF9FA] dark:bg-[#171717] border-b border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10">
-              <span className="flex items-center gap-2 text-[14px] font-medium tracking-[-0.005em] text-[#8C8C8C] dark:text-[#9A9A9A]">
+              <span className="flex items-center gap-2 text-[14px] font-medium tracking-[-0.005em] text-[#737373] dark:text-[#ABABAB]">
                 <Icon size={16} weight="regular" className="shrink-0" />
                 Filter
               </span>
@@ -9399,7 +9433,7 @@ className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed borde
                 aria-label="Close"
                 className="group flex items-center justify-center w-7 h-7 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
               >
-                <X size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
+                <X size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
               </button>
             </div>
             <PopupDropdown value={fx.type} options={GRAD_FX_OPTIONS} onChange={(t) => changeGradFxType(fx.id, t)} />
@@ -9583,7 +9617,7 @@ className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed borde
                   <Scrubber key={k} label={label} value={on(k)} min={min} max={max} onChange={(v) => set({ [k]: v })} />
                 );
                 const H = (t) => (
-                  <span className="pt-2 text-[12px] font-medium tracking-[0.01em] text-[#8C8C8C] dark:text-[#9A9A9A]">{t}</span>
+                  <span className="pt-2 text-[12px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]">{t}</span>
                 );
                 return (
                   <>
@@ -9659,7 +9693,7 @@ className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed borde
                 );
                 const T = (label, k) => <ToggleRow key={k} label={label} checked={!!on(k)} onChange={(v) => set({ [k]: v })} />;
                 const H = (t) => (
-                  <span className="pt-2 text-[12px] font-medium tracking-[0.01em] text-[#8C8C8C] dark:text-[#9A9A9A]">{t}</span>
+                  <span className="pt-2 text-[12px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]">{t}</span>
                 );
                 const speeds = fx.rollingSpeeds ?? D.rollingSpeeds;
                 return (
@@ -9874,6 +9908,7 @@ className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed borde
             {projectsPageOpen && (
         <ProjectsPage
           loading={!projectsLoaded}
+          onMoveProjects={(list, done) => setMoveTarget({ list, done })}
           projects={savedProjects}
           selectedId={selectedProjectId}
           folders={folders}
@@ -9886,7 +9921,7 @@ className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed borde
           }}
           onMenu={toggleProjectMenu}
           menuId={projectMenu?.id ?? null}
-          renamingId={renamingProjectId}
+          renamingId={null}
           renameDraft={renameDraft}
           onRenameDraft={setRenameDraft}
           onRenameCommit={commitRenameProject}
@@ -9910,6 +9945,26 @@ className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed borde
           onDeleteProject={handleDeleteProject}
           onDeleteFolder={handleDeleteFolder}
           onPurgeProject={handlePurgeProject}
+        />
+      )}
+
+      {renamingProjectId && (() => {
+        const rp = savedProjects.find((x) => x.id === renamingProjectId);
+        if (!rp) return null;
+        return <RenameModal name={rp.title} onSave={commitRenameProject} onClose={() => setRenamingProjectId(null)} />;
+      })()}
+
+      {moveTarget && (
+        <MoveModal
+          projects={moveTarget.list}
+          folders={folders}
+          onClose={() => setMoveTarget(null)}
+          onCreateFolder={handleCreateFolder}
+          onMove={(folderId) => {
+            moveTarget.list.forEach((p) => handleMoveProject(p.id, folderId));
+            moveTarget.done?.();
+            setMoveTarget(null);
+          }}
         />
       )}
 
@@ -9948,8 +10003,8 @@ className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed borde
 
             {/* Right toolbar */}
             <div className="w-[300px] shrink-0 flex flex-col rounded-2xl bg-[#FAF9FA] dark:bg-[#171717] overflow-hidden">
-              <div className="flex items-center gap-4 h-11 px-4 border-b border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10">
-                {[0, 1, 2].map((i) => <Skeleton key={i} className="h-3 w-12 rounded" />)}
+              <div className="flex items-center gap-1 h-11 px-2 shrink-0 border-b border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10">
+                {[0, 1, 2].map((i) => <Skeleton key={i} className="h-7 w-16 rounded-lg shrink-0" />)}
               </div>
               <div className="p-4 flex flex-col gap-3 shrink-0">
                 <Skeleton className="h-3 w-16 rounded shrink-0" />

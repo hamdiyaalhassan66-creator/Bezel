@@ -113,7 +113,7 @@ function TextAnimTile({ preset, kind, active, onClick, onEdit, item, dims }) {
         >
           <canvas ref={ref} width={240} height={160} className="absolute inset-0 w-full h-full" />
         </div>
-        <span className={`truncate text-center leading-4 transition-colors ${active ? "text-[#FF47BC]" : "text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"}`}>
+        <span className={`truncate text-center leading-4 transition-colors ${active ? "text-[#FF47BC]" : "text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"}`}>
           {preset ? preset.label : "None"}
         </span>
       </button>
@@ -201,7 +201,7 @@ export function TextAnimPopover({ v, menu, onClose, onSwitch }) {
 
   const seg = "flex items-center p-0.5 w-full h-8 bg-[#F0F0F0] dark:bg-black rounded-2xl";
   const segBtn = (on) => `seg-tab flex-1 h-7 flex items-center justify-center px-2.5 py-1 rounded-[14px] leading-5 transition-colors duration-200 ${on ? SEG_ON : SEG_OFF}`;
-  const sub = "text-[12px] font-medium tracking-[0.01em] text-[#8C8C8C] dark:text-[#9A9A9A]";
+  const sub = "text-[12px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]";
 
   // the same controls are used by the Custom tab and by the preset sub-view
   const controls = (
@@ -284,15 +284,15 @@ export function TextAnimPopover({ v, menu, onClose, onSwitch }) {
             aria-label="Back"
             className="group flex items-center justify-center w-8 h-8 shrink-0 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
           >
-            <CaretLeft size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
+            <CaretLeft size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
           </button>
         )}
         <span className="flex-1 min-w-0 truncate text-left">
-          <span className="section-title text-[#8C8C8C] dark:text-[#9A9A9A]">Text {isIn ? "enter" : "exit"} / </span>
+          <span className="section-title text-[#737373] dark:text-[#ABABAB]">Text {isIn ? "enter" : "exit"} / </span>
           <span className="section-title text-[#3A3A3A] dark:text-[#FAF9FA]">{label}</span>
         </span>
         <button type="button" onClick={onClose} aria-label="Close" className="group flex items-center justify-center w-8 h-8 shrink-0 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
-          <X size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
+          <X size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
         </button>
       </div>
 

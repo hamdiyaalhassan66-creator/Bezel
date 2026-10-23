@@ -177,7 +177,7 @@ const handleTrackPointerDown = (e) => {
       onClick={onClose}
       className="group flex items-center justify-center w-8 h-8 p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
     >
-      <X size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
+      <X size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
     </button>
   </div>
 
@@ -195,7 +195,7 @@ const handleTrackPointerDown = (e) => {
     size={14}
     weight="regular"
     style={{ transform: typeDropdownOpen ? "rotate(180deg)" : "rotate(0deg)" }}
-    className="text-[#8C8C8C] dark:text-[#9A9A9A] transition-transform duration-200"
+    className="text-[#737373] dark:text-[#ABABAB] transition-transform duration-200"
   />
 </button>
     {typeDropdownOpen && (
@@ -222,7 +222,7 @@ const handleTrackPointerDown = (e) => {
         onClick={onFlip}
         className="group flex items-center justify-center w-8 h-8 p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
       >
-        <ArrowsLeftRight size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
+        <ArrowsLeftRight size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
       </button>
     </Tooltip>
     <Tooltip label="Rotate gradient" placement="bottom">
@@ -232,7 +232,7 @@ const handleTrackPointerDown = (e) => {
         onClick={onReset}
         className="group flex items-center justify-center w-8 h-8 p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
       >
-        <ArrowArcRight size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
+        <ArrowArcRight size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
       </button>
     </Tooltip>
   </div>
@@ -318,7 +318,7 @@ const handleTrackPointerDown = (e) => {
                 }}
                 className="group flex items-center justify-center w-8 h-8 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
               >
-                <Plus size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
+                <Plus size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
               </button>
             </Tooltip>
           </div>
@@ -338,7 +338,7 @@ const handleTrackPointerDown = (e) => {
                     className="w-[22px] bg-transparent text-[13px] font-medium tracking-[-0.005em] text-[#3A3A3A] dark:text-[#FAF9FA] outline-none cursor-text [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   />
                   <span
-                    className="text-[13px] font-medium tracking-[-0.005em] text-[#8C8C8C] dark:text-[#9A9A9A] cursor-ew-resize select-none"
+                    className="text-[13px] font-medium tracking-[-0.005em] text-[#737373] dark:text-[#ABABAB] cursor-ew-resize select-none"
                     onPointerDown={makePercentDrag(stop.position, (v) => onStopPositionChange(stop.id, v))}
                   >
                     %
@@ -388,7 +388,7 @@ const handleTrackPointerDown = (e) => {
                       className="w-6 bg-transparent text-[13px] font-medium tracking-[-0.005em] text-[#3A3A3A] dark:text-[#FAF9FA] outline-none text-right cursor-text [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                     />
                     <span
-                      className="text-[13px] font-medium tracking-[-0.005em] text-[#8C8C8C] dark:text-[#9A9A9A] cursor-ew-resize select-none"
+                      className="text-[13px] font-medium tracking-[-0.005em] text-[#737373] dark:text-[#ABABAB] cursor-ew-resize select-none"
                       onPointerDown={makePercentDrag(stop.opacity, (v) => onStopOpacityChange(stop.id, v))}
                     >
                       %
@@ -404,7 +404,7 @@ const handleTrackPointerDown = (e) => {
                     disabled={gradientStops.length <= 1}
                     className="group flex items-center justify-center w-8 h-8 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                   >
-                    <Minus size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
+                    <Minus size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
                   </button>
                 </Tooltip>
               </div>

@@ -7,7 +7,7 @@ import DimensionInput from "../DimensionInput.jsx";
 import { DROPDOWN_TRIGGER, DROPDOWN_CARET } from "../Dropdown.jsx";
 
 export const SEG_ON = "bg-white dark:bg-[#1F1F1F] shadow-[0_4px_2px_rgba(0,0,0,0.03)] text-[#FF47BC]";
-export const SEG_OFF = "text-[#8C8C8C] dark:text-[#9A9A9A]";
+export const SEG_OFF = "text-[#737373] dark:text-[#ABABAB]";
 
 export function SearchField({ value, onChange, placeholder }) {
   return (
@@ -150,7 +150,7 @@ export function ToggleRow({ label, checked, onChange, muted = false, disabled = 
       }`}
     >
       <span
-        className={`${heading ? "section-title " : ""}text-[13px] font-medium tracking-[-0.005em] text-[#8C8C8C] dark:text-[#9A9A9A]`}
+        className={`${heading ? "section-title " : ""}text-[13px] font-medium tracking-[-0.005em] text-[#737373] dark:text-[#ABABAB]`}
       >
         {label}
       </span>
@@ -332,14 +332,14 @@ useLayoutEffect(() => {
             size={16}
             weight="regular"
             className={`transition-colors duration-100 ${
-              isSelected ? "text-[#FF47BC]" : "text-[#8C8C8C] dark:text-[#9A9A9A] opacity-0"
+              isSelected ? "text-[#FF47BC]" : "text-[#737373] dark:text-[#ABABAB] opacity-0"
             }`}
           />
           <span
             className={`text-[12px] font-medium tracking-[-0.005em] transition-colors duration-100 ${
               isSelected
                 ? "text-[#FF47BC]"
-                : "text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
+                : "text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
             }`}
           >
             {opt.label}
@@ -455,7 +455,7 @@ export function ImagePresetDropdown({ value, options, onChange, dropUp = false }
           />
         ) : (
           <div className="absolute inset-0 bg-[#EDEDED] dark:bg-white/5 flex items-center justify-center">
-            <span className="text-[10px] font-medium tracking-[-0.005em] text-[#8C8C8C] dark:text-[#9A9A9A]">
+            <span className="text-[10px] font-medium tracking-[-0.005em] text-[#737373] dark:text-[#ABABAB]">
               None
             </span>
           </div>
@@ -609,7 +609,7 @@ export function ColorOpacityField({ hex, opacity, onHexChange, onOpacityChange, 
           <button
             type="button"
             onClick={onSwatchClick}
-            className="flex-1 min-w-0 text-left text-[13px] font-medium tracking-[-0.005em] text-[#8C8C8C] dark:text-[#9A9A9A]"
+            className="flex-1 min-w-0 text-left text-[13px] font-medium tracking-[-0.005em] text-[#737373] dark:text-[#ABABAB]"
           >
             {labelText}
           </button>
@@ -635,7 +635,7 @@ export function ColorOpacityField({ hex, opacity, onHexChange, onOpacityChange, 
             className="w-6 bg-transparent text-[13px] font-medium tracking-[-0.005em] text-[#3A3A3A] dark:text-[#FAF9FA] outline-none text-right cursor-text [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
           />
           <span
-            className="text-[13px] font-medium tracking-[-0.005em] text-[#8C8C8C] dark:text-[#9A9A9A] cursor-ew-resize"
+            className="text-[13px] font-medium tracking-[-0.005em] text-[#737373] dark:text-[#ABABAB] cursor-ew-resize"
             onPointerDown={makePercentDrag(opacity, onOpacityChange, opacityRef)}
           >
             %
@@ -688,7 +688,7 @@ export function PopupDropdown({ value, options, onChange }) {
     <div className="relative w-full" ref={ref}>
 <button type="button" onClick={() => setOpen((v) => !v)} className={`${DROPDOWN_TRIGGER} w-full`}>
   <span className="flex items-center gap-2 min-w-0">
-    {selected?.Icon && <selected.Icon size={16} weight="regular" className="shrink-0 text-[#8C8C8C] dark:text-[#9A9A9A]" />}
+    {selected?.Icon && <selected.Icon size={16} weight="regular" className="shrink-0 text-[#737373] dark:text-[#ABABAB]" />}
     <span className="truncate text-[13px] font-medium tracking-[-0.005em] text-[#3A3A3A] dark:text-[#FAF9FA]">{selected?.label ?? value}</span>
   </span>
   <CaretDown size={16} weight="regular" style={{ transform: open ? "rotate(180deg)" : "rotate(0deg)" }} className={DROPDOWN_CARET} />
@@ -738,10 +738,10 @@ export function AppearanceHeader({ label, onClick, children }) {
       }}
       className="group/hdr flex items-center justify-between h-8 -my-1 cursor-pointer select-none"
     >
-      <span className="text-[13px] font-medium tracking-[0.01em] text-[#8C8C8C] dark:text-[#9A9A9A]">{label}</span>
+      <span className="text-[13px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]">{label}</span>
       <span
         aria-hidden
-        className="flex items-center justify-center w-6 h-6 rounded-lg text-[#8C8C8C] dark:text-[#9A9A9A] transition-[background-color,color,transform] duration-150 group-hover/hdr:bg-black/5 dark:group-hover/hdr:bg-white/5 group-hover/hdr:text-[#3A3A3A] dark:group-hover/hdr:text-white group-active/hdr:scale-[0.94]"
+        className="flex items-center justify-center w-6 h-6 rounded-lg text-[#737373] dark:text-[#ABABAB] transition-[background-color,color,transform] duration-150 group-hover/hdr:bg-black/5 dark:group-hover/hdr:bg-white/5 group-hover/hdr:text-[#3A3A3A] dark:group-hover/hdr:text-white group-active/hdr:scale-[0.94]"
       >
         {children}
       </span>
@@ -873,7 +873,7 @@ export function SectionHeader({ label, open, onToggle }) {
       <CaretRight
         size={16}
         weight="regular"
-        className={`shrink-0 text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-[color,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] ${open ? "rotate-90" : "rotate-0"}`}
+        className={`shrink-0 text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-[color,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] ${open ? "rotate-90" : "rotate-0"}`}
       />
       <span className="section-title text-[14px] font-medium tracking-[0.01em] text-[#3A3A3A] dark:text-[#FAF9FA]">{label}</span>
     </button>

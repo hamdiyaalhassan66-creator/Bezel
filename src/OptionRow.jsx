@@ -17,7 +17,7 @@ export default function OptionRow({ label, sublabel, selected, onClick, leading,
             className={`flex items-center shrink-0 transition-colors duration-100 ${
               selected
                 ? "text-[#FF47BC]"
-                : "text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
+                : "text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
             }`}
           >
             {leading}
@@ -27,7 +27,7 @@ export default function OptionRow({ label, sublabel, selected, onClick, leading,
           className={`truncate text-[12px] font-medium tracking-[-0.005em] transition-colors duration-100 ${
             selected
               ? "text-[#FF47BC]"
-              : "text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
+              : "text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
           }`}
         >
           {label}
@@ -36,13 +36,13 @@ export default function OptionRow({ label, sublabel, selected, onClick, leading,
           <>
             <span
               aria-hidden
-              className={`shrink-0 ${selected ? "text-[#FF47BC]/80" : "text-[#8C8C8C] dark:text-[#9A9A9A]"}`}
+              className={`shrink-0 ${selected ? "text-[#FF47BC]/80" : "text-[#737373] dark:text-[#ABABAB]"}`}
               style={{ fontSize: 10, fontWeight: 500 }}
             >
               -
             </span>
             <span
-              className={`shrink-0 tabular-nums ${selected ? "text-[#FF47BC]/80" : "text-[#8C8C8C] dark:text-[#9A9A9A]"}`}
+              className={`shrink-0 tabular-nums ${selected ? "text-[#FF47BC]/80" : "text-[#737373] dark:text-[#ABABAB]"}`}
               style={{ fontSize: 10, fontWeight: 500 }}
             >
               {sublabel}

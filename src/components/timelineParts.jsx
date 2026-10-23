@@ -22,8 +22,8 @@ export function useDismissable(active, selector, onClose) {
 
 export function VidBtn({ label, shortcut, tone = "default", children, ...rest }) {
   const tones = {
-    default: "text-[#8C8C8C] dark:text-[#9A9A9A] enabled:hover:text-[#3A3A3A] dark:enabled:hover:text-[#FAF9FA]",
-    strong: "text-[#8C8C8C] dark:text-[#9A9A9A]",
+    default: "text-[#737373] dark:text-[#ABABAB] enabled:hover:text-[#3A3A3A] dark:enabled:hover:text-[#FAF9FA]",
+    strong: "text-[#737373] dark:text-[#ABABAB]",
     pink: "text-[#FF47BC]",
     danger: "text-[#F04438]",
   };

@@ -209,7 +209,7 @@ export function VideoTemplateCard({ tpl, index, label, active, renderKey, render
       </div>
       <span
         className={`tpl-title truncate text-left leading-4 transition-colors ${
-          active ? "text-[#FF47BC]" : "text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
+          active ? "text-[#FF47BC]" : "text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
         }`}
       >
         {label}
@@ -425,7 +425,7 @@ export function FrameVideoTemplateCard({ tpl, index, label, active, renderKey, r
       </div>
       <span
         className={`tpl-title truncate text-left leading-4 transition-colors ${
-          active ? "text-[#FF47BC]" : "text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
+          active ? "text-[#FF47BC]" : "text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
         }`}
       >
         {label}

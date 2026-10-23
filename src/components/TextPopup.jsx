@@ -17,15 +17,15 @@ import {
 } from "../lib/textUtils.js";
 
 function TextAdvanced({ value, set, onBack, onClose, onSwatchClick, makePercentDrag, onOpenDecoration }) {
-  const sectionLabel = "section-title text-[#8C8C8C] dark:text-[#9A9A9A]";
-  const smallLabel = "text-[12px] font-medium tracking-[0.01em] text-[#8C8C8C] dark:text-[#9A9A9A]";
+  const sectionLabel = "section-title text-[#737373] dark:text-[#ABABAB]";
+  const smallLabel = "text-[12px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]";
   const seg = "flex items-center p-0.5 w-full h-8 bg-[#F0F0F0] dark:bg-black rounded-2xl";
   const segBtn = (on) =>
     `seg-tab flex-1 h-7 flex items-center justify-center gap-2 px-2.5 py-1 rounded-[14px] leading-5 transition-colors duration-200 ${
       on ? SEG_ON : SEG_OFF
     }`;
   const headBtn = "group flex items-center justify-center w-8 h-8 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors";
-  const headIcon = "text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors";
+  const headIcon = "text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors";
 
   return (
     <>
@@ -79,7 +79,7 @@ function TextAdvanced({ value, set, onBack, onClose, onSwatchClick, makePercentD
                   onClick={onOpenDecoration}
                   className="group flex items-center justify-center w-8 h-8 shrink-0 rounded-[10px] bg-[#EDEDED] dark:bg-[#292929] hover:bg-[#E3E3E3] dark:hover:bg-[#333333] transition-[background-color,transform] duration-150 active:scale-[0.94]"
                 >
-                  <CaretRight size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
+                  <CaretRight size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
                 </button>
               </Tooltip>
             </div>
@@ -194,14 +194,14 @@ const DECO_STYLES = [
 
 function TextDecoration({ value, set, onBack, onClose, onSwatchClick, makePercentDrag }) {
   const isUnder = value.decoration !== "line-through";
-  const smallLabel = "text-[12px] font-medium tracking-[0.01em] text-[#8C8C8C] dark:text-[#9A9A9A]";
+  const smallLabel = "text-[12px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]";
   const seg = "flex items-center p-0.5 w-full h-8 bg-[#F0F0F0] dark:bg-black rounded-2xl";
   const segBtn = (on) =>
     `seg-tab flex-1 h-7 flex items-center justify-center gap-2 px-2.5 py-1 rounded-[14px] leading-5 transition-colors duration-200 ${
       on ? SEG_ON : SEG_OFF
     }`;
   const headBtn = "group flex items-center justify-center w-8 h-8 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors";
-  const headIcon = "text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors";
+  const headIcon = "text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors";
 
   return (
     <>
@@ -210,7 +210,7 @@ function TextDecoration({ value, set, onBack, onClose, onSwatchClick, makePercen
           <CaretLeft size={16} weight="regular" className={headIcon} />
         </button>
         <span>
-          <span className="section-title text-[#8C8C8C] dark:text-[#9A9A9A]">Decoration / </span>
+          <span className="section-title text-[#737373] dark:text-[#ABABAB]">Decoration / </span>
           <span className="section-title text-[#3A3A3A] dark:text-[#FAF9FA]">{isUnder ? "Underline" : "Strikethrough"}</span>
         </span>
         <button type="button" onClick={onClose} aria-label="Close" className={headBtn}>
@@ -404,7 +404,7 @@ export function TextPopup({ popupRef, anchorRef, toolbarRef, value, onChange, on
   };
 
   const heading = "section-title text-[13px] font-medium tracking-[0.01em] text-[#3A3A3A] dark:text-[#FAF9FA]";
-  const label = "text-[12px] font-medium tracking-[0.01em] text-[#8C8C8C] dark:text-[#9A9A9A]";
+  const label = "text-[12px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]";
   const section = "flex flex-col gap-3 p-4 border-b border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10";
   const seg = "flex items-center p-0.5 w-full h-8 bg-[#F0F0F0] dark:bg-black rounded-2xl";
   const segBtn = (on) =>
@@ -483,7 +483,7 @@ export function TextPopup({ popupRef, anchorRef, toolbarRef, value, onChange, on
           aria-label="Close"
           className="group flex items-center justify-center w-8 h-8 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
         >
-          <X size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
+          <X size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
         </button>
       </div>
 
@@ -508,7 +508,7 @@ export function TextPopup({ popupRef, anchorRef, toolbarRef, value, onChange, on
                       className={`transition-colors ${
                         isAligned(key)
                           ? "text-[#FF47BC]"
-                          : "text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
+                          : "text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
                       }`}
                     />
                   </button>
@@ -532,7 +532,7 @@ export function TextPopup({ popupRef, anchorRef, toolbarRef, value, onChange, on
               distMenu ? "bg-black/5 dark:bg-white/10" : "hover:bg-black/5 dark:hover:bg-white/5"
             }`}
           >
-            <Rows size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
+            <Rows size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
           </button>
         </div>
       </div>
@@ -557,7 +557,7 @@ export function TextPopup({ popupRef, anchorRef, toolbarRef, value, onChange, on
               {linkWH ? (
                 <LockSimple size={16} weight="regular" className="text-[#FF47BC]" />
               ) : (
-                <LockSimpleOpen size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
+                <LockSimpleOpen size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
               )}
             </button>
           </Tooltip>
@@ -616,7 +616,7 @@ export function TextPopup({ popupRef, anchorRef, toolbarRef, value, onChange, on
                   onClick={() => fileRef.current?.click()}
                   className={`${DROPDOWN_TRIGGER} w-8 shrink-0 !justify-center !px-0`}
                 >
-                  <UploadSimple size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A]" />
+                  <UploadSimple size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB]" />
                 </button>
               </Tooltip>
             </div>
@@ -672,7 +672,7 @@ export function TextPopup({ popupRef, anchorRef, toolbarRef, value, onChange, on
           </div>
 
           <div className="flex flex-col gap-2">
-            <label className="text-[13px] font-medium tracking-[0.01em] text-[#8C8C8C] dark:text-[#9A9A9A]">Z index</label>
+            <label className="text-[13px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]">Z index</label>
             <Scrubber
               compact
               label=""
@@ -688,7 +688,7 @@ export function TextPopup({ popupRef, anchorRef, toolbarRef, value, onChange, on
       {/* Advanced settings */}
       <div className="p-4">
         <button type="button" onClick={() => setAdvanced(true)} className="group flex items-center gap-2 w-full select-none">
-          <CaretRight size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
+          <CaretRight size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
           <span className="section-title text-[14px] font-medium tracking-[0.01em] text-[#3A3A3A] dark:text-[#FAF9FA]">Advanced settings</span>
         </button>
       </div>

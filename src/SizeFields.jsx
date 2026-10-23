@@ -80,7 +80,7 @@ export function OffsetField({ label, value, onChange, dimmed = false, min = -Inf
   return (
     <label {...altScrub.props} className={`flex flex-1 min-w-0 ${className} items-center gap-2 p-2 box-border cursor-text bg-[#EDEDED] dark:bg-[#292929] hover:bg-[#E3E3E3] dark:hover:bg-[#333333] focus-within:bg-[#E3E3E3] dark:focus-within:bg-[#333333] rounded-lg border border-transparent focus-within:border-[#FF47BC] transition-[colors,opacity] ${dimmed ? "opacity-50 focus-within:opacity-100" : ""} ${altScrub.cursorClass}`}>
       {!unit && (
-        <span className="shrink-0 text-[12px] leading-[14px] font-medium tracking-[-0.005em] text-[#8C8C8C] dark:text-[#9A9A9A]">{label}</span>
+        <span className="shrink-0 text-[12px] leading-[14px] font-medium tracking-[-0.005em] text-[#737373] dark:text-[#ABABAB]">{label}</span>
       )}
       <input
         value={text}
@@ -100,7 +100,7 @@ export function OffsetField({ label, value, onChange, dimmed = false, min = -Inf
         className="flex-1 min-w-0 bg-transparent outline-none text-[12px] leading-[14px] font-medium tracking-[-0.005em] text-[#3A3A3A] dark:text-[#FAF9FA]"
       />
       {unit && (
-        <span className="shrink-0 text-[12px] leading-[14px] font-medium tracking-[-0.005em] text-[#8C8C8C] dark:text-[#9A9A9A] select-none">{unit}</span>
+        <span className="shrink-0 text-[12px] leading-[14px] font-medium tracking-[-0.005em] text-[#737373] dark:text-[#ABABAB] select-none">{unit}</span>
       )}
     </label>
   );
@@ -124,7 +124,7 @@ export function SizeLockRow({ width, height, onWidthChange, onHeightChange, lock
           {locked ? (
             <LockSimple size={16} weight="regular" className="text-[#FF47BC]" />
           ) : (
-            <LockSimpleOpen size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
+            <LockSimpleOpen size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
           )}
         </button>
       </Tooltip>

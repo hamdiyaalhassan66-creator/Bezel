@@ -331,7 +331,7 @@ const canvasStyle = colorFormat === "HSL"
           onClick={onClose}
           className="group flex items-center justify-center w-7 h-7 p-1 rounded-[8px] hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
         >
-          <X size={20} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
+          <X size={20} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
         </button>
       </div>
 
@@ -411,7 +411,7 @@ const canvasStyle = colorFormat === "HSL"
                 size={14}
                 weight="regular"
                 style={{ transform: formatDropdownOpen ? "rotate(180deg)" : "rotate(0deg)" }}
-                className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-[transform,color] duration-200"
+                className="text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-[transform,color] duration-200"
               />
             </button>
             {formatDropdownOpen && (
@@ -454,7 +454,7 @@ const canvasStyle = colorFormat === "HSL"
             }}
             className="group flex items-center justify-center w-7 h-7 p-1 rounded-[8px] shrink-0 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
           >
-            <Eyedropper size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
+            <Eyedropper size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
           </button>
           </Tooltip>
         </div>
@@ -518,7 +518,7 @@ const canvasStyle = colorFormat === "HSL"
               }}
               className="w-6 bg-transparent text-[13px] font-medium tracking-[-0.005em] text-[#3A3A3A] dark:text-[#FAF9FA] outline-none text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
             />
-            <span className="text-[13px] font-medium tracking-[-0.005em] text-[#8C8C8C] dark:text-[#9A9A9A] cursor-ew-resize">%</span>
+            <span className="text-[13px] font-medium tracking-[-0.005em] text-[#737373] dark:text-[#ABABAB] cursor-ew-resize">%</span>
           </div>
         </div>
       </div>
@@ -533,7 +533,7 @@ const canvasStyle = colorFormat === "HSL"
               onClick={() => onSaveColor(hex)}
               className="group flex items-center justify-center w-7 h-7 p-1 rounded-[8px] hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
             >
-              <Plus size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
+              <Plus size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
             </button>
           </Tooltip>
         </div>

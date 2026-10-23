@@ -99,7 +99,7 @@ export function CustomAnimEditor({ target, spec, onChange }) {
       from: { ...from, ...Object.fromEntries(CA_PROPS[key].keys.map((k) => [k, rest[k]])) },
       use: active.filter((k) => k !== key),
     });
-  const sub = "text-[12px] font-medium tracking-[0.01em] text-[#8C8C8C] dark:text-[#9A9A9A]";
+  const sub = "text-[12px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]";
   const rawEase = spec?.ease ?? (target === "bg" ? "smooth" : "expo-out");
   const ease = typeof rawEase === "string" ? rawEase : rawEase.id;
 
@@ -124,7 +124,7 @@ export function CustomAnimEditor({ target, spec, onChange }) {
                       onClick={() => remove(key)}
                       className="group flex items-center justify-center w-6 h-6 rounded-md hover:bg-[#F04438]/10 transition-[background-color,transform] duration-150 active:scale-[0.94]"
                     >
-                      <Minus size={14} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#F04438] transition-colors" />
+                      <Minus size={14} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover:text-[#F04438] transition-colors" />
                     </button>
                   </Tooltip>
                 </div>

@@ -5,7 +5,7 @@ import OptionRow from "./OptionRow.jsx";
 
 export const DROPDOWN_TRIGGER =
   "h-8 flex flex-row items-center justify-between gap-2.5 px-2.5 py-2 box-border bg-white dark:bg-[#292929] hover:bg-[#F5F5F5] dark:hover:bg-[#333333] border border-[#222222]/[0.06] dark:border-[#FAF9FA]/[0.06] rounded-[10px] text-left transition-colors duration-200";
-export const DROPDOWN_CARET = "shrink-0 text-[#8C8C8C] transition-transform duration-200";
+export const DROPDOWN_CARET = "shrink-0 text-[#737373] transition-transform duration-200";
 
 export default function ToolbarDropdown({ value, options, onChange, dropUp = false, merged = false }) {
   const [open, setOpen] = useState(false);
@@ -63,13 +63,13 @@ export default function ToolbarDropdown({ value, options, onChange, dropUp = fal
             <>
               <span
                 aria-hidden
-                className="shrink-0 text-[#8C8C8C] dark:text-[#9A9A9A]"
+                className="shrink-0 text-[#737373] dark:text-[#ABABAB]"
                 style={{ fontSize: 10, fontWeight: 500 }}
               >
                 -
               </span>
               <span
-                className="shrink-0 tabular-nums text-[#8C8C8C] dark:text-[#9A9A9A]"
+                className="shrink-0 tabular-nums text-[#737373] dark:text-[#ABABAB]"
                 style={{ fontSize: 10, fontWeight: 500 }}
               >
                 {selected.sublabel}
@@ -96,7 +96,7 @@ export default function ToolbarDropdown({ value, options, onChange, dropUp = fal
           {isGrouped
             ? options.map((group, i) => (
                 <div key={group.category} className={`flex flex-col gap-1 w-full ${i > 0 ? "mt-1 pt-1 border-t border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10" : ""}`}>
-                  <span className="block px-1 pt-1 pb-1 text-[11px] font-semibold tracking-[0.02em] uppercase text-[#8C8C8C] dark:text-[#9A9A9A]">
+                  <span className="block px-1 pt-1 pb-1 text-[11px] font-semibold tracking-[0.02em] uppercase text-[#737373] dark:text-[#ABABAB]">
                     {group.category}
                   </span>
                   {group.options.map(renderOption)}

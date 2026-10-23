@@ -15,7 +15,7 @@ export default function AspectLockButton({ locked, onToggle }) {
           className={`flex items-center justify-center w-6 h-6 rounded-md transition-[color,transform] duration-150 active:scale-[0.9] ${
             locked
               ? "text-[#FF47BC]"
-              : "text-[#8C8C8C] dark:text-[#9A9A9A] hover:text-[#3A3A3A] dark:hover:text-[#FAF9FA]"
+              : "text-[#737373] dark:text-[#ABABAB] hover:text-[#3A3A3A] dark:hover:text-[#FAF9FA]"
           }`}
         >
           <Icon size={16} weight="regular" />

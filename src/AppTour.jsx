@@ -237,11 +237,11 @@ export default function AppTour({ onClose, kind = "app" }) {
             aria-label="Skip tour"
             className="group -mt-1 -mr-1 flex items-center justify-center w-7 h-7 shrink-0 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-[background-color,transform] duration-150 active:scale-[0.94]"
           >
-            <X size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
+            <X size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
           </button>
         </div>
 
-        <p className="text-[13px] leading-[18px] font-medium tracking-[-0.005em] text-[#8C8C8C] dark:text-[#9A9A9A]">
+        <p className="text-[13px] leading-[18px] font-medium tracking-[-0.005em] text-[#737373] dark:text-[#ABABAB]">
           {step.body}
         </p>
 

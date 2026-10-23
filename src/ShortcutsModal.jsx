@@ -214,21 +214,21 @@ export default function ShortcutsModal({ onClose }) {
               onClick={onClose}
               className="group flex items-center justify-center w-7 h-7 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-[background-color,transform] duration-150 active:scale-[0.94] shrink-0"
             >
-              <X size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
+              <X size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
             </button>
           </Tooltip>
         </div>
 
         <div className="px-4 pt-4 shrink-0 bg-white dark:bg-[#1A1A1D] border-x border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10">
           <label className="flex items-center gap-2 w-full h-[33px] p-2 box-border cursor-text bg-[#F5F5F5] dark:bg-[#292929] border border-[#3A3A3A]/5 dark:border-[#FAF9FA]/5 focus-within:border-[#FF47BC] dark:focus-within:border-[#FF47BC] rounded-[10px] transition-colors duration-150">
-            <MagnifyingGlass size={14} weight="regular" className="shrink-0 text-[#8C8C8C] dark:text-[#707070]" />
+            <MagnifyingGlass size={14} weight="regular" className="shrink-0 text-[#737373] dark:text-[#707070]" />
             <input
               ref={searchRef}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search shortcuts"
               spellCheck={false}
-              className="w-full min-w-0 bg-transparent outline-none text-[12px] leading-[15px] font-medium tracking-[-0.005em] text-[#3A3A3A] dark:text-[#FAF9FA] placeholder:text-[#8C8C8C] dark:placeholder:text-[#707070]"
+              className="w-full min-w-0 bg-transparent outline-none text-[12px] leading-[15px] font-medium tracking-[-0.005em] text-[#3A3A3A] dark:text-[#FAF9FA] placeholder:text-[#737373] dark:placeholder:text-[#707070]"
             />
           </label>
         </div>
@@ -236,13 +236,13 @@ export default function ShortcutsModal({ onClose }) {
         <div className="relative flex flex-col flex-1 min-h-0 overflow-hidden bg-white dark:bg-[#1A1A1D] border-x border-b border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10 rounded-b-3xl">
           <div ref={scrollRef} className="flex flex-col gap-6 p-4 flex-1 min-h-0 overflow-y-auto custom-scroll">
           {visibleGroups.length === 0 && (
-            <span className="py-6 text-center text-[12px] font-medium tracking-[-0.005em] text-[#8C8C8C] dark:text-[#9A9A9A]">
+            <span className="py-6 text-center text-[12px] font-medium tracking-[-0.005em] text-[#737373] dark:text-[#ABABAB]">
               No shortcuts match your search
             </span>
           )}
           {visibleGroups.map((group) => (
             <section key={group.title} className="flex flex-col gap-1">
-              <h3 className="device-title mb-1 uppercase text-[#8C8C8C] dark:text-[#9A9A9A]">
+              <h3 className="device-title mb-1 uppercase text-[#737373] dark:text-[#ABABAB]">
                 {group.title}
               </h3>
               {group.items.map((item) => (

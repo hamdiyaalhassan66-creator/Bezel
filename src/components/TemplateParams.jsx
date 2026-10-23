@@ -3,7 +3,7 @@ import { Scrubber, PopupDropdown, SEG_ON, SEG_OFF } from "./controls.jsx";
 import { EaseBezierEditor } from "./EasePopover.jsx";
 import { VID_EASE_PRESETS, VID_EASE_CUSTOM_DEFAULT } from "../lib/videoMath.js";
 
-const LABEL = "text-[13px] font-medium tracking-[0.01em] text-[#8C8C8C] dark:text-[#9A9A9A]";
+const LABEL = "text-[13px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]";
 
 const EASE_OPTIONS = [
   ...VID_EASE_PRESETS.map((x) => ({ value: x.id, label: x.label })),

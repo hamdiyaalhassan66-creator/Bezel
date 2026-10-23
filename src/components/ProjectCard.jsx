@@ -1,5 +1,5 @@
 import React from "react";
-import { DotsThreeVertical, Devices, CornersOut, FilmStrip, Folder, PushPin, Check } from "@phosphor-icons/react";
+import { DotsThree, Devices, CornersOut, FilmStrip, Folder, PushPin, Check } from "@phosphor-icons/react";
 import { formatEditedAt } from "../lib/appUtils.js";
 
 export function ProjectCard({
@@ -7,7 +7,7 @@ export function ProjectCard({
   renaming, renameDraft, onRenameDraft, onRenameCommit, onRenameCancel,
   thumbClass = "h-[117px]", layout = "card", showKind = false,
   draggable = false, dragging = false, onDragStart, onDragEnd, index, metaText,
-  checked = false, onCheck, onPin,
+  checked = false, onCheck, onPin, anyChecked = false,
 }) {
   const KindIcon = p.kind === "folder" ? Folder : p.kind === "animation" ? FilmStrip : p.kind === "frame" ? CornersOut : Devices;
 
@@ -26,7 +26,7 @@ export function ProjectCard({
           e.currentTarget.blur();
         }
       }}
-      className="w-full h-5 -my-0.5 px-1 rounded-md bg-[#EDEDED] dark:bg-[#292929] border border-[#FF47BC] outline-none text-[12px] font-medium tracking-[-0.005em] text-[#8C8C8C] dark:text-[#9A9A9A]"
+      className="w-full h-5 -my-0.5 px-1 rounded-md bg-[#EDEDED] dark:bg-[#292929] border border-[#FF47BC] outline-none text-[12px] font-medium tracking-[-0.005em] text-[#737373] dark:text-[#ABABAB]"
     />
   ) : (
     <span
@@ -41,7 +41,7 @@ export function ProjectCard({
   const meta = (
     <span
       className={`w-full text-left text-[12px] font-medium leading-4 tracking-[-0.005em] ${
-        selected ? "text-[#FF47BC]/80" : "text-[#8C8C8C] dark:text-[#9A9A9A]"
+        selected ? "text-[#FF47BC]/80" : "text-[#737373] dark:text-[#ABABAB]"
       }`}
     >
       {metaText ?? <>{formatEditedAt(p.editedAt)}{{ mockup: " · Mockup", frame: " · Frame", animation: " · Animation" }[p.kind] ?? ""}</>}
@@ -60,13 +60,13 @@ export function ProjectCard({
         menuOpen ? "bg-black/5 dark:bg-white/10" : "hover:bg-black/5 dark:hover:bg-white/5"
       }`}
     >
-      <DotsThreeVertical
-        size={16}
-        weight="regular"
+      <DotsThree
+        size={20}
+        weight="bold"
         className={`transition-colors ${
           selected
             ? "text-[#FF47BC]/80 group-hover/dots:text-[#FF47BC]"
-            : "text-[#8C8C8C] dark:text-[#9A9A9A] group-hover/dots:text-[#3A3A3A] dark:group-hover/dots:text-[#FAF9FA]"
+            : "text-[#737373] dark:text-[#ABABAB] group-hover/dots:text-[#3A3A3A] dark:group-hover/dots:text-[#FAF9FA]"
         }`}
       />
     </button>
@@ -75,7 +75,7 @@ export function ProjectCard({
   const badge = showKind && (
     <div
       className={`flex items-center justify-center w-8 h-8 rounded-full shrink-0 ${
-        selected ? "bg-[#FF47BC]/10 text-[#FF47BC]" : "bg-[#EDEDED] dark:bg-[#292929] text-[#8C8C8C] dark:text-[#9A9A9A]"
+        selected ? "bg-[#FF47BC]/10 text-[#FF47BC]" : "bg-[#EDEDED] dark:bg-[#292929] text-[#737373] dark:text-[#ABABAB]"
       }`}
     >
       <KindIcon size={16} weight="regular" />
@@ -122,13 +122,13 @@ export function ProjectCard({
             e.stopPropagation();
             onCheck();
           }}
-          className={`absolute top-2 left-2 z-10 flex items-center justify-center w-5 h-5 rounded-md border transition-[opacity,background-color,border-color,transform] duration-150 active:scale-[0.92] focus-visible:opacity-100 group-hover:opacity-100 ${
+          className={`absolute top-2 left-2 z-10 flex items-center justify-center w-4 h-4 rounded-[5px] border transition-[opacity,background-color,border-color,transform] duration-150 active:scale-[0.92] focus-visible:opacity-100 group-hover:opacity-100 ${
             checked
               ? "opacity-100 bg-[#FF47BC] border-[#FF47BC] text-white"
-              : "opacity-0 bg-white/80 dark:bg-[#292929]/80 border-[#3A3A3A]/20 dark:border-[#FAF9FA]/20 hover:bg-white dark:hover:bg-[#292929]"
+              : `${anyChecked ? "opacity-100" : "opacity-0"} bg-white/80 dark:bg-[#292929]/80 border-[#3A3A3A]/20 dark:border-[#FAF9FA]/20 hover:bg-white dark:hover:bg-[#292929]`
           }`}
         >
-          {checked && <Check size={12} weight="bold" />}
+          {checked && <Check size={10} weight="bold" />}
         </button>
       )}
       {onPin && (

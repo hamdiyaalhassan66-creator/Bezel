@@ -30,7 +30,7 @@ export function DevicePanel({
               <div className="overflow-hidden">
                 <div className="pt-4 flex flex-col gap-4">
                   <div className="flex flex-col gap-2">
-                    <label className="text-[13px] font-medium tracking-[0.01em] text-[#8C8C8C] dark:text-[#9A9A9A]">Type</label>
+                    <label className="text-[13px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]">Type</label>
                     <ToolbarDropdown
                       value={deviceType}
                       options={CATEGORY_DEVICE_OPTIONS[deviceCategory] || DEVICE_TYPE_OPTIONS}
@@ -39,7 +39,7 @@ export function DevicePanel({
                   </div>
                   {isTablet && (
                     <div className="flex flex-col gap-2">
-                      <label className="text-[13px] font-medium tracking-[0.01em] text-[#8C8C8C] dark:text-[#9A9A9A]">Orientation</label>
+                      <label className="text-[13px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]">Orientation</label>
                       <div className="flex items-center p-0.5 w-full h-8 bg-[#F0F0F0] dark:bg-black rounded-2xl">
                         {["portrait", "landscape"].map((o) => (
                           <button
@@ -56,13 +56,13 @@ export function DevicePanel({
                     </div>
                   )}
                   <div className="flex flex-col gap-2">
-                    <label className="text-[13px] font-medium tracking-[0.01em] text-[#8C8C8C] dark:text-[#9A9A9A]">Body</label>
+                    <label className="text-[13px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]">Body</label>
                    <FinishDropdown value={finish} options={finishOptions} onChange={handleFinishChange} />
                   </div>
 
 {finish === "Custom" && (
   <div className="flex flex-col gap-2">
-    <label className="text-[12px] font-medium tracking-[0.01em] text-[#8C8C8C] dark:text-[#9A9A9A]">Custom</label>
+    <label className="text-[12px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]">Custom</label>
     <ColorOpacityField
       hex={bodyHex}
       opacity={bodyOpacity}
@@ -75,16 +75,16 @@ export function DevicePanel({
 )}
    {isWatch && (
      <div className="fx-enter flex flex-col gap-2">
-       <label className="text-[13px] font-medium tracking-[0.01em] text-[#8C8C8C] dark:text-[#9A9A9A]">Strap style</label>
+       <label className="text-[13px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]">Strap style</label>
        <ToolbarDropdown value={strapStyle} options={getStrapStyleOptions(deviceType)} onChange={setStrapStyle} />
-       <label className="text-[13px] font-medium tracking-[0.01em] text-[#8C8C8C] dark:text-[#9A9A9A]">Strap finish</label>
+       <label className="text-[13px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]">Strap finish</label>
        <FinishDropdown value={strap} options={WATCH_STRAPS} onChange={setStrap} />
      </div>
    )}
 
                   <div className="flex flex-col gap-2">
   <div className="flex flex-col gap-2">
-    <label className="text-[13px] font-medium tracking-[0.01em] text-[#8C8C8C] dark:text-[#9A9A9A]">Screen reflection</label>
+    <label className="text-[13px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]">Screen reflection</label>
     <div className="flex items-center p-0.5 w-full h-8 bg-[#F0F0F0] dark:bg-black rounded-2xl">
       <button
         onClick={() => handleReflectionModeChange("shiny")}
@@ -113,7 +113,7 @@ export function DevicePanel({
 </div>
             <div className="flex flex-col gap-2">
               <div className="flex flex-col gap-2">
-                    <label className="text-[13px] font-medium tracking-[0.01em] text-[#8C8C8C] dark:text-[#9A9A9A]">Lighting</label>
+                    <label className="text-[13px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]">Lighting</label>
                     <ToolbarDropdown value={lighting} options={LIGHTING_OPTIONS} onChange={handleLightingChange} />
                   </div>
 

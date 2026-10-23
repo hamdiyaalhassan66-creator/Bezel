@@ -52,11 +52,11 @@ function EasePreview({ fn }) {
   return (
     <div className="rounded-[10px] bg-[#F0F0F0] dark:bg-[#1F1F1F] p-2">
       <svg viewBox={`0 0 ${W} 112`} className="w-full block overflow-visible">
-        <line x1="10" x2={W - 10} y1={geo.Y(0)} y2={geo.Y(0)} stroke="#8C8C8C" strokeOpacity="0.35" strokeDasharray="3 3" />
-        <line x1="10" x2={W - 10} y1={geo.Y(1)} y2={geo.Y(1)} stroke="#8C8C8C" strokeOpacity="0.35" strokeDasharray="3 3" />
+        <line x1="10" x2={W - 10} y1={geo.Y(0)} y2={geo.Y(0)} stroke="#737373" strokeOpacity="0.35" strokeDasharray="3 3" />
+        <line x1="10" x2={W - 10} y1={geo.Y(1)} y2={geo.Y(1)} stroke="#737373" strokeOpacity="0.35" strokeDasharray="3 3" />
         <path d={geo.d} fill="none" stroke="#FF47BC" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
         <circle ref={dot} r="4" cx={geo.X(0)} cy={geo.Y(0)} fill="#FAF9FA" stroke="#FF47BC" strokeWidth="2" />
-        <line x1="28" x2={W - 28} y1="102" y2="102" stroke="#8C8C8C" strokeOpacity="0.35" strokeWidth="2" strokeLinecap="round" />
+        <line x1="28" x2={W - 28} y1="102" y2="102" stroke="#737373" strokeOpacity="0.35" strokeWidth="2" strokeLinecap="round" />
         <circle ref={ball} r="5" cx="28" cy="102" fill="#FF47BC" />
       </svg>
     </div>
@@ -79,7 +79,7 @@ function EaseRow({ spec, label, active, onClick, onEdit }) {
       className={`group flex items-center w-full h-8 rounded-lg transition-colors duration-100 ${
         active
           ? "bg-[#FF47BC]/10 text-[#FF47BC]"
-          : "text-[#8C8C8C] dark:text-[#9A9A9A] hover:bg-[#F2F2F2] dark:hover:bg-[#1F1F1F] hover:text-[#3A3A3A] dark:hover:text-[#FAF9FA]"
+          : "text-[#737373] dark:text-[#ABABAB] hover:bg-[#F2F2F2] dark:hover:bg-[#1F1F1F] hover:text-[#3A3A3A] dark:hover:text-[#FAF9FA]"
       }`}
     >
       <button type="button" onClick={onClick} className="flex items-center flex-1 min-w-0 h-full gap-2 pl-2 text-left">
@@ -136,7 +136,7 @@ export function EaseBezierEditor({ p, onChange }) {
     <div className="flex flex-col gap-2">
       <div className="rounded-[10px] bg-[#F0F0F0] dark:bg-[#1F1F1F] p-2">
         <svg ref={svgRef} viewBox={`0 0 ${VW} ${VH}`} className="w-full block touch-none select-none">
-          <rect x={X(0)} y={Y(1)} width={PW} height={Y(0) - Y(1)} fill="none" stroke="#8C8C8C" strokeOpacity="0.35" strokeDasharray="3 3" />
+          <rect x={X(0)} y={Y(1)} width={PW} height={Y(0) - Y(1)} fill="none" stroke="#737373" strokeOpacity="0.35" strokeDasharray="3 3" />
           <line x1={X(0)} y1={Y(0)} x2={X(p[0])} y2={Y(p[1])} stroke="#FF47BC" strokeOpacity="0.5" />
           <line x1={X(1)} y1={Y(1)} x2={X(p[2])} y2={Y(p[3])} stroke="#FF47BC" strokeOpacity="0.5" />
           <path
@@ -161,7 +161,7 @@ export function EaseBezierEditor({ p, onChange }) {
       <div className="grid grid-cols-4 gap-1.5">
         {["x1", "y1", "x2", "y2"].map((l, i) => (
           <label key={l} className="flex flex-col gap-1 min-w-0">
-            <span className="text-[#8C8C8C] dark:text-[#9A9A9A]">{l}</span>
+            <span className="text-[#737373] dark:text-[#ABABAB]">{l}</span>
             <input
               type="number"
               step="0.01"
@@ -238,7 +238,7 @@ const spec = vidEaseSpec(current ?? shot?.ease ?? "smooth");
   const seg = "flex items-center p-0.5 w-full h-8 bg-[#F0F0F0] dark:bg-black rounded-2xl";
   const segBtn = (on) =>
     `seg-tab flex-1 h-7 flex items-center justify-center px-2.5 py-1 rounded-[14px] leading-5 transition-colors duration-200 ${on ? SEG_ON : SEG_OFF}`;
-  const label = "text-[12px] font-medium tracking-[0.01em] text-[#8C8C8C] dark:text-[#9A9A9A]";
+  const label = "text-[12px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]";
 
   return (
 <div
@@ -258,11 +258,11 @@ const spec = vidEaseSpec(current ?? shot?.ease ?? "smooth");
       aria-label="Back"
       className="group flex items-center justify-center w-8 h-8 shrink-0 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
     >
-      <CaretLeft size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
+      <CaretLeft size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
     </button>
   )}
   <span className="flex-1 min-w-0 truncate text-left">
-    <span className="section-title text-[#8C8C8C] dark:text-[#9A9A9A]">
+    <span className="section-title text-[#737373] dark:text-[#ABABAB]">
       {prop ? VID_PROPS.find(([k]) => k === prop)?.[1] : "Easing"} /{" "}
     </span>
     <span className="section-title text-[#3A3A3A] dark:text-[#FAF9FA]">
@@ -275,7 +275,7 @@ const spec = vidEaseSpec(current ?? shot?.ease ?? "smooth");
     aria-label="Close"
     className="group flex items-center justify-center w-8 h-8 shrink-0 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
   >
-    <X size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
+    <X size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
   </button>
 </div>
 

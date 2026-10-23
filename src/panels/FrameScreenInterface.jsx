@@ -30,7 +30,7 @@ export function FrameScreenInterface({
 {frameSocial.on && (
   <div className="fx-enter flex flex-col gap-2">
     <div className="flex flex-col gap-2">
-      <label className="text-[13px] font-medium tracking-[0.01em] text-[#8C8C8C] dark:text-[#9A9A9A]">Platform</label>
+      <label className="text-[13px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]">Platform</label>
       <ToolbarDropdown value={frameSocial.platform} options={SOCIAL_OPTIONS} onChange={changeSocialPlatform} />
     </div>
 
@@ -68,7 +68,7 @@ export function FrameScreenInterface({
 
 {["instagram", "whatsapp", "tiktok", "linkedin", "facebook"].includes(frameSocial.platform) && (
   <div className="flex flex-col gap-2">
-    <label className="text-[13px] font-medium tracking-[0.01em] text-[#8C8C8C] dark:text-[#9A9A9A]">{frameSocial.platform === "tiktok" ? "Profile picture" : "Avatar"}</label>
+    <label className="text-[13px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]">{frameSocial.platform === "tiktok" ? "Profile picture" : "Avatar"}</label>
     {frameSocial.avatar ? (
       <div className="w-full h-[66px] flex items-center justify-between py-2 pl-2 pr-1 gap-2 bg-[#FAF9FA] dark:bg-[#171717] border border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10 rounded-2xl">
         <div className="flex items-center gap-2 h-12 min-w-0">
@@ -87,7 +87,7 @@ export function FrameScreenInterface({
               onClick={() => avatarInputRef.current?.click()}
               className="group flex items-center justify-center w-8 h-8 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
             >
-              <UploadSimple size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
+              <UploadSimple size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
             </button>
           </Tooltip>
           <Tooltip label="Remove avatar" placement="bottom">
@@ -96,7 +96,7 @@ export function FrameScreenInterface({
               onClick={() => updateSocial({ avatar: null, avatarName: null })}
               className="group flex items-center justify-center w-8 h-8 rounded-lg hover:bg-[#F04438]/10 transition-colors"
             >
-              <Trash size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#F04438] transition-colors" />
+              <Trash size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover:text-[#F04438] transition-colors" />
             </button>
           </Tooltip>
         </div>
@@ -107,8 +107,8 @@ export function FrameScreenInterface({
         onClick={() => avatarInputRef.current?.click()}
         className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10 rounded-[10px] flex flex-col items-center justify-center gap-1 hover:bg-[#EAEAEA] dark:hover:bg-[#333333] transition-colors"
       >
-        <UploadSimple size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A]" />
-        <span className="text-[13px] font-medium tracking-[-0.005em] text-[#8C8C8C] dark:text-[#9A9A9A]">Upload avatar</span>
+        <UploadSimple size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB]" />
+        <span className="text-[13px] font-medium tracking-[-0.005em] text-[#737373] dark:text-[#ABABAB]">Upload avatar</span>
       </button>
     )}
     <input ref={avatarInputRef} type="file" accept="image/*" onChange={handleAvatarUpload} className="hidden" />

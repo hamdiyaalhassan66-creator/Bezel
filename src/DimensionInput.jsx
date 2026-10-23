@@ -22,7 +22,7 @@ export default function DimensionInput({ label, value, onChange, className = "w-
           makeScrubDrag({ value: Math.round(value), onChange, min, max, inputRef })(e);
         }}
         style={{ cursor: "ew-resize" }}
-        className="self-stretch flex items-center -ml-2 -my-1.5 pl-2 pr-1 py-1.5 text-[13px] font-medium text-[#8C8C8C] dark:text-[#9A9A9A] shrink-0 select-none touch-none"
+        className="self-stretch flex items-center -ml-2 -my-1.5 pl-2 pr-1 py-1.5 text-[13px] font-medium text-[#737373] dark:text-[#ABABAB] shrink-0 select-none touch-none"
       >
         {label}
       </span>
@@ -49,7 +49,7 @@ export default function DimensionInput({ label, value, onChange, className = "w-
           if (live && next !== "" && Number(next) >= min) onChange(Math.min(max, Number(next)));
         }}
         className={`w-0 flex-1 min-w-0 bg-transparent text-[13px] font-medium outline-none ${
-          showMixed ? "text-[#8C8C8C] dark:text-[#9A9A9A]" : "text-[#3A3A3A] dark:text-[#FAF9FA]"
+          showMixed ? "text-[#737373] dark:text-[#ABABAB]" : "text-[#3A3A3A] dark:text-[#FAF9FA]"
         }`}
       />
     </div>

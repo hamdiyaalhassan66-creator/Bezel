@@ -82,6 +82,40 @@ body .shortcut-keys.shortcut-keys.shortcut-keys * {
           .folder-enter { animation: none; }
         }
 
+        /* Empty-state icon: lifts and tilts on hover, squishes on press.
+           Lives on a wrapper so it doesn't fight the icon's own entrance animation. */
+        .empty-icon {
+          display: inline-flex;
+          padding: 8px;
+          margin: -8px;
+          cursor: default;
+          transition: transform 320ms cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        .empty-icon:hover {
+          transform: translateY(-4px) rotate(-6deg) scale(1.06);
+        }
+        .empty-icon:active {
+          transform: translateY(0) rotate(0deg) scale(0.96);
+          transition-duration: 120ms;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .empty-icon:hover, .empty-icon:active { transform: none; }
+        }
+
+                /* Left rail icons: springy hover. Color keeps its normal ease-out.
+           The !important shorthand beats the global timing-function rule. */
+        .rail-icon {
+          transform-origin: center;
+          transition: color 200ms cubic-bezier(0.22, 1, 0.36, 1), transform 360ms cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+        }
+        button:not([aria-disabled="true"]):hover .rail-devices { transform: rotate(-8deg) scale(1.1); }
+        button:not([aria-disabled="true"]):hover .rail-projects { transform: translateY(-2px) scale(1.1); }
+        button:not([aria-disabled="true"]):hover .rail-templates { transform: translateY(-1px) rotate(6deg) scale(1.1); }
+        button:not([aria-disabled="true"]):hover .rail-help { transform: rotate(14deg) scale(1.15); }
+        @media (prefers-reduced-motion: reduce) {
+          .rail-icon { transform: none !important; }
+        }
+
         /* Small stagger for the Templates grid — transform + opacity only,
            same easing as the rest of the app, capped so it never feels slow. */
         @keyframes template-enter {

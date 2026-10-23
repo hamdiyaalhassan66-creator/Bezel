@@ -118,7 +118,7 @@ function DevAnimTile({ anim, kind, active, onClick, subject }) {
       </div>
       <span
         className={`truncate text-center leading-4 transition-colors ${
-          active ? "text-[#FF47BC]" : "text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
+          active ? "text-[#FF47BC]" : "text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
         }`}
       >
         {anim ? anim.label(kind === "enter" ? "in" : "out") : "None"}
@@ -167,7 +167,7 @@ export function ShotAnimPopover({ v, menu, onClose, onSwitch }) {
     >
       <div className="flex items-center h-12 pl-4 pr-2 shrink-0 border-b border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10">
         <span className="flex-1 min-w-0 truncate text-left">
-          <span className="section-title text-[#8C8C8C] dark:text-[#9A9A9A]">{isIn ? "Enter" : "Exit"} / </span>
+          <span className="section-title text-[#737373] dark:text-[#ABABAB]">{isIn ? "Enter" : "Exit"} / </span>
           <span className="section-title text-[#3A3A3A] dark:text-[#FAF9FA]">{cur ? devAnimLabel(cur.id, isIn ? "in" : "out") : "None"}</span>
         </span>
         <button
@@ -176,7 +176,7 @@ export function ShotAnimPopover({ v, menu, onClose, onSwitch }) {
           aria-label="Close"
           className="group flex items-center justify-center w-8 h-8 shrink-0 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
         >
-          <X size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
+          <X size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
         </button>
       </div>
 
@@ -199,7 +199,7 @@ export function ShotAnimPopover({ v, menu, onClose, onSwitch }) {
         <div className={`flex flex-col gap-2 transition-opacity duration-200 ${cur ? "" : "opacity-40 pointer-events-none"}`}>
           <Scrubber compact label="Duration (ms)" value={cur?.dur ?? 600} min={100} max={2000} hardMax={10000} onChange={(dur) => set({ dur })} />
           <Scrubber compact label="Delay (ms)" value={cur?.delay ?? 0} min={0} max={2000} hardMax={10000} onChange={(delay) => set({ delay })} />
-          <span className="text-[#8C8C8C] dark:text-[#9A9A9A] leading-4">
+          <span className="text-[#737373] dark:text-[#ABABAB] leading-4">
             {isIn ? "The device stays hidden for the delay, then animates in." : `The animation ends this long before the ${v.frameMode ? "frame" : "shot"} does.`}
           </span>
         </div>

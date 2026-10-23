@@ -30,7 +30,7 @@ export function FrameAppearance({
                 <div className="pt-4 flex flex-col gap-4">
                   {/* Size */}
 <div className="flex flex-col gap-2">
-  <label className="text-[13px] font-medium tracking-[0.01em] text-[#8C8C8C] dark:text-[#9A9A9A]">Size</label>
+  <label className="text-[13px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]">Size</label>
   <SizeLockRow
     width={frameWidth}
     height={frameHeight}
@@ -44,7 +44,7 @@ export function FrameAppearance({
 </div>
                   {/* Radius */}
                   <div className="flex flex-col gap-2">
-                    <label className="text-[13px] font-medium tracking-[0.01em] text-[#8C8C8C] dark:text-[#9A9A9A]">Radius</label>
+                    <label className="text-[13px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]">Radius</label>
                     <div className="flex items-center gap-1">
                       <div className="flex-1 min-w-0">
 <Scrubber
@@ -80,7 +80,7 @@ export function FrameAppearance({
                           className={`transition-colors ${
                             frameCorners
                               ? "text-[#FF47BC]"
-                              : "text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
+                              : "text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
                           }`}
                         />
                       </button>
@@ -153,7 +153,7 @@ export function FrameAppearance({
             type="button"
             onClick={() => toggleEffectPopup(fx.id)}
             className={`flex-1 min-w-0 h-full flex items-center gap-2 text-left text-[12px] font-medium tracking-[-0.005em] ${
-              active ? "text-[#FF47BC]" : "text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
+              active ? "text-[#FF47BC]" : "text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
             } ${fx.visible ? "" : "opacity-50"}`}
           >
             <Icon size={16} weight="regular" className="shrink-0" />
@@ -167,9 +167,9 @@ export function FrameAppearance({
               className="flex items-center justify-center w-6 h-6 shrink-0 rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition-[background-color,transform] duration-150 active:scale-[0.94]"
             >
               {fx.visible ? (
-                <Eye size={16} weight="regular" className={active ? "text-[#FF47BC]" : "text-[#8C8C8C] dark:text-[#9A9A9A]"} />
+                <Eye size={16} weight="regular" className={active ? "text-[#FF47BC]" : "text-[#737373] dark:text-[#ABABAB]"} />
               ) : (
-                <EyeSlash size={16} weight="regular" className={active ? "text-[#FF47BC]" : "text-[#8C8C8C] dark:text-[#9A9A9A]"} />
+                <EyeSlash size={16} weight="regular" className={active ? "text-[#FF47BC]" : "text-[#737373] dark:text-[#ABABAB]"} />
               )}
             </button>
           </Tooltip>
@@ -180,7 +180,7 @@ export function FrameAppearance({
               onClick={() => removeEffect(fx.id)}
               className="group/x flex items-center justify-center w-6 h-6 shrink-0 rounded-md hover:bg-[#F04438]/10 transition-[background-color,transform] duration-150 active:scale-[0.94]"
             >
-              <X size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover/x:text-[#F04438] transition-colors" />
+              <X size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover/x:text-[#F04438] transition-colors" />
             </button>
           </Tooltip>
         </div>

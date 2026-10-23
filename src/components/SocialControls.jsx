@@ -23,7 +23,7 @@ export function SocialControls({ social, setSocial }) {
   return (
     <div className="fx-enter flex flex-col gap-2">
       <div className="flex flex-col gap-2">
-        <label className="text-[13px] font-medium tracking-[0.01em] text-[#8C8C8C] dark:text-[#9A9A9A]">Platform</label>
+        <label className="text-[13px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]">Platform</label>
         <ToolbarDropdown value={social.platform} options={SOCIAL_OPTIONS} onChange={changePlatform} />
       </div>
 
@@ -60,7 +60,7 @@ export function SocialControls({ social, setSocial }) {
       )}
 
       <div className="flex flex-col gap-2">
-        <label className="text-[13px] font-medium tracking-[0.01em] text-[#8C8C8C] dark:text-[#9A9A9A]">
+        <label className="text-[13px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]">
           {social.platform === "tiktok" ? "Profile picture" : "Avatar"}
         </label>
         {social.avatar ? (
@@ -78,7 +78,7 @@ export function SocialControls({ social, setSocial }) {
                   onClick={() => avatarInputRef.current?.click()}
                   className="group flex items-center justify-center w-8 h-8 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
                 >
-                  <UploadSimple size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
+                  <UploadSimple size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
                 </button>
               </Tooltip>
               <Tooltip label="Remove avatar" placement="bottom">
@@ -87,7 +87,7 @@ export function SocialControls({ social, setSocial }) {
                   onClick={() => update({ avatar: null, avatarName: null })}
                   className="group flex items-center justify-center w-8 h-8 rounded-lg hover:bg-[#F04438]/10 transition-colors"
                 >
-                  <Trash size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#F04438] transition-colors" />
+                  <Trash size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover:text-[#F04438] transition-colors" />
                 </button>
               </Tooltip>
             </div>
@@ -98,8 +98,8 @@ export function SocialControls({ social, setSocial }) {
             onClick={() => avatarInputRef.current?.click()}
             className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10 rounded-[10px] flex flex-col items-center justify-center gap-1 hover:bg-[#EAEAEA] dark:hover:bg-[#333333] transition-colors"
           >
-            <UploadSimple size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A]" />
-            <span className="text-[13px] font-medium tracking-[-0.005em] text-[#8C8C8C] dark:text-[#9A9A9A]">Upload avatar</span>
+            <UploadSimple size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB]" />
+            <span className="text-[13px] font-medium tracking-[-0.005em] text-[#737373] dark:text-[#ABABAB]">Upload avatar</span>
           </button>
         )}
         <input ref={avatarInputRef} type="file" accept="image/*" onChange={onAvatar} className="hidden" />

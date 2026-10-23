@@ -475,11 +475,11 @@ const groupTrack = (g) => {
           setShotMenu({ sid: g.first, left: Math.min(e.clientX, window.innerWidth - 196), top: e.clientY });
         }}
         className={`absolute top-0 h-[30px] rounded-[8px] border-2 border-dashed cursor-grab active:cursor-grabbing ${
-          sel ? "border-[#FF47BC] bg-[#FF47BC]/20" : "border-[#8C8C8C]/40 bg-[#E3E3E3]/60 dark:bg-[#333333]/60"
+          sel ? "border-[#FF47BC] bg-[#FF47BC]/20" : "border-[#737373]/40 bg-[#E3E3E3]/60 dark:bg-[#333333]/60"
         }`}
         style={{ left: VID_PAD + g.start * pps, width: (g.end - g.start) * pps }}
       >
-        <span className={`absolute inset-y-0 left-3 right-3 flex items-center truncate leading-4 pointer-events-none ${sel ? "text-[#FF47BC]" : "text-[#8C8C8C]"}`}>
+        <span className={`absolute inset-y-0 left-3 right-3 flex items-center truncate leading-4 pointer-events-none ${sel ? "text-[#FF47BC]" : "text-[#737373]"}`}>
           {g.name}
         </span>
       </div>
@@ -1115,7 +1115,7 @@ const openEase = (e, sid, kid, prop = null) => {
 
   <div data-tour="timeline-duration" className="flex flex-1 items-center justify-end gap-4 min-w-0">
     <div className="flex items-center gap-2">
-      <span ref={cntRef} className="tabular-nums whitespace-pre text-[#8C8C8C] dark:text-[#9A9A9A]" />
+      <span ref={cntRef} className="tabular-nums whitespace-pre text-[#737373] dark:text-[#ABABAB]" />
       <div className="w-[72px]">
         <OffsetField unit="s" value={Math.round(duration * 10) / 10} min={1} max={600} className="h-8" onChange={(d) => { v.onDuration(d); fitToDuration(d); }} />
       </div>
@@ -1185,7 +1185,7 @@ const openEase = (e, sid, kid, prop = null) => {
   return (
     <React.Fragment key={i}>
       <span
-        className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 leading-3 tracking-[-0.005em] text-[#8C8C8C] dark:text-[#9A9A9A]"
+        className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 leading-3 tracking-[-0.005em] text-[#737373] dark:text-[#ABABAB]"
         style={{ left: x0 + s * pps }}
       >
         {s}s
@@ -1330,7 +1330,7 @@ const openEase = (e, sid, kid, prop = null) => {
                       className={`fx-enter flex items-center h-[30px] gap-2 pr-2 cursor-pointer transition-colors duration-100 ${
                         rowActive(s, r)
                           ? "bg-[#FF47BC]/10 text-[#FF47BC]"
-                          : "text-[#8C8C8C] dark:text-[#9A9A9A] hover:bg-[#FF47BC]/5"
+                          : "text-[#737373] dark:text-[#ABABAB] hover:bg-[#FF47BC]/5"
                       }`}
                     >
                       <span className="truncate leading-4">{r.label}</span>
@@ -1455,7 +1455,7 @@ const openEase = (e, sid, kid, prop = null) => {
   className={`w-0.5 h-4 rounded-full transition-[opacity,background-color] ${
     parentActive
       ? "bg-white opacity-100"
-      : `${sel || isOpen ? "bg-[#FF47BC]" : "bg-[#8C8C8C] dark:bg-[#9A9A9A]"} opacity-0 group-hover:opacity-100 group-active/h:bg-[#FF47BC]`
+      : `${sel || isOpen ? "bg-[#FF47BC]" : "bg-[#737373] dark:bg-[#ABABAB]"} opacity-0 group-hover:opacity-100 group-active/h:bg-[#FF47BC]`
   }`}
 />
                       </div>
