@@ -41,6 +41,7 @@ import {
   DEFAULT_STROKE,
 } from "./lib/frameUtils.js";
 import { drawNoise, makeGrainTile } from "./lib/noise.js";
+import { GRAD_FX_TYPES, makeGradFx, applyGradientFx, HALFTONE_PATTERNS, HALFTONE_COLOR_MODES, WARP_MODES, DITHER_STYLES, LENS_MODES, LENS_QUALITY, PIXEL_SHAPES, DISSOLVE_MODES, HATCH_PATTERNS, FX_DEFAULTS, ROLL_DIRECTIONS, EDGE_MODES, REFRACT_PATTERNS, WRAP_MODES, BANKNOTE_PLACEMENTS, BANKNOTE_ACCENT_MODES, GRAIN_TYPES, GRAIN_BLENDS, paintGrainTexture } from "./lib/gradientFilters.js";
 import { applyProgressiveBlur } from "./lib/progressiveBlur.js";
 import { paintChromatic } from "./lib/chromatic.js";
 import { applyFishEye, paintGlassBands, paintVignette } from "./lib/canvasFx.js";
@@ -61,12 +62,14 @@ import {
   FRAME_DEFAULT_SIZE, makeFrame, cornersOf, frameRect, cloneFrame,
 } from "./lib/frameModel.js";
 import { framePoseMap, sampleShotFrames, changedCamProps } from "./lib/frameKeys.js";
-import { frameFade } from "./lib/frameFade.js";
+import { frameDim } from "./lib/frameFade.js";
+import { planeBackFacing, sortByDepth, projectPlane, drawPlane3D, planeGrid } from "./lib/plane3d.js";
 import { mixHex, txtRanks, txtUnitStates, sampleTextAnim } from "./lib/textAnim.js";
 import { DEFAULT_TEXT, textLabel, textName, prepText } from "./lib/textUtils.js";
 import {
   DEVICE_CATEGORIES, cropImageToDataUrl, surfaceHex, formatEditedAt, useFileDrop, seekVideo, loadVideoMeta,
 } from "./lib/appUtils.js";
+import { loadProjects, syncProjects, packProject, hydrateProject } from "./lib/projectStore.js";
 import {
   chromeKey,
   sampleChromeColors,
@@ -77,10 +80,12 @@ import { SOCIAL_FULL_WIDTH, SocialField, ImageUploadField } from "./components/S
 import {
   SEG_ON, SEG_OFF, SearchField, Scrubber, ToggleRow, FinishDropdown, GradientPresetDropdown,
   ImagePresetDropdown, GradientCanvasHandles, ColorOpacityField, PopupDropdown, AppearanceHeader,
-  CornerRadiusFields, FadeScroller, FadeScrollerY, SectionHeader,
+  CornerRadiusFields, FadeScroller, FadeScrollerY, SectionHeader, Skeleton,
 } from "./components/controls.jsx";
 import { TextOverlay, TextEditor } from "./components/TextOverlay.jsx";
 import { TextPopup } from "./components/TextPopup.jsx";
+import { ProjectsPage } from "./components/ProjectsPage.jsx";
+import { ProjectCard } from "./components/ProjectCard.jsx";
 import { useDismissable, CTX_ITEM } from "./components/timelineParts.jsx";
 import { FrameTemplateThumb, templateBackground, VideoTemplateCard, FrameVideoTemplateCard } from "./components/TemplateCards.jsx";
 import { SocialControls } from "./components/SocialControls.jsx";
@@ -139,12 +144,13 @@ import {
   CaretLeft,
   Plus,
   Folder,
+  FolderOpen,
   CardsThree,
   Info,
   SidebarSimple,
   Check,
   Crop,
-  Trash,
+  TrashSimple,
   X,
   Devices,
   Minus,
@@ -166,6 +172,11 @@ import {
   Copy,
   CircleHalf,
   Drop,
+  Sparkle, Grains, DotsNine, Waves, Checkerboard, Aperture, GridFour, LineSegments, ChartBar, Asterisk, SquaresFour, Diamond, Lightning, Money,
+  ArrowSquareOut,
+  LinkSimple,
+  PushPin,
+  PencilSimple,
 } from "@phosphor-icons/react";
 
 // Frame-tab effects: labels come from EFFECT_TYPE_OPTIONS, so they always match the type dropdown
@@ -174,6 +185,27 @@ const FRAME_FX_OPTIONS = FRAME_FX.map((x) => ({ value: x.type, label: x.label, I
 // Mockup tab: only the shared effects (shadow, blur and noise are frame-only)
 const MOCKUP_FX = FRAME_FX.filter((x) => SHARED_FX[x.type] || x.type === "layerBlur");
 const MOCKUP_FX_OPTIONS = MOCKUP_FX.map((x) => ({ value: x.type, label: x.label, Icon: x.Icon }));
+// Gradient background filters
+const GRAD_FX_ICON = {
+  grain: Grains, halftone: DotsNine, warp: Waves, dither: Checkerboard, lens: Aperture,
+  pixelate: GridFour, hatching: LineSegments, pistons: ChartBar, asciiwave: Asterisk, collapsinggrid: SquaresFour, patternrefraction: Diamond, glitch: Lightning, banknote: Money,
+};
+const GRAD_FX_LIST = GRAD_FX_TYPES.map((o) => ({ type: o.value, label: o.label, Icon: GRAD_FX_ICON[o.value] ?? Drop }));
+const GRAD_FX_OPTIONS = GRAD_FX_LIST.map((x) => ({ value: x.type, label: x.label, Icon: x.Icon }));
+// color-picker targets for gradient filter colors: [hex key, opacity key]
+const GFX_COLOR = {
+  "gfx-mono": ["monoHex"], "gfx-bg": ["bgHex", "bgOpacity"], "gfx-fg": ["fgHex", "fgOpacity"],
+  "gfx-wave": ["waveHex"], "gfx-wavebg": ["waveBgHex"],
+  "gfx-ink": ["inkHex", "inkOpacity"], "gfx-paper": ["paperHex", "paperOpacity"], "gfx-accent": ["accentHex", "accentOpacity"],
+};
+
+const NAV = (() => {
+  try { return JSON.parse(localStorage.getItem("bezel:nav")) ?? {}; } catch { return {}; }
+})();
+
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+const PROJECTS_PATH = `${BASE}/projects`;
+const isProjectsPath = () => window.location.pathname.replace(/\/+$/, "") === PROJECTS_PATH;
 
 export default function App() {
  const sceneRef = useRef(null);
@@ -226,11 +258,34 @@ export default function App() {
     setTourKind("video");
     setTourOpen(true);
   };
-    useEffect(() => {
+  // Splash: stays up until fonts and the 3D model are ready (10s safety timeout)
+  const [appReady, setAppReady] = useState(false);
+  const [splashGone, setSplashGone] = useState(false);
+  useEffect(() => {
+    let dead = false, fontsOk = false, timer;
+    const started = performance.now();
+    document.fonts.ready.then(() => { fontsOk = true; });
+    const check = () => {
+      if (dead) return;
+      const sceneOk = !!sceneRef.current?.isReady?.(deviceType);
+      if ((sceneOk && fontsOk) || performance.now() - started > 10000) setAppReady(true);
+      else timer = setTimeout(check, 100);
+    };
+    check();
+    return () => { dead = true; clearTimeout(timer); };
+  }, []);
+  useEffect(() => {
+    if (!appReady) return;
+    const t = setTimeout(() => setSplashGone(true), 350); // after the fade-out
+    return () => clearTimeout(t);
+  }, [appReady]);
+
+  useEffect(() => {
+    if (!appReady) return; // the tour starts once the splash is gone
     try {
       if (!localStorage.getItem("bezel:tour-seen")) startTour();
     } catch {}
-  }, []);
+  }, [appReady]);
 
   const [themeMenuOpen, setThemeMenuOpen] = useState(false);
   const [helpAnchor, setHelpAnchor] = useState(null);
@@ -300,9 +355,9 @@ export default function App() {
   useEffect(() => {
     setBgHex(surfaceHex(darkMode));
   }, [darkMode]);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [toolbarMode, setToolbarMode] = useState("mockup"); // "mockup" | "frame"
-  const [animTab, setAnimTab] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(NAV.sidebarOpen ?? true);
+  const [toolbarMode, setToolbarMode] = useState(NAV.toolbarMode ?? "mockup"); // "mockup" | "frame"
+  const [animTab, setAnimTab] = useState(!!NAV.animTab);
   const tabKey = animTab ? "animation" : toolbarMode;
   const [frameCropUrl, setFrameCropUrl] = useState(null); // cropped copy of the upload, for Frame mode
     // Frame appearance
@@ -628,15 +683,22 @@ const addFrameImage = (file, targetIds = null) => {
     }
   };
 
+  setMediaLoading((n) => n + 1);
+  const done = () => setMediaLoading((n) => Math.max(0, n - 1));
   if (file.type.startsWith("video/")) {
-    loadVideoMeta(file).then(
-      (m) => m && place(URL.createObjectURL(m.poster), m.w, m.h, { url: m.url, duration: m.duration })
-    );
+    loadVideoMeta(file)
+      .then((m) => m && place(URL.createObjectURL(m.poster), m.w, m.h, { url: m.url, duration: m.duration }))
+      .catch((err) => console.error("Video load failed:", err))
+      .finally(done);
     return;
   }
   const url = URL.createObjectURL(file);
   const probe = new Image();
-  probe.onload = () => place(url, probe.naturalWidth, probe.naturalHeight);
+  probe.onload = () => {
+    place(url, probe.naturalWidth, probe.naturalHeight);
+    done();
+  };
+  probe.onerror = done;
   probe.src = url;
 };
 frameUploadRef.current = addFrameImage;
@@ -850,6 +912,13 @@ frameUploadRef.current = addFrameImage;
               </div>
             );
           })}
+          {mediaLoading > 0 && (
+            <div className="flex items-center h-11 pl-1 pr-1 gap-2">
+              <Skeleton className="w-4 h-3 rounded" />
+              <Skeleton className="w-8 h-8 rounded-md shrink-0" />
+              <Skeleton className="flex-1 h-3 rounded" />
+            </div>
+          )}
         </div>
       </div>
     );
@@ -914,9 +983,15 @@ frameUploadRef.current = addFrameImage;
                 }}
                 onDragEnd={endAnimDrag}
                 onClick={() => setAnimSel(i)}
+                onPointerEnter={() => setAnimHover(i)}
+                onPointerLeave={() => setAnimHover(null)}
                 onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setAnimSel(i)}
                 className={`group relative flex items-center h-11 pl-1 pr-1 gap-2 rounded-lg cursor-grab active:cursor-grabbing transition-[background-color,opacity] duration-100 ${
-                  selected ? "bg-[#FF47BC]/10" : "hover:bg-[#F2F2F2] dark:hover:bg-[#1F1F1F]"
+                  selected
+                    ? "bg-[#FF47BC]/10"
+                    : animHover === i
+                    ? "bg-[#F2F2F2] dark:bg-[#1F1F1F]"
+                    : "hover:bg-[#F2F2F2] dark:hover:bg-[#1F1F1F]"
                 } ${animDragFrom === i ? "opacity-40" : ""} ${animDragFrom !== null ? "[&>*]:pointer-events-none" : ""}`}
               >
                 {animDrop?.idx === i && (
@@ -941,7 +1016,7 @@ frameUploadRef.current = addFrameImage;
                 />
                 <span
                   className={`flex-1 min-w-0 truncate text-[13px] font-medium tracking-[-0.005em] transition-colors ${
-                    selected ? "text-[#3A3A3A] dark:text-[#FAF9FA]" : "text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
+                    selected || animHover === i ? "text-[#3A3A3A] dark:text-[#FAF9FA]" : "text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
                   } ${hidden ? "opacity-50" : ""}`}
                 >
                   {img?.label ?? "Empty slot"}
@@ -995,6 +1070,13 @@ frameUploadRef.current = addFrameImage;
               </div>
             );
           })}
+          {mediaLoading > 0 && (
+            <div className="flex items-center h-11 pl-1 pr-1 gap-2">
+              <Skeleton className="w-4 h-3 rounded" />
+              <Skeleton className="w-8 h-8 rounded-md shrink-0" />
+              <Skeleton className="flex-1 h-3 rounded" />
+            </div>
+          )}
         </div>
       </div>
     );
@@ -1047,6 +1129,7 @@ frameUploadRef.current = addFrameImage;
   const [draggingId, setDraggingId] = useState(null);
   const [showSlots, setShowSlots] = useState(true); // list empty frames as "Empty slot" rows
   const [animSel, setAnimSel] = useState(null); // selected row in the Animation asset list
+  const [animHover, setAnimHover] = useState(null); // hovered asset index (canvas or panel)
   const [animDragFrom, setAnimDragFrom] = useState(null);
   const [frameDrop, setFrameDrop] = useState(null); // Frame list drag line: { id, pos: "before" | "after" }
   const [animDrop, setAnimDrop] = useState(null); // { idx, pos: "before" | "after" }
@@ -1269,7 +1352,7 @@ useEffect(() => {
 useEffect(() => {
   closeEffectPopup();
 }, [primaryFrame.id]);
-  const [sidebarPanel, setSidebarPanel] = useState("create"); // "create" | "templates" | "projects"
+  const [sidebarPanel, setSidebarPanel] = useState(NAV.sidebarPanel ?? "create"); // "create" | "templates" | "projects"
   const devicesDisabled = toolbarMode === "frame";
 
   // Animation tab = the Frame workspace driven by templates
@@ -1323,6 +1406,46 @@ useEffect(() => {
   if (devicesDisabled && sidebarPanel === "create") setSidebarPanel("projects");
 }, [devicesDisabled, sidebarPanel]);
 const [savedProjects, setSavedProjects] = useState([]);
+const liveProjects = savedProjects.filter((p) => !p.deletedAt); // trashed ones only show on the Projects page
+const [projectsPageOpen, setProjectsPageOpen] = useState(isProjectsPath);
+// the URL follows the page, and back / forward buttons move the page
+useEffect(() => {
+  const onPop = () => setProjectsPageOpen(isProjectsPath());
+  window.addEventListener("popstate", onPop);
+  return () => window.removeEventListener("popstate", onPop);
+}, []);
+useEffect(() => {
+  if (isProjectsPath() === projectsPageOpen) return;
+  window.history.pushState(null, "", projectsPageOpen ? PROJECTS_PATH : `${BASE}/`);
+}, [projectsPageOpen]);
+const [folders, setFolders] = useState(() => {
+  try { return JSON.parse(localStorage.getItem("bezel:folders")) ?? []; } catch { return []; }
+}); // [{ id, name }]
+useEffect(() => {
+  try { localStorage.setItem("bezel:folders", JSON.stringify(folders)); } catch {}
+}, [folders]);
+
+const [projectsLoaded, setProjectsLoaded] = useState(false);
+useEffect(() => {
+  let dead = false;
+  loadProjects()
+    .then((list) => {
+      if (dead) return;
+      setSavedProjects((prev) => [...prev, ...list.filter((p) => !prev.some((x) => x.id === p.id))]);
+      const open = NAV.projectId && list.find((x) => x.id === NAV.projectId);
+      if (open) {
+        openProject(open); // restores the project's own mode, camera, timeline, etc.
+        if (isProjectsPath()) setProjectsPageOpen(true); // openProject closes it, so put it back
+      }
+    })
+    .catch((err) => console.error("Loading projects failed:", err))
+    .finally(() => !dead && setProjectsLoaded(true));
+  return () => { dead = true; };
+}, []);
+// every save / rename / move / duplicate / delete goes through savedProjects, so one effect covers them all
+useEffect(() => {
+  if (projectsLoaded) syncProjects(savedProjects).catch((err) => console.error("Saving projects failed:", err));
+}, [savedProjects, projectsLoaded]);
 const [selectedProjectId, setSelectedProjectId] = useState(null);
 const [projectMenu, setProjectMenu] = useState(null); // { id, left, top?, bottom? }
 const projectMenuRef = useRef(null);
@@ -1364,7 +1487,7 @@ const toggleProjectMenu = (e, id) => {
   const opensUp = window.innerHeight - r.bottom < 220;
   setProjectMenu({
     id,
-    left: r.left,
+    left: Math.max(8, Math.min(r.left, window.innerWidth - 188)),
     ...(opensUp ? { bottom: window.innerHeight - r.top + 4 } : { top: r.bottom + 4 }),
   });
 };
@@ -1403,8 +1526,24 @@ const commitRenameProject = () => {
   setRenamingProjectId(null);
 };
 const handleDeleteProject = (id) => {
-  setSavedProjects((prev) => prev.filter((x) => x.id !== id));
+  setSavedProjects((prev) => prev.map((x) => (x.id === id ? { ...x, deletedAt: new Date(), pinned: false } : x)));
   setSelectedProjectId((cur) => (cur === id ? null : cur));
+};
+const handleRestoreProject = (id) =>
+  setSavedProjects((prev) => prev.map((x) => (x.id === id ? { ...x, deletedAt: null } : x)));
+const handlePurgeProject = (id) => setSavedProjects((prev) => prev.filter((x) => x.id !== id));
+const handleTogglePin = (id) =>
+  setSavedProjects((prev) => prev.map((x) => (x.id === id ? { ...x, pinned: !x.pinned } : x)));
+const handleMoveProject = (id, folderId) =>
+  setSavedProjects((prev) => prev.map((x) => (x.id === id ? { ...x, folderId: folderId ?? null } : x)));
+const handleDeleteFolder = (id) => {
+  setFolders((prev) => {
+    const gone = prev.find((f) => f.id === id);
+    return prev
+      .filter((f) => f.id !== id)
+      .map((f) => (f.parentId === id ? { ...f, parentId: gone?.parentId ?? null } : f));
+  });
+  setSavedProjects((prev) => prev.map((x) => (x.folderId === id ? { ...x, folderId: null } : x)));
 };
   const [projectTitle, setProjectTitle] = useState("Untitled project");
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -1419,9 +1558,18 @@ const [reflectionMatte, setReflectionMatte] = useState(20);
   const [activeCameraView, setActiveCameraView] = useState(null);
   const [rotationX, setRotationX] = useState(0);
   const [exportOpen, setExportOpen] = useState(false);
-  const [imageOrVideo, setImageOrVideo] = useState("image");
+  const [imageOrVideo, setImageOrVideo] = useState(NAV.imageOrVideo ?? "image");
   const imageOrVideoRef = useRef(imageOrVideo);
   imageOrVideoRef.current = imageOrVideo;
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        "bezel:nav",
+        JSON.stringify({ toolbarMode, animTab, imageOrVideo, sidebarPanel, sidebarOpen, projectsPageOpen, projectId: selectedProjectId })
+      );
+    } catch {}
+  }, [toolbarMode, animTab, imageOrVideo, sidebarPanel, sidebarOpen, projectsPageOpen, selectedProjectId]);
 
   // First time the user switches to Video: wait for the timeline to mount, then run its tour
   useEffect(() => {
@@ -1520,7 +1668,15 @@ useEffect(() => {
   const [gradientType, setGradientType] = useState("Linear");
   const [gradientAngle, setGradientAngle] = useState(90);
   const [gradientPreset, setGradientPreset] = useState("none");
+  const [gradientFx, setGradientFx] = useState([]); // stacked filters on the gradient background
+  const nextGradFxIdRef = useRef(1);
   const [grainAmount, setGrainAmount] = useState(0);
+  const [grainType, setGrainType] = useState("noise");
+  const [grainScale, setGrainScale] = useState(100);
+  const [grainBlend, setGrainBlend] = useState("screen");
+  const [fxBusy, setFxBusy] = useState(false); // heavy filter render in progress
+  const [mediaLoading, setMediaLoading] = useState(0); // number of uploads still decoding
+  const [saving, setSaving] = useState(false);
   const [environment, setEnvironment] = useState("none");
   const [lightingIntensity, setLightingIntensity] = useState(60);
   const [customImagePreset, setCustomImagePreset] = useState("none");
@@ -1530,6 +1686,48 @@ useEffect(() => {
   const [customImageDims, setCustomImageDims] = useState(null);
   const [customCropModalOpen, setCustomCropModalOpen] = useState(false);
   const customImageInputRef = useRef(null);
+    // Gradient: visible filters. Custom image: visible filters or grain. Both paint through the filter canvas.
+  // texture grain (and any grain on a custom image) paints through the filter canvas, because the 3D scene only knows noise grain
+  const texGrain = grainAmount > 0 && grainType !== "noise";
+  const gradFxOn =
+    (bgType === "gradient" && (gradientFx.some((f) => f.visible) || texGrain)) ||
+    (bgType === "custom" && !!customBgImageUrl && (gradientFx.some((f) => f.visible) || grainAmount > 0));
+
+  const grainImgsRef = useRef({});
+  const [grainImgTick, setGrainImgTick] = useState(0);
+  useEffect(() => {
+    const g = GRAIN_TYPES.find((t) => t.value === grainType);
+    if (!g?.file || grainImgsRef.current[g.value]) return;
+    const im = new Image();
+    im.onload = () => {
+      grainImgsRef.current[g.value] = im;
+      setGrainImgTick((n) => n + 1);
+    };
+    im.src = `${import.meta.env.BASE_URL}textures/${g.file}`;
+  }, [grainType]);
+
+  // the filters need the decoded image, so it's loaded here and the background repaints once it's ready
+  const customImgRef = useRef(null);
+  const [customImgTick, setCustomImgTick] = useState(0);
+  useEffect(() => {
+    customImgRef.current = null;
+    if (!customBgImageUrl) {
+      setCustomImgTick((n) => n + 1);
+      return;
+    }
+    let dead = false;
+    const im = new Image();
+    im.crossOrigin = "anonymous";
+    im.onload = () => {
+      if (dead) return;
+      customImgRef.current = im;
+      setCustomImgTick((n) => n + 1);
+    };
+    im.src = customBgImageUrl;
+    return () => {
+      dead = true;
+    };
+  }, [customBgImageUrl]);
   const [colorPickerOpen, setColorPickerOpen] = useState(false);
   const [savedColors, setSavedColors] = useState(["FFFFFF", "0A0A0A", "FF47BC"]);
   const [lighting, setLighting] = useState("none");
@@ -1701,6 +1899,7 @@ const [openSections, setOpenSections] = useState({
   const [tplPreviews, setTplPreviews] = useState({});
   useEffect(() => {
     if (sidebarPanel !== "templates" || !sidebarOpen || toolbarMode !== "mockup" || videoTplMode) return;
+    setTplPreviews({});
     let cancelled = false;
     let timer;
     const run = (attempt = 0) => {
@@ -2179,7 +2378,7 @@ setVidTexts((prev) => (prev.some((c) => c.tid === id) ? prev.filter((c) => c.tid
     ? gradientPopupRef
     : activeBackStop
     ? backPopupRef
-    : activeEffect || (typeof colorPickerTarget === "string" && colorPickerTarget.startsWith("afx-"))
+    : activeEffect || GFX_COLOR[colorPickerTarget] || (typeof colorPickerTarget === "string" && colorPickerTarget.startsWith("afx-"))
     ? effectPopupRef
     : colorPickerTarget === "text" || colorPickerTarget === "text-fill" || colorPickerTarget === "text-deco"
     ? textPopupRef
@@ -2191,6 +2390,8 @@ setVidTexts((prev) => (prev.some((c) => c.tid === id) ? prev.filter((c) => c.tid
     ? activeGradientStop.hex
     : activeBackStop
     ? activeBackStop.hex
+    : GFX_COLOR[colorPickerTarget]
+    ? gradientFx.find((f) => `gfx:${f.id}` === openEffectId)?.[GFX_COLOR[colorPickerTarget][0]] ?? "FFFFFF"
     : activeEffect
     ? activeEffect.hex
     : isStrokeTarget
@@ -2210,6 +2411,10 @@ setVidTexts((prev) => (prev.some((c) => c.tid === id) ? prev.filter((c) => c.tid
     ? activeGradientStop.opacity
     : activeBackStop
     ? activeBackStop.opacity
+    : GFX_COLOR[colorPickerTarget]
+    ? (GFX_COLOR[colorPickerTarget][1]
+        ? gradientFx.find((f) => `gfx:${f.id}` === openEffectId)?.[GFX_COLOR[colorPickerTarget][1]] ?? 100
+        : 100)
     : activeEffect
     ? activeEffect.opacity
     : isStrokeTarget
@@ -2303,7 +2508,12 @@ setVidTexts((prev) => (prev.some((c) => c.tid === id) ? prev.filter((c) => c.tid
   };
 
   const handlePickerColorChange = (nextHex, nextOpacity) => {
-    if (typeof colorPickerTarget === "string" && colorPickerTarget.startsWith("afx-")) {
+    if (GFX_COLOR[colorPickerTarget]) {
+      const [hk, ok] = GFX_COLOR[colorPickerTarget];
+      setGradientFx((prev) =>
+        prev.map((f) => (`gfx:${f.id}` === openEffectId ? { ...f, [hk]: nextHex, ...(ok ? { [ok]: nextOpacity } : {}) } : f))
+      );
+    } else if (typeof colorPickerTarget === "string" && colorPickerTarget.startsWith("afx-")) {
       if (activeAnimFx) patchAnimFx(animTplRef.current, activeAnimFx.id, { hex: nextHex, opacity: nextOpacity });
     } else if (activeGradientStop) {
       handleStopHexChange(activeGradientStop.id, nextHex);
@@ -2337,8 +2547,66 @@ setVidTexts((prev) => (prev.some((c) => c.tid === id) ? prev.filter((c) => c.tid
     setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
   }, []);
 
+  // Gradient painted through the filter stack (plus grain) on a fresh canvas.
+  // The scene, the Frame preview and the Frame export all use it, so they match.
+  const renderGradientFxCanvas = (W, H, k) => {
+    const c = document.createElement("canvas");
+    c.width = W;
+    c.height = H;
+    const x = c.getContext("2d", { willReadFrequently: true });
+    if (bgType === "custom") {
+      const im = customImgRef.current;
+      if (im) {
+        const s = Math.max(W / im.naturalWidth, H / im.naturalHeight);
+        const dw = im.naturalWidth * s, dh = im.naturalHeight * s;
+        x.drawImage(im, (W - dw) / 2, (H - dh) / 2, dw, dh);
+      }
+    } else {
+      x.globalAlpha = gradientOpacity / 100;
+      x.fillStyle = makeCanvasGradient(x, gradientType, gradientAngle, gradientStops, 0, 0, W, H);
+      x.fillRect(0, 0, W, H);
+      x.globalAlpha = 1;
+    }
+    applyGradientFx(c, gradientFx, k);
+    if (grainAmount > 0 && grainType !== "noise") {
+      const gi = grainImgsRef.current[grainType];
+      if (gi) paintGrainTexture(x, W, H, gi, grainAmount, grainScale, grainBlend);
+    } else if (grainAmount > 0) {
+      x.save();
+      x.scale(k, k);
+      x.globalCompositeOperation = "overlay";
+      x.fillStyle = x.createPattern(makeGrainTile(512, grainAmount), "repeat");
+      x.fillRect(0, 0, W / k, H / k);
+      x.restore();
+    }
+    return c;
+  };
+
   useEffect(() => {
     if (bgAnimOnRef.current) return; // a background animation is painting the scene
+    if (gradFxOn) {
+      const d = canvasDims;
+      if (!d) return;
+      if (bgType === "custom" && !customImgRef.current) return; // image still decoding
+      setFxBusy(true);
+      const t = setTimeout(() => {
+        try {
+          const W = 1280, H = Math.max(2, Math.round((W * d.h) / d.w));
+          const c = renderGradientFxCanvas(W, H, W / d.w);
+          if (toolbarMode === "frame") showFrameBgCanvas(c);
+          else {
+            hideFrameBgCanvas();
+            sceneRef.current?.setBackgroundCanvas?.(c);
+          }
+        } finally {
+          setFxBusy(false);
+        }
+      }, 50);
+      return () => clearTimeout(t);
+    }
+    setFxBusy(false);
+    hideFrameBgCanvas();
+    sceneRef.current?.setBackgroundCanvas?.(null);
     if (bgType === "solid") {
       sceneRef.current?.setBackground(bgHex, bgOpacity);
     } else if (bgType === "gradient") {
@@ -2346,7 +2614,7 @@ setVidTexts((prev) => (prev.some((c) => c.tid === id) ? prev.filter((c) => c.tid
     } else if (bgType === "custom") {
       sceneRef.current?.setBackgroundImage?.(customBgImageUrl);
     }
-  }, [bgType, bgHex, bgOpacity, gradientType, gradientStops, gradientOpacity, gradientAngle, grainAmount, customBgImageUrl]);
+  }, [bgType, bgHex, bgOpacity, gradientType, gradientStops, gradientOpacity, gradientAngle, grainAmount, customBgImageUrl, gradientFx, canvasDims, toolbarMode, customImgTick, grainType, grainScale, grainBlend, grainImgTick]);
 
 useEffect(() => {
   if (finish === "Custom") {
@@ -2622,7 +2890,31 @@ handlePositionXChange(0);
     setEnvironment(tpl.environment);
     setSidebarOpen(true);
 
-    const box = frameSizeRef.current;
+    // camera tilt: templates without `cam` go back to flat
+    const cam = tpl.cam ?? {};
+    setCameraEase(true);
+    clearTimeout(cameraEaseTimerRef.current);
+    cameraEaseTimerRef.current = setTimeout(() => setCameraEase(false), 360);
+    handleRotationChange(cam.rotationX ?? 0);
+    handleRotationYChange(cam.rotationY ?? 0);
+    handleRotationZChange(cam.rotationZ ?? 0);
+    handlePositionXChange(cam.positionX ?? 0);
+    handlePositionYChange(cam.positionY ?? 0);
+    handleZoomChange(cam.zoom ?? 70);
+
+    // canvas size: templates without `canvas` keep the current one
+    const c = tpl.canvas;
+    if (c) {
+      setCanvasSize("Custom");
+      setCustomWidth(c.w);
+      setCustomHeight(c.h);
+    }
+
+    // Layout math is in short-side units, so only the aspect ratio matters.
+    // Use the template's own ratio instead of waiting for the canvas to re-measure.
+    const box = c
+      ? c.w >= c.h ? { w: c.w / c.h, h: 1 } : { w: 1, h: c.h / c.w }
+      : frameSizeRef.current;
     if (!box) return;
     const short = Math.min(box.w, box.h);
     const prev = framesLatestRef.current;
@@ -2683,7 +2975,13 @@ handlePositionXChange(0);
   let video = null;
   if (picked.type.startsWith("video/")) {
     if (imageOrVideoRef.current !== "video") return;
-    const m = await loadVideoMeta(picked);
+    setMediaLoading((n) => n + 1);
+    let m;
+    try {
+      m = await loadVideoMeta(picked);
+    } finally {
+      setMediaLoading((n) => Math.max(0, n - 1));
+    }
     if (!m) return;
     file = m.poster; // the scene gets the first frame as its still image
     video = { el: m.el, url: m.url, duration: m.duration };
@@ -2764,9 +3062,10 @@ handlePositionXChange(0);
 
   useBlockStrayFileDrops();
 
+  const exportImgCacheRef = useRef(new Map()); // src -> Promise<Image>, reused between exported frames
   // ov (video export only): { cam, pose, texts, bg } for the frame being rendered
   const renderFrameCanvas = async (width, transparent = false, height = null, ov = null) => {
-    const size = frameSizeRef.current;
+    const size = ov?.size ?? frameSizeRef.current;
     if (!size) return null;
     const outW = width;
     const outH = height ?? Math.round(width * (size.h / size.w));
@@ -2774,15 +3073,22 @@ handlePositionXChange(0);
     canvas.width = outW;
     canvas.height = outH;
     const ctx = canvas.getContext("2d");
+    ctx.imageSmoothingQuality = "high";
 
-    const loadImg = (src) =>
-      new Promise((resolve, reject) => {
+    const loadImg = (src) => {
+      const hit = exportImgCacheRef.current.get(src);
+      if (hit) return hit;
+      const p = new Promise((resolve, reject) => {
         const img = new Image();
         img.crossOrigin = "anonymous";
-        img.onload = () => resolve(img);
+        img.onload = () => (img.decode ? img.decode().catch(() => {}).then(() => resolve(img)) : resolve(img));
         img.onerror = reject;
         img.src = src;
       });
+      p.catch(() => exportImgCacheRef.current.delete(src));
+      exportImgCacheRef.current.set(src, p);
+      return p;
+    };
     const drawCover = (img, x, y, w, h, target = ctx) => {
       const iw = img.naturalWidth || img.videoWidth, ih = img.naturalHeight || img.videoHeight;
       const s = Math.max(w / iw, h / ih);
@@ -2806,6 +3112,16 @@ handlePositionXChange(0);
       } else if (bgType === "solid") {
         ctx.fillStyle = hexToRgba(bgHex, bgOpacity);
         ctx.fillRect(0, 0, outW, outH);
+      } else if ((bgType === "gradient" || bgType === "custom") && gradFxOn && (!ov?.bg?.snap || bgKey(ov.bg.snap) === bgKey(liveBg))) {
+        // filters run at up to 2560px wide, then scale to the export size
+        const FW = Math.min(outW, 2560), FH = Math.max(2, Math.round((FW * outH) / outW));
+        // video export: render the filters once and reuse them for every frame
+        let fxc = ov?.fxCache?.canvas;
+        if (!fxc || fxc.width !== FW || fxc.height !== FH) {
+          fxc = renderGradientFxCanvas(FW, FH, FW / size.w);
+          if (ov?.fxCache) ov.fxCache.canvas = fxc;
+        }
+        ctx.drawImage(fxc, 0, 0, outW, outH);
       } else if (bgType === "gradient") {
         let g;
         if (gradientType === "Radial") {
@@ -2895,16 +3211,19 @@ handlePositionXChange(0);
       layer.width = compW;
       layer.height = compH;
       const lctx = layer.getContext("2d");
+      lctx.imageSmoothingQuality = "high";
       lctx.translate(padL, padT);
       const comp = document.createElement("canvas");
       comp.width = compW;
       comp.height = compH;
       const cctx = comp.getContext("2d");
+      cctx.imageSmoothingQuality = "high";
       cctx.translate(padL, padT);
 
-      for (const fr of frameList) {
+      for (const fr of sortByDepth(frameList)) {
         const fp = ov?.framePoses?.[fr.id];
         if (fp === "hidden" || fr.hidden) continue; // outside its row, or switched off with the eye
+        if (fr.rig?.hide && planeBackFacing(fr, { w: outW, h: outH })) continue;
         const { left: sx, top: sy, width: sw, height: sh } = frameRect(fr, { w: outW, h: outH });
         const rs = cornersOf(fr).map((p) => (Math.min(sw, sh) * p) / 100); // [tl, tr, br, bl]
         const srcUrl = fr.img ? (fr.img.cropUrl ?? fr.img.url) : null;
@@ -2936,8 +3255,6 @@ handlePositionXChange(0);
           lctx.fillStyle = "#000";
           lctx.fillRect(sx, sy, sw, sh);
         } else if (srcImg) {
-          lctx.fillStyle = "#000";
-          lctx.fillRect(sx, sy, sw, sh);
           drawCover(srcImg, sx, sy, sw, sh, lctx);
           const ca = fr.effects.find((e) => e.visible && e.type === "chromatic" && e.amount > 0);
           if (ca && !fr.img?.video) {
@@ -2977,18 +3294,27 @@ if (!backFacing && (fr.statusBar || fr.homeIndicator)) {
 }
         fr.effects
           .filter((e) => e.visible && e.type === "noise")
-          .forEach((e) => drawNoise(lctx, sx, sy, sw, sh, e.amount, Math.max(1, e.size * 0.5 * k)));
+          .forEach((e) => drawNoise(lctx, sx, sy, sw, sh, e.amount, Math.max(1, ((1 + e.size * 0.5) / 1.4) * k)));
         paintSheen(lctx, sx, sy, sw, sh, environment, cam.rotationX, cam.rotationY);
+        const dim = frameDim(fr, { w: outW, h: outH });
+        const shade = 1 - (1 - (fr.sh || 0)) * (1 - dim); // combine with the existing 3D shade
+        if (shade > 0) {
+          lctx.fillStyle = `rgba(0,0,0,${shade})`;
+          lctx.fillRect(sx, sy, sw, sh);
+        }
         lctx.restore();
 
         // Stroke: inside / center / outside are the same path offset by half the weight.
         const st = fr.stroke;
         if (st.on && st.width > 0) {
           const w = st.width * k;
-          const off = st.position === "inside" ? -w / 2 : st.position === "outside" ? w / 2 : 0;
+          // inside / outside strokes share their edge with the image, so widen them by ~1px to cover its antialiased fringe
+          const bleed = st.position !== "center" && st.opacity >= 100 ? Math.min(1, w) : 0;
+          const sign = st.position === "inside" ? -1 : st.position === "outside" ? 1 : 0;
+          const off = (sign * (w - bleed)) / 2;
           lctx.beginPath();
           lctx.roundRect(sx - off, sy - off, sw + off * 2, sh + off * 2, rs.map((v) => Math.max(0, v + off)));
-          lctx.lineWidth = w;
+          lctx.lineWidth = w + bleed;
           lctx.strokeStyle = hexToRgba(st.hex, st.opacity);
           lctx.stroke();
         }
@@ -2997,16 +3323,39 @@ if (!backFacing && (fr.statusBar || fr.homeIndicator)) {
         const rcos = Math.cos(rot), rsin = Math.sin(rot);
         const rcx = sx + sw / 2, rcy = sy + sh / 2;
         cctx.save();
-        const fadeA = frameFade(fr, { w: outW, h: outH });
-        cctx.globalAlpha = fadeA;
+        cctx.globalAlpha = 1;
         if (fp) {
           // this frame's own enter / exit pose
           const { a = 1, x = 0, y = 0, s = 1, rx = 0, ry = 0 } = fp;
-          cctx.globalAlpha = vidClamp(a, 0, 1) * fadeA;
+          cctx.globalAlpha = vidClamp(a, 0, 1);
           cctx.translate(x * outW, -y * outH);
           cctx.translate(rcx, rcy);
           cctx.scale(Math.max(0.001, Math.abs(s * Math.cos(ry))), Math.max(0.001, Math.abs(s * Math.cos(rx))));
           cctx.translate(-rcx, -rcy);
+        }
+        if (fr.rig) {
+          const rr = { left: sx, top: sy, width: sw, height: sh };
+          const bx = { w: outW, h: outH };
+          const proj = (u, v) => projectPlane(fr, rr, bx, u, v);
+          const poly = [proj(0, 0), proj(1, 0), proj(1, 1), proj(0, 1)];
+          fr.effects
+            .filter((e) => e.visible && isShadowFx(e))
+            .forEach((e) => {
+              cctx.save();
+              cctx.shadowColor = hexToRgba(e.hex, e.opacity);
+              cctx.shadowBlur = e.blur * k;
+              cctx.shadowOffsetX = e.x * k + FAR;
+              cctx.shadowOffsetY = e.y * k;
+              cctx.fillStyle = "#000";
+              cctx.beginPath();
+              poly.forEach(([px, py], n) => (n ? cctx.lineTo(px - FAR, py) : cctx.moveTo(px - FAR, py)));
+              cctx.closePath();
+              cctx.fill();
+              cctx.restore();
+            });
+          drawPlane3D(cctx, layer, { x: sx + padL, y: sy + padT, w: sw, h: sh }, proj, ...planeGrid(fr));
+          cctx.restore();
+          continue;
         }
         fr.effects
           .filter((e) => e.visible && isShadowFx(e))
@@ -3167,7 +3516,18 @@ if (!backFacing && (fr.statusBar || fr.homeIndicator)) {
       const d = exportDims(exportWidth) ?? { w: exportWidth, h: undefined };
       const transparent = exportTransparent && fmt.mime !== "image/jpeg"; // JPG has no alpha
       if (toolbarMode === "frame") await exportFrame(d.w, fmt, d.h);
-      else sceneRef.current?.exportAt(d.w, fmt.mime, fmt.ext, d.h, transparent);
+      else {
+        const hiRes = gradFxOn && !transparent && canvasDims;
+        if (hiRes) {
+          const FW = Math.min(d.w, 2560), FH = Math.max(2, Math.round((FW * d.h) / d.w));
+          sceneRef.current?.setBackgroundCanvas?.(renderGradientFxCanvas(FW, FH, FW / canvasDims.w));
+        }
+        sceneRef.current?.exportAt(d.w, fmt.mime, fmt.ext, d.h, transparent);
+        if (hiRes) {
+          const LW = 1280, LH = Math.max(2, Math.round((LW * canvasDims.h) / canvasDims.w));
+          sceneRef.current?.setBackgroundCanvas?.(renderGradientFxCanvas(LW, LH, LW / canvasDims.w));
+        }
+      }
       setExportToast(`Exporting ${fmt.label} · download started`);
       setTimeout(() => setExportToast(null), 2400);
     } catch (err) {
@@ -3197,6 +3557,10 @@ if (!backFacing && (fr.statusBar || fr.homeIndicator)) {
   // Everything needed to reopen the project exactly as it is now.
   const captureProjectData = () => ({
     snap: snapshotKeyRef.current,
+    shot: (() => {
+      const s = shotStoreRef.current.get(shotIdRef.current);
+      return s ? { id: shotIdRef.current, thumb: s.thumb, label: s.label, crop: s.crop, frameCropUrl: s.frameCropUrl } : null;
+    })(),
     toolbarMode,
     animTab,
     imageOrVideo,
@@ -3211,13 +3575,18 @@ if (!backFacing && (fr.statusBar || fr.homeIndicator)) {
   });
 
   // asCopy = true always creates a new project. Otherwise the open project is updated, or a new one is made if none is open.
-  const handleSaveProject = async (asCopy = false) => {
+  const handleSaveProject = async (asCopy = false, silent = false) => {
     asCopy = asCopy === true;
-    const kind = toolbarMode === "frame" ? "frame" : "mockup";
-    const data = captureProjectData();
+    if (savingRef.current) return;
+    savingRef.current = true;
+    if (!silent) setSaving(true);
+    try {
+    const kind = animTab ? "animation" : toolbarMode === "frame" ? "frame" : "mockup";
+    const packed = await packProject(captureProjectData(), assetStoreRef.current.byId);
     const existing = !asCopy && selectedProjectId ? savedProjects.find((p) => p.id === selectedProjectId) : null;
+    if (silent && !existing) return; // autosave only updates an open, already-saved project
     let thumb = null;
-    if (kind === "frame") {
+    if (kind !== "mockup") {
       const canvas = await renderFrameCanvas(384);
       try {
         thumb = canvas ? canvas.toDataURL("image/png") : null;
@@ -3230,18 +3599,27 @@ if (!backFacing && (fr.statusBar || fr.homeIndicator)) {
     const now = new Date();
     if (existing) {
       setSavedProjects((prev) =>
-        prev.map((p) => (p.id === existing.id ? { ...p, title: projectTitle, thumb, kind, editedAt: now, data } : p))
+        prev.map((p) => (p.id === existing.id ? { ...p, title: silent ? p.title : projectTitle, thumb, kind, editedAt: now, packed } : p))
       );
     } else {
       const id = `${Date.now()}`;
       const title = asCopy && selectedProjectId ? `${projectTitle} copy` : projectTitle;
       if (title !== projectTitle) setProjectTitle(title);
-      setSavedProjects((prev) => [{ id, title, thumb, kind, editedAt: now, data }, ...prev]);
-      setSelectedProjectId(id);
+      setSavedProjects((prev) => [{ id, title, thumb, kind, editedAt: now, packed }, ...prev]);
+      // Only keep editing a project that was already open. A fresh save stays unselected,
+      // so the next save adds a new project instead of replacing this one.
+      if (asCopy && selectedProjectId) setSelectedProjectId(id);
     }
-    setSidebarPanel("projects");
-    setExportToast(existing ? "Project saved" : asCopy ? "Saved as copy" : "Project saved");
-    setTimeout(() => setExportToast(null), 2000);
+    if (!silent) {
+      setSidebarPanel("projects");
+      setExportToast(existing ? "Project saved" : asCopy ? "Saved as copy" : "Project saved");
+      setTimeout(() => setExportToast(null), 2000);
+    }
+    } catch (err) {
+      console.error("Save failed:", err);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleNewProject = useCallback(() => {
@@ -3310,8 +3688,12 @@ if (!backFacing && (fr.statusBar || fr.homeIndicator)) {
     ]);
     setSelectedStopId(1);
     setGrainAmount(0);
+    setGrainType("noise");
+    setGrainScale(100);
+    setGrainBlend("screen");
     setEnvironment("none");
     hasSeededGradientRef.current = false;
+    setGradientFx([]);
 
     // Panel open/closed state
     setOpenSections({ device: true, screenInterface: false, position: true, appearance: true, social: false, camera: true, scene: true, text: false, controls: true, motion: true, effects: true });
@@ -3466,19 +3848,17 @@ vidLive.current = {
     const st = t == null ? {} : frameRowStates(vidLive.current.shots, framesLatestRef.current.map((f) => f.id), t);
     stage.querySelectorAll("[data-frame-id]").forEach((el) => {
       const p = st[el.dataset.frameId];
-      const fr = framesLatestRef.current.find((x) => String(x.id) === el.dataset.frameId);
-      const fa = fr ? frameFade(fr, box) : 1;
       if (p === "hidden") {
         el.style.opacity = "0";
         el.style.translate = "";
         el.style.scale = "";
       } else if (p) {
         const { a = 1, x = 0, y = 0, s = 1, rx = 0, ry = 0 } = p;
-        el.style.opacity = String(vidClamp(a, 0, 1) * fa);
+        el.style.opacity = String(vidClamp(a, 0, 1));
         el.style.translate = `${x * box.w}px ${-y * box.h}px`;
         el.style.scale = `${Math.max(0.001, Math.abs(s * Math.cos(ry)))} ${Math.max(0.001, Math.abs(s * Math.cos(rx)))}`;
       } else {
-        el.style.opacity = fa < 1 ? String(fa) : "";
+        el.style.opacity = "";
         el.style.translate = "";
         el.style.scale = "";
       }
@@ -3744,8 +4124,11 @@ const applyFramePosesAt = (t) => {
   const next = framesLatestRef.current.map((f) => {
     const p = poses[f.id];
     if (!p) return f;
-    const n = { x: p.x, y: p.y, w: Math.round(p.w), h: Math.round(p.h), s: p.s, r: p.r ?? 0 };
-    if (f.x === n.x && f.y === n.y && f.w === n.w && f.h === n.h && f.s === n.s && (f.r ?? 0) === n.r) return f;
+    const n = { x: p.x, y: p.y, w: Math.round(p.w), h: Math.round(p.h), s: p.s, r: p.r ?? 0, rx: p.rx ?? 0, ry: p.ry ?? 0, z: p.z ?? 0, sh: p.sh ?? 0 };
+    if (
+      f.x === n.x && f.y === n.y && f.w === n.w && f.h === n.h && f.s === n.s && (f.r ?? 0) === n.r &&
+      (f.rx ?? 0) === n.rx && (f.ry ?? 0) === n.ry && (f.z ?? 0) === n.z && (f.sh ?? 0) === n.sh
+    ) return f;
     diff = true;
     return { ...f, ...n };
   });
@@ -3929,7 +4312,7 @@ const step = (now) => {
     // these values are still the previous mode's, because only toolbarMode changed in this render
     sceneByModeRef.current[prev] = {
       bgType, bgHex, bgOpacity, gradientType, gradientAngle, gradientOpacity,
-      gradientStops, selectedStopId, gradientPreset, grainAmount,
+      gradientStops, selectedStopId, gradientPreset, grainAmount, gradientFx,
       customImagePreset, customBgImageUrl, customImageLabel, customImageThumb, customImageDims,
       environment,
       rotationX, rotationY, rotationZ, positionX, positionY, zoom, fov, activeCameraView,
@@ -3943,7 +4326,7 @@ const step = (now) => {
         { id: 1, hex: "FFFFFF", position: 0, opacity: 100 },
         { id: 2, hex: "000000", position: 100, opacity: 100 },
       ],
-      selectedStopId: 1, gradientPreset: "none", grainAmount: 0,
+      selectedStopId: 1, gradientPreset: "none", grainAmount: 0, gradientFx: [],
       customImagePreset: "none", customBgImageUrl: null, customImageLabel: null, customImageThumb: null, customImageDims: null,
       environment: "none",
       rotationX: 0, rotationY: 0, rotationZ: 0, positionX: 0, positionY: 0, zoom: 70, fov: 27, activeCameraView: null,
@@ -3961,6 +4344,7 @@ const step = (now) => {
     setGradientStops(s.gradientStops.map((st) => ({ ...st })));
     setSelectedStopId(s.selectedStopId);
     setGrainAmount(s.grainAmount);
+    setGradientFx((s.gradientFx ?? []).map((f) => ({ ...f })));
     setCustomImagePreset(s.customImagePreset);
     setCustomBgImageUrl(s.customBgImageUrl);
     setCustomImageLabel(s.customImageLabel);
@@ -4425,6 +4809,15 @@ const vidAddBg = () => {
 };
 // A background edit with no background row selected: add a new row at the playhead and select it.
 const vidAddBgFromEdit = () => {
+  // Animation tab: no background rows to manage, so the edit changes the default row that spans the whole timeline
+  if (animTab && vidLive.current.bgs.length) {
+    const first = vidLive.current.bgs[0];
+    const snap = bgSnapshot();
+    vidPatchBg(first.id, { snap, css: bgPreviewCss() });
+    vidBgActive.current = first.id;
+    bgAppliedKeyRef.current = bgKey(snap);
+    return;
+  }
   const { duration } = vidLive.current;
   const start = +vidTimeRef.current.toFixed(3);
   const len = 2;
@@ -4919,7 +5312,12 @@ const vidToggle = () => {
         t: +(vidClamp(o.u, 0, 1) * L).toFixed(3),
         props: ["frames"],
         ease: lin,
-        frames: { [f.id]: { x: r.x + (o.dx ?? 0), y: r.y + (o.dy ?? 0), w: r.w, h: r.h, s: r.s * (o.k ?? 1), r: (r.r ?? 0) + (o.dr ?? 0) } },
+        frames: {
+          [f.id]: {
+            x: r.x + (o.dx ?? 0), y: r.y + (o.dy ?? 0), w: r.w, h: r.h, s: r.s * (o.k ?? 1), r: (r.r ?? 0) + (o.dr ?? 0),
+            rx: o.rx ?? 0, ry: o.ry ?? 0, z: o.dz ?? 0, sh: o.sh ?? 0, // 3D fields are absolute, not offsets
+          },
+        },
       }));
       return {
         name: `Frame ${i + 1}`, start: s.start, len: L, ease: "smooth", frameId: f.id,
@@ -4986,8 +5384,8 @@ const vidToggle = () => {
 
   // Frames arranged as one of the FRAME_LAYOUTS. Pure: sets no state. Extra slots get copies of
   // your images (cycled); alloc() hands out ids for the new frames.
-  const layoutFramesFor = (layoutKey, alloc) => {
-    const box = frameSizeRef.current;
+  const layoutFramesFor = (layoutKey, alloc, boxOverride = null) => {
+    const box = boxOverride ?? frameSizeRef.current;
     const cur = framesLatestRef.current;
     const slots = Array.isArray(layoutKey) ? layoutKey : FRAME_LAYOUTS[layoutKey];
     if (!box || !slots) return cur;
@@ -5005,6 +5403,8 @@ const vidToggle = () => {
       return {
         ...src, img,
         r: 0, // a layout starts unrotated, even if the frame was left mid-animation
+        rx: 0, ry: 0, z: 0, sh: 0,
+        rig: sl.rig ?? null, // 3D templates set this, every other layout clears it
         fade: sl.fade ?? 0,
         fadeAxis: sl.fadeAxis ?? "x",
         ...(sl.radius != null ? { radius: sl.radius, corners: null } : {}),
@@ -5024,9 +5424,9 @@ const vidToggle = () => {
   };
 
   // framesOverride = frames to resolve against (the template's layout), instead of the live ones
-  const resolveFrameTplShots = (tpl, framesOverride = null) => {
+  const resolveFrameTplShots = (tpl, framesOverride = null, boxOverride = null) => {
     const cur = framesOverride ?? framesLatestRef.current;
-    const base = framePoseMap(cur, frameSizeRef.current);
+    const base = framePoseMap(cur, boxOverride ?? frameSizeRef.current);
     if (!base)
       return tpl.shots.flatMap(({ stagger, ...s }) =>
         stagger ? buildStaggerKeys({ ...s, stagger }, [], null) : [{ ...s, keys: s.keys.map(({ fo, ...k }) => k) }]
@@ -5075,18 +5475,19 @@ const vidToggle = () => {
   const renderFrameVideoStill = async (tpl, t, w) => {
     // temporary negative ids, so previews never use up real frame ids
     let tmp = -1;
-    const laid = tpl.layout ? layoutFramesFor(tpl.layout, () => tmp--) : null;
-    const gids = {}; // template group key -> real group id
-    const shots = resolveFrameTplShots(tpl, laid);
+    const tbox = tpl.canvas ? { w: tpl.canvas.w, h: tpl.canvas.h } : frameSizeRef.current;
+    const laid = tpl.layout ? layoutFramesFor(tpl.layout, () => tmp--, tbox) : null;
+    const shots = resolveFrameTplShots(tpl, laid, tbox);
     const c = sampleShots(shots, t); // null for frame-only templates
     const poses = sampleShotFrames(shots, t);
     const fr = (laid ?? framesLatestRef.current).map((f) => {
       const p = poses?.[f.id];
-      return p ? { ...f, x: p.x, y: p.y, w: Math.round(p.w), h: Math.round(p.h), s: p.s, r: p.r ?? 0 } : f;
+      return p ? { ...f, x: p.x, y: p.y, w: Math.round(p.w), h: Math.round(p.h), s: p.s, r: p.r ?? 0, rx: p.rx ?? 0, ry: p.ry ?? 0, z: p.z ?? 0, sh: p.sh ?? 0 } : f;
     });
     // use the template's own background at time t, so the card matches what gets applied
     const bgClip = tpl.bgs ? [...tpl.bgs].sort((a, b) => a.at - b.at).reverse().find((b) => b.at <= t) ?? tpl.bgs[0] : null;
     return renderFrameCanvas(w, false, null, {
+      size: tbox,
       frames: fr,
       cam: c ? { ...CAM_DEFAULT, rotationX: c.rotationX, rotationY: c.rotationY, rotationZ: c.rotationZ, positionX: c.positionX, positionY: c.positionY, zoom: c.zoom } : CAM_DEFAULT,
       pose: sampleDeviceAnim(shots.filter((s) => s.frameId == null), t),
@@ -5280,7 +5681,15 @@ const vidToggle = () => {
   const [tplParams, setTplParams] = useState({}); // template id -> param values
   const tplParamTimerRef = useRef(null);
   // keepTime: tweaking a control keeps the playhead and playback where they were. Picking a card starts at 0.
-  const applyVideoTemplate = (tpl, params, keepTime = false) => {
+  const applyVideoTemplate = (tpl, params, keepTime = false, settled = false) => {
+    // templates with their own canvas size: resize first, then apply once the canvas has re-measured
+    if (tpl.canvas && !settled && toolbarModeRef.current === "frame") {
+      setCanvasSize("Custom");
+      setCustomWidth(tpl.canvas.w);
+      setCustomHeight(tpl.canvas.h);
+      setTimeout(() => applyVideoTemplate(tpl, params, keepTime, true), 150);
+      return;
+    }
     if (!tpl.build) return handleApplyVideoTemplate(tpl);
     const p = params ?? { ...defaultParams(tpl.params), ...tplParams[tpl.id] };
     const box = frameSizeRef.current;
@@ -5327,14 +5736,15 @@ const vidToggle = () => {
   // Live card preview: the laid-out frames, resolved shots and a background-only render.
   // The card draws the planes itself every frame, so nothing is pre-rendered per time step.
   const prepareFrameLive = async (tpl, w) => {
-    const box = frameSizeRef.current;
+    const box = tpl.canvas ? { w: tpl.canvas.w, h: tpl.canvas.h } : frameSizeRef.current;
     if (!box) return null;
     const full = tpl.build ? instantiateParam(tpl, defaultParams(tpl.params), { aspect: box.w / box.h }) : tpl;
     let tmp = -1; // temporary negative ids, so previews never use up real frame ids
-    const laid = full.layout ? layoutFramesFor(full.layout, () => tmp--) : framesLatestRef.current;
-    const shots = resolveFrameTplShots(full, laid);
+    const laid = full.layout ? layoutFramesFor(full.layout, () => tmp--, box) : framesLatestRef.current;
+    const shots = resolveFrameTplShots(full, laid, box);
     const clip = full.bgs ? [...full.bgs].sort((a, b) => a.at - b.at)[0] : null;
     const bg = await renderFrameCanvas(w, false, null, {
+      size: box,
       frames: [],
       texts: [],
       cam: CAM_DEFAULT,
@@ -5567,11 +5977,13 @@ onBgDelete: vidDeleteBg,
     const count = Math.max(1, Math.round((duration / videoSpeed) * fps)); // 2x speed = half as many output frames
     const transparent = exportTransparent && spec.alpha;
     const t0 = vidTimeRef.current;
+    const fxCache = {};
 
     setVidExporting(true);
     setVidPlaying(false);
     vidEndRef.current = () => {}; // makes vidRange() return the whole timeline, not the selected shot
     vidBgActive.current = null;
+    await Promise.all([400, 500, 600, 700].map((wt) => document.fonts.load(`${wt} 16px "TikTok Sans"`)));
     if (!frameExport) scene.beginCapture(w, h);
     try {
       await encodeVideoFrames({
@@ -5603,6 +6015,7 @@ onBgDelete: vidDeleteBg,
           }
           return renderFrameCanvas(w, transparent, h, {
             t,
+            fxCache,
             frames: framesLatestRef.current, // already holds this frame's keyframed placement (set by applyAnimAt above)
             cam: cam ? { ...CAM_DEFAULT, rotationX: cam.rotationX, rotationY: cam.rotationY, rotationZ: cam.rotationZ, positionX: cam.positionX, positionY: cam.positionY, zoom: cam.zoom } : undefined,
             pose: sampleDeviceAnim(vidLive.current.shots.filter((s) => s.frameId == null), t),
@@ -5687,7 +6100,7 @@ const unpackBgs = (bgs) =>
     // same for the background, which follows the background clips
     ...(videoOn
       ? {}
-      : { bgType, bgHex, bgOpacity, gradientType, gradientAngle, gradientOpacity, gradientStops, grainAmount }),
+      : { bgType, bgHex, bgOpacity, gradientType, gradientAngle, gradientOpacity, gradientStops, grainAmount, gradientFx }),
     environment,
     customImagePreset, customBgImageUrl: assetId(customBgImageUrl), customImageLabel, customImageThumb: assetId(customImageThumb),
     frames: frames.map((f) => (f.img?.cropUrl ? { ...f, img: { ...f.img, cropUrl: assetId(f.img.cropUrl) } } : f)),
@@ -5702,7 +6115,9 @@ vidAudios,
 vidDuration,
     vidHead,
   };
-  const snapshotKey = JSON.stringify(snapshot);
+  const keyCacheRef = useRef({}); // while exporting, the history keys aren't needed, so skip the big JSON.stringify
+  const snapshotKey = vidExporting && keyCacheRef.current.snap ? keyCacheRef.current.snap : JSON.stringify(snapshot);
+  keyCacheRef.current.snap = snapshotKey;
   const snapshotKeyRef = useRef(snapshotKey);
   snapshotKeyRef.current = snapshotKey;
 
@@ -5713,13 +6128,20 @@ vidDuration,
     "showStatusBar", "showHomeIndicator", "showMenuBar", "showBrowser", "browserType", "browserTheme",
     "browserUrl", "safariTabs", "shotId", "mockupEffects",
   ];
-  const historyKey = (() => {
+  const historyKey = vidExporting && keyCacheRef.current.hist ? keyCacheRef.current.hist : (() => {
     const s = { ...snapshot };
     if (tabKey === "mockup") delete s.frames; // Mockup doesn't own frames
     else HISTORY_DEVICE_KEYS.forEach((k) => delete s[k]); // Frame / Animation don't own the device
     s.textItems = textItems.filter((t) => (t.mode ?? "mockup") === toolbarMode);
+    if (tabKey === "animation") {
+      // Animation keeps its assets in a ref and its controls in tplParams, so they have to be part of the history too
+      s.animPool = animPool().map((a) => (a && a.cropUrl ? { ...a, cropUrl: assetId(a.cropUrl) } : a));
+      s.tplParams = tplParams;
+      s.vidTplId = vidTplId;
+    }
     return JSON.stringify(s);
   })();
+  keyCacheRef.current.hist = historyKey;
   const historyKeyRef = useRef(historyKey);
   historyKeyRef.current = historyKey;
 
@@ -5787,6 +6209,7 @@ vidDuration,
       setGradientOpacity(s.gradientOpacity);
       setGradientStops(s.gradientStops);
       setGrainAmount(s.grainAmount);
+      setGradientFx(s.gradientFx ?? []);
     }
     setEnvironment(s.environment);
     setCustomImagePreset(s.customImagePreset);
@@ -5812,6 +6235,11 @@ vidDuration,
     );
     setSelectedTextId(s.selectedTextId ?? null);
     if (s.mockupEffects !== undefined || !scoped) setMockupEffects(s.mockupEffects ?? []);
+    if (scoped && s.animPool !== undefined) {
+      assetPoolRef.current = s.animPool.map((a) => (a && a.cropUrl ? { ...a, cropUrl: assetValue(a.cropUrl) } : a));
+      setTplParams(s.tplParams ?? {});
+      setVidTplId(s.vidTplId ?? null);
+    }
 
       // Screenshot: only touch the scene when it actually differs from what's showing.
     if (s.shotId !== undefined && s.shotId !== shotIdRef.current) {
@@ -5927,17 +6355,62 @@ if (s.vidShots) {
   const canUndo = historyRef.current.past.length > 0 || historyPending;
   const canRedo = historyRef.current.future.length > 0 && !historyPending;
 
+  // Autosave: writes the open project 2s after the last change.
+  const savingRef = useRef(false);
+  const autosaveRef = useRef(null);
+  autosaveRef.current = () => handleSaveProject(false, true);
+  useEffect(() => {
+    if (!selectedProjectId || !projectsLoaded) return;
+    if (Date.now() < restoreUntilRef.current) return; // opening a project / switching tabs isn't an edit
+    if (pendingOpenRef.current || vidPlaying || vidExporting) return;
+    const t = setTimeout(() => autosaveRef.current?.(), 2000);
+    return () => clearTimeout(t);
+  }, [historyKey]);
+
+  // Renaming in the top bar updates the saved project's title too
+  useEffect(() => {
+    if (!selectedProjectId) return;
+    setSavedProjects((prev) =>
+      prev.map((p) => (p.id === selectedProjectId && p.title !== projectTitle ? { ...p, title: projectTitle, editedAt: new Date() } : p))
+    );
+  }, [projectTitle]);
+
   // Opening a saved project: switch mode first, then restore everything once the mode-swap effects have run.
   const openProject = (p) => {
-    if (p.id === selectedProjectId) return; // already open
-    setSelectedProjectId(p.id);
-    setProjectTitle(p.title);
-    if (!p.data) return;
-    pendingOpenRef.current = p;
-    setImageOrVideo(p.data.imageOrVideo);
-    setToolbarMode(p.data.toolbarMode);
-    setAnimTab(!!p.data.animTab);
-    setOpenTick((n) => n + 1);
+    setProjectsPageOpen(false);
+    try {
+      let d = p.data;
+      if (p.packed) {
+        const h = hydrateProject(p.packed);
+        d = h.data;
+        const fileOf = (url, name) => {
+          const b = h.blobOf(url);
+          return b ? new File([b], name || "image", { type: b.type }) : null;
+        };
+        if (d.shot) {
+          const file = fileOf(d.shot.thumb, d.shot.label);
+          if (file) shotStoreRef.current.set(d.shot.id, { ...d.shot, file, video: null });
+        }
+        Object.values(d.vidByMode ?? {}).forEach((m) =>
+          m.shots.forEach((s) => {
+            const f = s.img && fileOf(s.img.thumb, s.img.label);
+            if (f) vidImgFiles.current.set(s.img.id, f);
+          })
+        );
+      }
+      if (!d) throw new Error("Project has no saved data");
+      setSelectedProjectId(p.id);
+      setProjectTitle(p.title);
+      pendingOpenRef.current = { ...p, data: d };
+      setImageOrVideo(d.imageOrVideo);
+      setToolbarMode(d.toolbarMode);
+      setAnimTab(!!d.animTab);
+      setOpenTick((n) => n + 1);
+    } catch (err) {
+      console.error("Opening project failed:", err);
+      setExportToast("Couldn't open this project");
+      setTimeout(() => setExportToast(null), 3000);
+    }
   };
 
   useEffect(() => {
@@ -6016,6 +6489,7 @@ if (s.vidShots) {
       devicesDisabled,
       shortcutsOpen,
       tourOpen,
+      projectsPage: projectsPageOpen,
       cropOpen: cropModalOpen || customCropModalOpen || frameCropId !== null || shotCrop !== null,
       frameMode: toolbarMode === "frame" && !animTab,
       mockupMode: toolbarMode === "mockup",
@@ -6045,7 +6519,7 @@ if (s.vidShots) {
         h.toggleShortcuts();
         return;
       }
-      if (h.shortcutsOpen || h.cropOpen || h.tourOpen) return;
+      if (h.shortcutsOpen || h.cropOpen || h.tourOpen || h.projectsPage) return;
 
       // A selected text layer takes priority over frames for duplicate / delete.
       if (!typing && h.textSelected) {
@@ -6207,6 +6681,56 @@ const openFrameFxMenu = (e) => {
   fxMenuAnchorRef.current = e.currentTarget;
   setFxMenu(placeFxMenu("frame"));
 };
+
+// Gradient filters. Grain is the existing grainAmount, shown as a "grain" row while it's above 0.
+const openGradFxMenu = (e) => {
+  if (fxMenu) return setFxMenu(null);
+  fxMenuAnchorRef.current = e.currentTarget;
+  setFxMenu(placeFxMenu("gradient"));
+};
+const gradRows = [...(grainAmount > 0 ? [{ id: "grain", type: "grain", visible: true }] : []), ...gradientFx];
+const activeGradFx =
+  typeof openEffectId === "string" && openEffectId.startsWith("gfx:")
+    ? gradRows.find((r) => `gfx:${r.id}` === openEffectId) ?? null
+    : null;
+useLayoutEffect(() => {
+  if (!activeGradFx) return;
+  const row = effectRowRefs.current[openEffectId];
+  const h = effectPopupRef.current?.offsetHeight ?? 0;
+  if (!row || !h) return;
+  const top = Math.max(8, Math.min(row.getBoundingClientRect().top, window.innerHeight - h - 8));
+  setEffectPopupPos((p) => (p && p.top !== top ? { ...p, top } : p));
+}, [activeGradFx?.type]);
+const addGradFx = (type) => {
+  keepSidebarScroll();
+  if (type === "grain") {
+    if (grainAmount === 0) setGrainAmount(30);
+    return;
+  }
+  setGradientFx((prev) => [...prev, makeGradFx(type, nextGradFxIdRef.current++)]);
+};
+const updateGradFx = (id, patch) => setGradientFx((prev) => prev.map((f) => (f.id === id ? { ...f, ...patch } : f)));
+const removeGradFx = (id) => {
+  keepSidebarScroll();
+  if (id === "grain") setGrainAmount(0);
+  else setGradientFx((prev) => prev.filter((f) => f.id !== id));
+  if (openEffectId === `gfx:${id}`) closeEffectPopup();
+};
+const changeGradFxType = (id, type) => {
+  if (id === "grain") {
+    if (type === "grain") return;
+    const nid = nextGradFxIdRef.current++;
+    setGrainAmount(0);
+    setGradientFx((prev) => [...prev, makeGradFx(type, nid)]);
+    setOpenEffectId(`gfx:${nid}`);
+  } else if (type === "grain") {
+    setGradientFx((prev) => prev.filter((f) => f.id !== id));
+    if (grainAmount === 0) setGrainAmount(30);
+    setOpenEffectId("gfx:grain");
+  } else {
+    setGradientFx((prev) => prev.map((f) => (f.id === id ? { ...makeGradFx(type, id), visible: f.visible } : f)));
+  }
+};
 useDismissable(!!fxMenu, "[data-fx-menu],[data-fx-add]", () => setFxMenu(null));
 useLayoutEffect(() => {
   if (!fxMenu) return;
@@ -6312,7 +6836,7 @@ const frameBackground = (
     {bgType === "solid" && (
       <div className="absolute inset-0" style={{ background: hexToRgba(bgHex, bgOpacity) }} />
     )}
-    {bgType === "gradient" && (
+    {bgType === "gradient" && !gradFxOn && (
       <>
         <div className="absolute inset-0" style={{ background: gradientCss, opacity: gradientOpacity / 100 }} />
         {grainTileUrl && (
@@ -6323,7 +6847,7 @@ const frameBackground = (
         )}
       </>
     )}
-    {bgType === "custom" && customBgImageUrl && (
+    {bgType === "custom" && customBgImageUrl && !gradFxOn && (
       <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${customBgImageUrl})` }} />
     )}
     <canvas ref={frameBgCanvasRef} className="absolute inset-0 w-full h-full" style={{ display: "none" }} />
@@ -6361,7 +6885,7 @@ const chrome = {
       `}</style>
 
       {/* Top bar */}
-      <div className={`flex items-center justify-between p-4 gap-3 h-16 bg-[#FAF9FA] dark:bg-[#171717] rounded-b-2xl shrink-0 mx-2`}>
+      <div className={`relative z-40 flex items-center justify-between p-4 gap-3 h-16 bg-[#FAF9FA] dark:bg-[#171717] rounded-b-2xl shrink-0 mx-2`}>
         <div className="flex items-center gap-2 flex-1 h-8">
           <img
             src={`${import.meta.env.BASE_URL}logo-light.svg`}
@@ -6401,11 +6925,13 @@ const chrome = {
 
         <div className="flex items-center justify-end gap-3 flex-1 h-8">
 <div className="flex items-center p-0.5 w-fit h-8 shrink-0 bg-[#F0F0F0] dark:bg-black rounded-2xl">
- <Tooltip label="Image" shortcut={["I"]} placement="bottom">
+ <Tooltip label={animTab ? "Not available in Animation" : "Image"} shortcut={animTab ? undefined : ["I"]} placement="bottom" className={animTab ? "cursor-not-allowed" : ""}>
   <button
+    disabled={animTab}
+    aria-disabled={animTab}
     className={`flex items-center justify-center gap-2 h-7 px-[10px] py-1 rounded-[14px] leading-5 transition-colors duration-200 ${
-      imageOrVideo === "image" ? SEG_ON : SEG_OFF
-    }`}
+      imageOrVideo === "image" && !animTab ? SEG_ON : SEG_OFF
+    } ${animTab ? "opacity-40" : ""}`}
     onClick={() => !animTab && setImageOrVideo("image")}
   >
     Image
@@ -6431,7 +6957,7 @@ const chrome = {
     <Plus size={14} weight="regular" className="shrink-0" /> New project
   </button>
 </Tooltip>
-<div className="relative" data-tour="export" ref={exportRef}>
+<div className="relative z-50" data-tour="export" ref={exportRef}>
 <div className="flex items-center">
 <Tooltip label={exportOpen ? "" : videoOn ? "Export video" : "Export image"} shortcut={exportOpen ? undefined : ["mod", "E"]} placement="bottom">
   <button
@@ -6452,7 +6978,7 @@ const chrome = {
       aria-haspopup="menu"
       aria-expanded={exportOpen}
       onClick={() => setExportOpen((v) => !v)}
-      className="flex items-center justify-center w-7 h-8 -ml-px shrink-0 rounded-r-2xl border border-[#FCFCFC]/20 border-l-[#FCFCFC]/40 bg-[#FF47BC] hover:bg-[#F230AE] transition-[background-color,transform] duration-150 active:scale-[0.97]"
+      className="flex items-center justify-center w-[30px] pr-[2px] h-8 -ml-px shrink-0 rounded-r-2xl border border-[#FCFCFC]/20 border-l-[#FCFCFC]/40 bg-[#FF47BC] hover:bg-[#F230AE] transition-[background-color,transform] duration-150 active:scale-[0.97]"
       style={{ boxShadow: "0px 4px 4px rgba(255,71,188,0.06), inset 0px 4px 4px rgba(255,240,255,0.25), inset 0px -2px 4px rgba(71,0,45,0.25)" }}
     >
       <CaretDown
@@ -6656,7 +7182,7 @@ const chrome = {
                       : "bg-transparent border-transparent hover:bg-black/5 dark:hover:bg-white/5"
                   }`}
                 >
-                  <Folder
+                  <FolderOpen
                     size={20}
                     weight={sidebarPanel === "projects" && sidebarOpen ? "fill" : "regular"}
                     className={`transition-colors duration-200 ${
@@ -6795,19 +7321,17 @@ const chrome = {
                                 onClick={() => setThemePref(opt.value)}
                                 className={`group flex items-center justify-between w-full h-[30px] pl-2 pr-2 rounded-lg transition-colors duration-100 ${
                                   isSelected
-                                    ? "bg-[#EDEDED] dark:bg-white/10"
-                                    : "hover:bg-[#F1F1F1] dark:hover:bg-white/5"
+                                    ? "bg-[#FF47BC]/10 text-[#FF47BC]"
+                                    : "text-[#3A3A3A] dark:text-[#FAF9FA] hover:bg-[#F1F1F1] dark:hover:bg-white/5"
                                 }`}
                               >
-                                <span className="flex items-center gap-2 text-[#8C8C8C] dark:text-[#9A9A9A]">
+                                <span className="flex items-center gap-2">
                                   <Icon size={16} weight="regular" />
                                   <span className="text-[13px] font-medium tracking-[-0.005em]">
                                     {opt.label}
                                   </span>
                                 </span>
-                                {isSelected && (
-                                  <Check size={14} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A]" />
-                                )}
+                                {isSelected && <Check size={14} weight="regular" />}
                               </button>
                             );
                           })}
@@ -7016,34 +7540,18 @@ const chrome = {
                                   className="absolute inset-0 w-full h-full object-cover pointer-events-none select-none fade-enter"
                                 />
                               ) : (
-                                <div
-                                  style={{
-                                    width: tplShape.w,
-                                    height: tplShape.h,
-                                    borderRadius: tplShape.r,
-                                    background: "linear-gradient(135deg, #3A3A3E 0%, #0E0E10 100%)",
-                                    boxShadow: "0 8px 16px rgba(0,0,0,0.3), inset 0 0 0 1px rgba(255,255,255,0.12)",
-                                    transform: cam
-                                      ? `perspective(260px) rotateX(${-cam.rotationX * 0.7}deg) rotateY(${cam.rotationY * 0.7}deg)`
-                                      : undefined,
-                                  }}
-                                />
+                                <Skeleton className="absolute inset-0" />
                               )}
                             </div>
-                            <div className="flex items-center gap-1 w-full">
+                            <div className="flex items-center w-full">
                               <span
-                                className={`tpl-title flex-1 min-w-0 text-left leading-4 truncate ${
-                                  activeTemplateId === tpl.id ? "text-[#FF47BC]" : "text-[#3A3A3A] dark:text-[#FAF9FA]"
+                                className={`tpl-title flex-1 min-w-0 text-left leading-4 truncate transition-colors duration-150 ${
+                                  activeTemplateId === tpl.id
+                                    ? "text-[#FF47BC]"
+                                    : "text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
                                 }`}
                               >
                                 {tpl.label}
-                              </span>
-                              <span
-                                className={`shrink-0 text-[12px] font-medium leading-4 tracking-[-0.005em] ${
-                                  activeTemplateId === tpl.id ? "text-[#FF47BC]/80" : "text-[#8C8C8C] dark:text-[#9A9A9A]"
-                                }`}
-                              >
-                                {toolbarMode === "frame" ? tpl.note : cam?.label}
                               </span>
                             </div>
                           </>
@@ -7057,13 +7565,15 @@ const chrome = {
 
             {/* Projects panel */}
 <div
-  className={`sidebar-panel absolute inset-0 flex flex-col items-start gap-3 p-4 w-full h-full transition-[opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+  className={`sidebar-panel absolute inset-0 flex flex-col items-start gap-3 py-4 pl-4 pr-0 w-full h-full transition-[opacity,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] ${
     sidebarPanel === "projects" ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-3 pointer-events-none"
   }`}
 >
-              <SearchField placeholder="Search projects" />
+              <div className="w-full pr-4">
+                <SearchField placeholder="Search projects" />
+              </div>
 
-              {savedProjects.length === 0 ? (
+              {liveProjects.length === 0 ? (
                 <div className="flex flex-col items-center justify-center gap-3 w-full flex-1 py-8">
                   <Folder size={40} weight="fill" className="folder-enter text-[#D9D9D9] dark:text-[#3A3A40]" />
                   <span className="text-[12px] font-medium tracking-[-0.005em] text-[#8C8C8C] dark:text-[#9A9A9A] text-center px-4 leading-4">
@@ -7071,101 +7581,35 @@ const chrome = {
                   </span>
                 </div>
               ) : (
-                <FadeScrollerY wrapClassName="w-full flex-1" className="flex flex-col items-start w-full gap-1">
-{savedProjects.map((p) => (
-  <div
+                <FadeScrollerY wrapClassName="w-full flex-1" className="flex flex-col items-start w-full gap-1 pr-2">
+{liveProjects.slice(0, 10).map((p) => (
+  <ProjectCard
     key={p.id}
-    role="button"
-    tabIndex={0}
-    onClick={() => {
-      if (renamingProjectId === p.id) return;
-      openProject(p);
-    }}
-    onKeyDown={(e) => {
-      if (e.target !== e.currentTarget) return;
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        openProject(p);
-      }
-    }}
-    className={`group relative flex flex-col items-start gap-2 w-full p-2 rounded-2xl transition-colors duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] cursor-pointer text-left ${
-      selectedProjectId === p.id
-        ? "bg-[#FF47BC]/10"
-        : "hover:bg-black/[0.03] dark:hover:bg-white/5"
-    }`}
-  >
-    <div
-      className="w-full h-[117px] rounded-lg bg-[#EDEDED] dark:bg-[#292929] bg-cover bg-center shrink-0 overflow-hidden transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-[1.015]"
-      style={p.thumb ? { backgroundImage: `url(${p.thumb})` } : undefined}
-    />
-    <div className="flex flex-col items-start gap-1 w-full pr-8">
-      {renamingProjectId === p.id ? (
-        <input
-          autoFocus
-          value={renameDraft}
-          onChange={(e) => setRenameDraft(e.target.value)}
-          onFocus={(e) => e.target.select()}
-          onClick={(e) => e.stopPropagation()}
-          onBlur={commitRenameProject}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") e.currentTarget.blur();
-            if (e.key === "Escape") {
-              renameCancelRef.current = true;
-              e.currentTarget.blur();
-            }
-          }}
-          className="w-full h-5 -my-0.5 px-1 rounded-md bg-[#EDEDED] dark:bg-[#292929] border border-[#FF47BC] outline-none text-[12px] font-medium tracking-[-0.005em] text-[#8C8C8C] dark:text-[#9A9A9A]"
-        />
-      ) : (
-        <span
-          className={`w-full min-h-[16px] text-left text-[12px] font-medium leading-4 tracking-[-0.005em] truncate ${
-            selectedProjectId === p.id ? "text-[#FF47BC]" : "text-[#3A3A3A] dark:text-[#FAF9FA]"
-          }`}
-        >
-          {p.title}
-        </span>
-      )}
-      <span
-        className={`w-full text-left text-[12px] font-medium leading-4 tracking-[-0.005em] ${
-          selectedProjectId === p.id ? "text-[#FF47BC]/80" : "text-[#8C8C8C] dark:text-[#9A9A9A]"
-        }`}
-      >
-        {formatEditedAt(p.editedAt)}{p.kind === "frame" ? " · Frame" : ""}
-      </span>
-    </div>
-    <button
-      type="button"
-      data-project-menu-trigger
-      aria-label="Project options"
-      aria-haspopup="menu"
-      aria-expanded={projectMenu?.id === p.id}
-      onClick={(e) => toggleProjectMenu(e, p.id)}
-      className={`group/dots absolute right-2 bottom-3 flex items-center justify-center w-7 h-7 rounded-lg transition-[background-color,transform] duration-150 active:scale-[0.94] ${
-        projectMenu?.id === p.id ? "bg-black/5 dark:bg-white/10" : "hover:bg-black/5 dark:hover:bg-white/5"
-      }`}
-    >
-      <DotsThreeVertical
-        size={16}
-        weight="regular"
-        className={`transition-colors ${
-          selectedProjectId === p.id
-            ? "text-[#FF47BC]/80 group-hover/dots:text-[#FF47BC]"
-            : "text-[#8C8C8C] dark:text-[#9A9A9A] group-hover/dots:text-[#3A3A3A] dark:group-hover/dots:text-[#FAF9FA]"
-        }`}
-      />
-    </button>
-  </div>
+    p={p}
+    selected={selectedProjectId === p.id}
+    onOpen={openProject}
+    onMenu={toggleProjectMenu}
+    menuOpen={projectMenu?.id === p.id}
+    renaming={renamingProjectId === p.id}
+    renameDraft={renameDraft}
+    onRenameDraft={setRenameDraft}
+    onRenameCommit={commitRenameProject}
+    onRenameCancel={() => { renameCancelRef.current = true; }}
+  />
 ))}
                 </FadeScrollerY>
               )}
 
-<Tooltip label="Create a new project" shortcut={["N"]} placement="vertical" className="w-full shrink-0">
+<Tooltip label="View all projects" placement="vertical" className="w-[calc(100%-1rem)] shrink-0">
   <button
-    onClick={handleNewProject}
+    onClick={() => {
+      setProjectMenu(null);
+      setProjectsPageOpen(true);
+    }}
     className="w-full h-8 shrink-0 flex items-center justify-center gap-2 px-3 py-1.5 rounded-2xl border border-[#FCFCFC]/20 bg-[#FF47BC] text-[13px] leading-5 font-medium tracking-[0.01em] text-[#FCFCFC] hover:bg-[#F230AE] transition-[background-color,transform] duration-150 active:scale-[0.97]"
     style={{ boxShadow: "0px 4px 4px rgba(255,71,188,0.06), inset 0px 4px 4px rgba(255,240,255,0.25), inset 0px -2px 4px rgba(71,0,45,0.25)" }}
   >
-    <Plus size={14} weight="regular" className="shrink-0" /> New project
+    All projects
   </button>
 </Tooltip>
             </div>
@@ -7266,7 +7710,10 @@ const chrome = {
                         videoMode={videoOn}
                         fishCanvasRef={fishCanvasRef}
                         useFishCanvas={useFishCanvas}
+                        playing={vidPlaying || vidExporting}
                         locked={animTab}
+                        markIds={[animSel, animHover].filter((i) => i != null && frames[i]).map((i) => frames[i].id)}
+                        onFrameHover={(id) => setAnimHover(id == null ? null : frames.findIndex((f) => f.id === id))}
                         onFrameClick={(id) => setAnimSel(id == null ? null : frames.findIndex((f) => f.id === id))}
                         onVideoReady={() => syncVideos(vidTimeRef.current, vidLive.current.playing)}
                       />
@@ -7352,7 +7799,12 @@ const chrome = {
     aria-expanded={saveMenuOpen}
         className="flex items-center justify-center gap-2 h-8 pl-2 pr-2.5 shrink-0 rounded-l-2xl border border-[#3A3A3A]/10 dark:border-[#FCFCFC]/10 bg-white dark:bg-[#292929] shadow-[0px_4px_4px_rgba(0,0,0,0.02)] hover:bg-[#F5F5F5] dark:hover:bg-[#333333] text-[13px] leading-5 font-medium tracking-[0.01em] text-[#3A3A3A] dark:text-[#FCFCFC] transition-[background-color,transform] duration-150 active:scale-[0.97]"
       >
-        <FloppyDisk size={16} weight="regular" className="shrink-0" /> Save project
+        {saving ? (
+          <CircleNotch size={16} weight="regular" className="shrink-0 animate-spin text-[#FF47BC]" />
+        ) : (
+          <FloppyDisk size={16} weight="regular" className="shrink-0" />
+        )}
+        {saving ? "Saving…" : "Save project"}
       </button>
     </Tooltip>
     <Tooltip label={saveMenuOpen ? "" : "Save options"} placement="bottom">
@@ -7362,7 +7814,7 @@ const chrome = {
         aria-haspopup="menu"
         aria-expanded={saveMenuOpen}
         onClick={() => setSaveMenuOpen((v) => !v)}
-        className="group flex items-center justify-center w-7 h-8 -ml-px shrink-0 rounded-r-2xl border border-[#3A3A3A]/10 dark:border-[#FCFCFC]/10 bg-white dark:bg-[#292929] shadow-[0px_4px_4px_rgba(0,0,0,0.02)] hover:bg-[#F5F5F5] dark:hover:bg-[#333333] transition-[background-color,transform] duration-150 active:scale-[0.97]"
+        className="group flex items-center justify-center w-[30px] pr-[2px] h-8 -ml-px shrink-0 rounded-r-2xl border border-[#3A3A3A]/10 dark:border-[#FCFCFC]/10 bg-white dark:bg-[#292929] shadow-[0px_4px_4px_rgba(0,0,0,0.02)] hover:bg-[#F5F5F5] dark:hover:bg-[#333333] transition-[background-color,transform] duration-150 active:scale-[0.97]"
       >
         <CaretDown
           size={14}
@@ -7430,6 +7882,17 @@ const chrome = {
     </button>
   </Tooltip>
 </div>
+
+{(fxBusy || mediaLoading > 0 || saving) && (
+  <div
+    role="status"
+    aria-live="polite"
+    className="pop-enter pointer-events-none absolute top-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 h-8 px-3 rounded-2xl border border-[#3A3A3A]/10 dark:border-[#FCFCFC]/10 bg-white dark:bg-[#292929] shadow-[0px_4px_4px_rgba(0,0,0,0.02)] text-[13px] font-medium tracking-[0.01em] text-[#8C8C8C] dark:text-[#9A9A9A]"
+  >
+    <CircleNotch size={14} weight="regular" className="animate-spin text-[#FF47BC]" />
+    {saving ? "Saving project…" : mediaLoading > 0 ? "Loading media…" : "Rendering filters…"}
+  </div>
+)}
 
 {/* Canvas size dropdown — bottom-right overlay */}
             <div className="absolute bottom-4 right-4 flex items-start gap-1 z-10" ref={canvasSizeRef} data-tour="canvas-size">
@@ -7538,7 +8001,9 @@ const chrome = {
 </span>
 
 <div className={toolbarMode === "frame" ? "hidden" : "contents"}>
-{mediaThumb ? (
+{mediaLoading > 0 && !mediaThumb ? (
+  <Skeleton className="w-full h-[66px] rounded-[10px]" />
+) : mediaThumb ? (
               <Tooltip label="Replace image" className="w-full">
               <div
                 onClick={() => fileInputRef.current?.click()}
@@ -7549,9 +8014,15 @@ const chrome = {
               >
                 <div className="flex items-center gap-2 h-12 min-w-0">
                   <div
-                    className="w-12 h-12 rounded-lg shrink-0 bg-cover bg-center bg-[#EDEDED]"
-style={{ backgroundImage: `url(${mediaThumb})` }}
-/>
+                    className="relative w-12 h-12 rounded-lg shrink-0 bg-cover bg-center bg-[#EDEDED] overflow-hidden"
+                    style={{ backgroundImage: `url(${mediaThumb})` }}
+                  >
+                    {mediaLoading > 0 && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+                        <CircleNotch size={16} weight="regular" className="animate-spin text-white" />
+                      </div>
+                    )}
+                  </div>
 <span className="text-[13px] font-medium leading-4 tracking-[-0.005em] text-[#3A3A3A] dark:text-[#FAF9FA] truncate">
   {mediaLabel}
 </span>
@@ -7677,7 +8148,7 @@ style={{ backgroundImage: `url(${mediaThumb})` }}
 )}
 
 {/* Effects (Animation tab only) */}
-{animTab && activeParamTpl && activeParamTpl.params.some((p) => p.section === "effects") && (() => {
+{animTab && activeParamTpl && (() => {
   const tpl = activeParamTpl;
   const list = animFxList(tpl);
   return (
@@ -8326,8 +8797,70 @@ className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed borde
                     </div>
                   )}
 
-                  {bgType === "gradient" && (
-                    <Scrubber label="Grain" value={grainAmount} onChange={setGrainAmount} />
+                  {(bgType === "gradient" || bgType === "custom") && (
+                    <div className="flex flex-col gap-2">
+                      <div data-fx-add>
+                        <AppearanceHeader label="Filters" onClick={openGradFxMenu}>
+                          <Plus size={16} weight="regular" />
+                        </AppearanceHeader>
+                      </div>
+                      <div className={gradRows.length ? "flex flex-col gap-1" : "hidden"}>
+                        {gradRows.map((fx) => {
+                          const key = `gfx:${fx.id}`;
+                          const Icon = GRAD_FX_ICON[fx.type] ?? Drop;
+                          const label = GRAD_FX_TYPES.find((o) => o.value === fx.type)?.label;
+                          const active = openEffectId === key || gradRows.length === 1;
+                          const isGrain = fx.id === "grain";
+                          return (
+                            <div
+                              key={fx.id}
+                              ref={(el) => { effectRowRefs.current[key] = el; }}
+                              data-effect-trigger
+                              className={`group fx-enter flex items-center h-8 pl-2 pr-1 gap-1 rounded-lg transition-[background-color,opacity] duration-100 ease-in-out ${
+                                active ? "bg-[#FF47BC]/10" : "hover:bg-[#F2F2F2] dark:hover:bg-[#1F1F1F]"
+                              }`}
+                            >
+                              <button
+                                type="button"
+                                onClick={() => toggleEffectPopup(key)}
+                                className={`flex-1 min-w-0 h-full flex items-center gap-2 text-left text-[12px] font-medium tracking-[-0.005em] ${
+                                  active ? "text-[#FF47BC]" : "text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
+                                } ${fx.visible ? "" : "opacity-50"}`}
+                              >
+                                <Icon size={16} weight="regular" className="shrink-0" />
+                                <span className="truncate">{label}</span>
+                              </button>
+                              {!isGrain && (
+                                <Tooltip label={fx.visible ? "Hide" : "Show"} placement="bottom" className="shrink-0">
+                                  <button
+                                    type="button"
+                                    aria-label={fx.visible ? "Hide" : "Show"}
+                                    onClick={() => updateGradFx(fx.id, { visible: !fx.visible })}
+                                    className="flex items-center justify-center w-6 h-6 shrink-0 rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition-[background-color,transform] duration-150 active:scale-[0.94]"
+                                  >
+                                    {fx.visible ? (
+                                      <Eye size={16} weight="regular" className={active ? "text-[#FF47BC]" : "text-[#8C8C8C] dark:text-[#9A9A9A]"} />
+                                    ) : (
+                                      <EyeSlash size={16} weight="regular" className={active ? "text-[#FF47BC]" : "text-[#8C8C8C] dark:text-[#9A9A9A]"} />
+                                    )}
+                                  </button>
+                                </Tooltip>
+                              )}
+                              <Tooltip label="Remove" placement="bottom" className="shrink-0">
+                                <button
+                                  type="button"
+                                  aria-label="Remove"
+                                  onClick={() => removeGradFx(fx.id)}
+                                  className="group/x flex items-center justify-center w-6 h-6 shrink-0 rounded-md hover:bg-[#F04438]/10 transition-[background-color,transform] duration-150 active:scale-[0.94]"
+                                >
+                                  <X size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover/x:text-[#F04438] transition-colors" />
+                                </button>
+                              </Tooltip>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
                   )}
 
                   <div className="flex flex-col gap-2">
@@ -8340,7 +8873,7 @@ className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed borde
           </div>
 
           {/* Text */}
-          <div className={`order-5 flex flex-col p-4 ${toolbarMode === "mockup" || (animTab && activeParamTpl?.params.some((p) => p.section === "effects")) ? "border-b border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10" : ""}`}>
+          <div className={`order-5 flex flex-col p-4 ${toolbarMode === "mockup" || (animTab && activeParamTpl) ? "border-b border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10" : ""}`}>
 <SectionHeader label="Text" open={openSections.text} onToggle={() => toggleSection("text")} />
 
             <div
@@ -8351,7 +8884,7 @@ className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed borde
               <div className="overflow-hidden">
                 <div className="pt-4 flex flex-col gap-1">
                   {modeTexts.map((t) => {
-                    const active = t.id === selectedTextId || modeTexts.length === 1;
+                    const active = t.id === selectedTextId && textPopupOpen;
                     const hidden = t.visible === false;
                     return (
                       <div
@@ -8550,16 +9083,17 @@ className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed borde
           style={{ position: "fixed", right: fxMenu.right, ...(fxMenu.up ? { bottom: fxMenu.bottom } : { top: fxMenu.top }) }}
           className="pop-enter w-[180px] p-2 flex flex-col gap-1 bg-[#FAF9FA] dark:bg-[#171717] border border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10 rounded-2xl shadow-[0_4px_8px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_12px_rgba(0,0,0,0.4)] z-[9999]"
         >
-          {(fxMenu.kind === "frame" ? FRAME_FX : fxMenu.kind === "mockup" ? MOCKUP_FX : FX_TYPES).map(({ type, label, Icon }) => (
+          {(fxMenu.kind === "gradient" ? GRAD_FX_LIST : fxMenu.kind === "frame" ? FRAME_FX : fxMenu.kind === "mockup" ? MOCKUP_FX : FX_TYPES).map(({ type, label, Icon }) => (
             <button
               key={type}
               type="button"
               onClick={() => {
-                if (fxMenu.kind === "frame" || fxMenu.kind === "mockup") addEffect(type);
+                if (fxMenu.kind === "gradient") addGradFx(type);
+                else if (fxMenu.kind === "frame" || fxMenu.kind === "mockup") addEffect(type);
                 else if (animTplRef.current) addAnimFx(animTplRef.current, type);
                 setFxMenu(null);
               }}
-              className="flex items-center w-full h-8 pl-2 pr-2 gap-2 rounded-lg text-[12px] font-medium tracking-[-0.005em] text-[#3A3A3A] dark:text-[#FAF9FA] hover:bg-[#F2F2F2] dark:hover:bg-[#1F1F1F] transition-colors duration-100"
+              className="group flex items-center w-full h-8 pl-2 pr-2 gap-2 rounded-lg text-[12px] font-medium tracking-[-0.005em] text-[#8C8C8C] dark:text-[#9A9A9A] hover:text-[#3A3A3A] dark:hover:text-[#FAF9FA] hover:bg-[#F2F2F2] dark:hover:bg-[#1F1F1F] transition-colors duration-100"
             >
               <Icon size={16} weight="regular" className="shrink-0" />
               {label}
@@ -8587,7 +9121,7 @@ className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed borde
                 distributeSelected(axis);
                 setDistMenu(null);
               }}
-              className="flex items-center justify-between w-full h-8 pl-2 pr-2 gap-4 rounded-lg text-[12px] font-medium tracking-[-0.005em] whitespace-nowrap text-[#3A3A3A] dark:text-[#FAF9FA] enabled:hover:bg-[#F2F2F2] dark:enabled:hover:bg-[#1F1F1F] transition-colors duration-100 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="flex items-center justify-between w-full h-8 pl-2 pr-2 gap-4 rounded-lg text-[12px] font-medium tracking-[-0.005em] whitespace-nowrap text-[#8C8C8C] dark:text-[#9A9A9A] enabled:hover:text-[#3A3A3A] dark:enabled:hover:text-[#FAF9FA] enabled:hover:bg-[#F2F2F2] dark:enabled:hover:bg-[#1F1F1F] transition-colors duration-100 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <span className="flex items-center gap-2">
                 <Icon size={14} weight="regular" className="shrink-0" />
@@ -8603,7 +9137,7 @@ className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed borde
         const p = savedProjects.find((x) => x.id === projectMenu.id);
         if (!p) return null;
         const itemClass =
-          "flex items-center w-full h-8 pl-2 pr-1.5 rounded-lg text-[13px] font-medium tracking-[-0.005em] text-[#3A3A3A] dark:text-[#FAF9FA] hover:bg-[#F2F2F2] dark:hover:bg-[#1F1F1F] transition-colors duration-100";
+          "flex items-center gap-2 w-full h-8 pl-2 pr-1.5 rounded-lg text-[13px] font-medium tracking-[-0.005em] text-[#3A3A3A] dark:text-[#FAF9FA] hover:bg-[#F2F2F2] dark:hover:bg-[#1F1F1F] transition-colors duration-100";
         const run = (fn) => () => {
           setProjectMenu(null);
           fn();
@@ -8615,25 +9149,53 @@ className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed borde
             style={{ position: "fixed", left: projectMenu.left, top: projectMenu.top, bottom: projectMenu.bottom }}
             className={`${projectMenu.bottom !== undefined ? "pop-enter-up" : "pop-enter"} w-[180px] p-2 flex flex-col items-start bg-[#FAF9FA] dark:bg-[#171717] border border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10 rounded-2xl shadow-[0_4px_8px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_12px_rgba(0,0,0,0.4)] z-[9999]`}
           >
-            <div className="flex flex-col gap-1 w-full">
-              <button type="button" className={itemClass} onClick={run(() => handleOpenProjectInNewTab(p))}>Open in new tab</button>
-              <button type="button" className={itemClass} onClick={run(() => handleCopyProjectLink(p))}>Copy link</button>
-            </div>
-            <div className="my-1 h-px w-full bg-[#3A3A3A]/10 dark:bg-[#FAF9FA]/10" />
-            <div className="flex flex-col gap-1 w-full">
-              <button type="button" className={itemClass} onClick={run(() => handleDuplicateProject(p))}>Duplicate</button>
-              <button type="button" className={itemClass} onClick={run(() => startRenameProject(p))}>Rename</button>
-            </div>
-            <div className="my-1 h-px w-full bg-[#3A3A3A]/10 dark:bg-[#FAF9FA]/10" />
-            <div className="flex flex-col gap-1 w-full">
-              <button
-                type="button"
-                onClick={run(() => handleDeleteProject(p.id))}
-                                className="flex items-center w-full h-8 pl-2 pr-1.5 rounded-lg text-[13px] font-medium tracking-[-0.005em] text-[#3A3A3A] dark:text-[#FAF9FA] hover:bg-[#F04438]/10 hover:text-[#F04438] dark:hover:text-[#F04438] transition-colors duration-100"
-              >
-                Delete
-              </button>
-            </div>
+            {p.deletedAt ? (
+              <div className="flex flex-col gap-1 w-full">
+                <button type="button" className={itemClass} onClick={run(() => handleRestoreProject(p.id))}>
+                  <ArrowCounterClockwise size={16} weight="regular" className="shrink-0" /> Restore
+                </button>
+                <button
+                  type="button"
+                  onClick={run(() => handlePurgeProject(p.id))}
+                  className={`${itemClass} hover:!bg-[#F04438]/10 hover:text-[#F04438] dark:hover:text-[#F04438]`}
+                >
+                  <X size={16} weight="regular" className="shrink-0" /> Delete permanently
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="flex flex-col gap-1 w-full">
+                  <button type="button" className={itemClass} onClick={run(() => handleOpenProjectInNewTab(p))}>
+                    <ArrowSquareOut size={16} weight="regular" className="shrink-0" /> Open in new tab
+                  </button>
+                  <button type="button" className={itemClass} onClick={run(() => handleCopyProjectLink(p))}>
+                    <LinkSimple size={16} weight="regular" className="shrink-0" /> Copy link
+                  </button>
+                  <button type="button" className={itemClass} onClick={run(() => handleTogglePin(p.id))}>
+                    <PushPin size={16} weight={p.pinned ? "fill" : "regular"} className="shrink-0" /> {p.pinned ? "Unpin" : "Pin"}
+                  </button>
+                </div>
+                <div className="my-1 h-px w-full bg-[#3A3A3A]/10 dark:bg-[#FAF9FA]/10" />
+                <div className="flex flex-col gap-1 w-full">
+                  <button type="button" className={itemClass} onClick={run(() => handleDuplicateProject(p))}>
+                    <Copy size={16} weight="regular" className="shrink-0" /> Duplicate
+                  </button>
+                  <button type="button" className={itemClass} onClick={run(() => startRenameProject(p))}>
+                    <PencilSimple size={16} weight="regular" className="shrink-0" /> Rename
+                  </button>
+                </div>
+                <div className="my-1 h-px w-full bg-[#3A3A3A]/10 dark:bg-[#FAF9FA]/10" />
+                <div className="flex flex-col gap-1 w-full">
+                  <button
+                    type="button"
+                    onClick={run(() => handleDeleteProject(p.id))}
+                    className={`${itemClass} hover:!bg-[#F04438]/10 hover:text-[#F04438] dark:hover:text-[#F04438]`}
+                  >
+                    <TrashSimple size={16} weight="regular" className="shrink-0" /> Move to Trash
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         );
       })()}
@@ -8816,6 +9378,397 @@ className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed borde
         );
       })()}
 
+            {activeGradFx && effectPopupPos && (() => {
+        const fx = activeGradFx;
+        const Icon = GRAD_FX_ICON[fx.type] ?? Drop;
+        const set = (patch) => updateGradFx(fx.id, patch);
+        return (
+          <div
+            ref={effectPopupRef}
+            style={{ position: "fixed", top: effectPopupPos.top, right: effectPopupPos.right, maxHeight: "82vh" }}
+            className="panel-enter w-[240px] px-3 pb-3 flex flex-col gap-2 overflow-y-auto custom-scroll bg-[#FAF9FA] dark:bg-[#171717] border border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10 rounded-2xl shadow-[0_4px_8px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_12px_rgba(0,0,0,0.4)] z-[9000]"
+          >
+            <div className="-mx-3 mb-1 flex items-center justify-between h-11 pl-4 pr-2 shrink-0 sticky top-0 z-10 bg-[#FAF9FA] dark:bg-[#171717] border-b border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10">
+              <span className="flex items-center gap-2 text-[14px] font-medium tracking-[-0.005em] text-[#8C8C8C] dark:text-[#9A9A9A]">
+                <Icon size={16} weight="regular" className="shrink-0" />
+                Filter
+              </span>
+              <button
+                type="button"
+                onClick={closeEffectPopup}
+                aria-label="Close"
+                className="group flex items-center justify-center w-7 h-7 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+              >
+                <X size={16} weight="regular" className="text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
+              </button>
+            </div>
+            <PopupDropdown value={fx.type} options={GRAD_FX_OPTIONS} onChange={(t) => changeGradFxType(fx.id, t)} />
+            <div className={`flex flex-col gap-2 transition-opacity duration-200 ${fx.visible ? "opacity-100" : "opacity-40"}`}>
+              {fx.type === "grain" ? (
+                <>
+                  <PopupDropdown value={grainType} options={GRAIN_TYPES} onChange={setGrainType} />
+                  <Scrubber label="Amount" value={grainAmount} min={1} max={100} onChange={setGrainAmount} />
+                  {grainType !== "noise" && (
+                    <>
+                      <Scrubber label="Scale" value={grainScale} min={20} max={300} onChange={setGrainScale} />
+                      <PopupDropdown value={grainBlend} options={GRAIN_BLENDS} onChange={setGrainBlend} />
+                    </>
+                  )}
+                </>
+              ) : fx.type === "halftone" ? (
+                <>
+                  <PopupDropdown value={fx.halftoneType ?? 0} options={HALFTONE_PATTERNS} onChange={(halftoneType) => set({ halftoneType })} />
+                  <PopupDropdown value={fx.colorMode ?? 0} options={HALFTONE_COLOR_MODES} onChange={(colorMode) => set({ colorMode })} />
+                  <Scrubber label="Dot size" value={fx.dotSize ?? 20} min={4} max={120} onChange={(dotSize) => set({ dotSize })} />
+                  <Scrubber label="Dot scale" value={fx.dotScale ?? 100} min={0} max={200} onChange={(dotScale) => set({ dotScale })} />
+                  <Scrubber label="Softness" value={fx.softness ?? 0} min={0} max={100} onChange={(softness) => set({ softness })} />
+                  <Scrubber label="Rotation" value={fx.angle} min={-180} max={180} onChange={(angle) => set({ angle })} />
+                  <Scrubber label="Center X" value={fx.cx ?? 50} min={0} max={100} onChange={(cx) => set({ cx })} />
+                  <Scrubber label="Center Y" value={fx.cy ?? 50} min={0} max={100} onChange={(cy) => set({ cy })} />
+                </>
+              ) : fx.type === "dither" ? (
+                <>
+                  <PopupDropdown value={fx.ditherStyle ?? "Bayer 16x16"} options={DITHER_STYLES} onChange={(ditherStyle) => set({ ditherStyle })} />
+                  <Scrubber label="Size" value={fx.pixelSize ?? 2} min={1} max={8} onChange={(pixelSize) => set({ pixelSize })} />
+                  <Scrubber label="Levels" value={fx.levels ?? 3} min={2} max={8} onChange={(levels) => set({ levels })} />
+                  <Scrubber label="Brightness" value={fx.brightness ?? 100} min={0} max={200} onChange={(brightness) => set({ brightness })} />
+                  <Scrubber label="Contrast" value={fx.contrast ?? 100} min={50} max={200} onChange={(contrast) => set({ contrast })} />
+                  <ToggleRow label="Mono" checked={!!fx.mono} onChange={(mono) => set({ mono })} />
+                  {fx.mono && (
+                    <ColorOpacityField
+                      hex={fx.monoHex ?? "FFFFFF"}
+                      opacity={100}
+                      onHexChange={(monoHex) => set({ monoHex })}
+                      onOpacityChange={() => {}}
+                      onSwatchClick={() => handleSwatchClick("gfx-mono")}
+                      makePercentDrag={makePercentDrag}
+                    />
+                  )}
+                </>
+              ) : fx.type === "lens" ? (
+                <>
+                  <PopupDropdown value={fx.lensMode ?? 0} options={LENS_MODES} onChange={(lensMode) => set({ lensMode })} />
+                  <PopupDropdown value={fx.lensQuality ?? 1} options={LENS_QUALITY} onChange={(lensQuality) => set({ lensQuality })} />
+                  <Scrubber label="Distortion" value={fx.distortion ?? 50} min={0} max={100} onChange={(distortion) => set({ distortion })} />
+                  <Scrubber label="Aberration" value={fx.aberration ?? 20} min={0} max={100} onChange={(aberration) => set({ aberration })} />
+                  <Scrubber label="Center X" value={fx.cx ?? 50} min={0} max={100} onChange={(cx) => set({ cx })} />
+                  <Scrubber label="Center Y" value={fx.cy ?? 50} min={0} max={100} onChange={(cy) => set({ cy })} />
+                </>
+              ) : fx.type === "warp" ? (
+                <>
+                  <PopupDropdown value={fx.warpMode ?? 0} options={WARP_MODES} onChange={(warpMode) => set({ warpMode })} />
+                  <Scrubber label="Amplitude" value={fx.amplitude ?? 15} min={0} max={100} onChange={(amplitude) => set({ amplitude })} />
+                  <Scrubber label="Scale" value={fx.warpScale ?? 20} min={0} max={100} onChange={(warpScale) => set({ warpScale })} />
+                  <Scrubber label="Center X" value={fx.cx ?? 50} min={0} max={100} onChange={(cx) => set({ cx })} />
+                  <Scrubber label="Center Y" value={fx.cy ?? 50} min={0} max={100} onChange={(cy) => set({ cy })} />
+                </>
+              ) : fx.type === "pixelate" ? (
+                <>
+                  <PopupDropdown value={fx.pixelShape ?? 0} options={PIXEL_SHAPES} onChange={(pixelShape) => set({ pixelShape })} />
+                  <Scrubber label="Size" value={fx.size ?? 10} min={2} max={100} onChange={(size) => set({ size })} />
+                  <Scrubber label="Stretch" value={fx.stretch ?? 100} min={0} max={2000} onChange={(stretch) => set({ stretch })} />
+                  <Scrubber label="Gap" value={fx.gap ?? 0} min={0} max={50} onChange={(gap) => set({ gap })} />
+                  <Scrubber label="Color trim" value={fx.colorTrim ?? 2} min={2} max={16} onChange={(colorTrim) => set({ colorTrim })} />
+                  <Scrubber label="Average color" value={fx.averageColor ?? 80} min={0} max={100} onChange={(averageColor) => set({ averageColor })} />
+                  <PopupDropdown value={fx.dissolveMode ?? 0} options={DISSOLVE_MODES} onChange={(dissolveMode) => set({ dissolveMode })} />
+                  <Scrubber label="Dissolve" value={fx.dissolve ?? 0} min={0} max={100} onChange={(dissolve) => set({ dissolve })} />
+                  <Scrubber label="Falloff" value={fx.falloff ?? 0} min={0} max={100} onChange={(falloff) => set({ falloff })} />
+                  <Scrubber label="Center X" value={fx.cx ?? 50} min={0} max={100} onChange={(cx) => set({ cx })} />
+                  <Scrubber label="Center Y" value={fx.cy ?? 50} min={0} max={100} onChange={(cy) => set({ cy })} />
+                  <Scrubber label="Radius" value={fx.radius ?? 75} min={0} max={200} onChange={(radius) => set({ radius })} />
+                  <Scrubber label="Angle" value={fx.angle ?? 90} min={-180} max={180} onChange={(angle) => set({ angle })} />
+                  <ToggleRow label="Knockout" checked={fx.knockout ?? true} onChange={(knockout) => set({ knockout })} />
+                </>
+              ) : fx.type === "hatching" ? (
+                <>
+                  <PopupDropdown value={fx.hatchMode ?? 1} options={HATCH_PATTERNS} onChange={(hatchMode) => set({ hatchMode })} />
+                  <Scrubber label="Density" value={fx.density ?? 100} min={0} max={200} onChange={(density) => set({ density })} />
+                  <Scrubber label="Softness" value={fx.softness ?? 0} min={0} max={100} onChange={(softness) => set({ softness })} />
+                  <Scrubber label="Frequency" value={fx.waveFreq ?? 28} min={0} max={200} onChange={(waveFreq) => set({ waveFreq })} />
+                  <Scrubber label="Amplitude" value={fx.waveAmp ?? 23} min={0} max={1000} onChange={(waveAmp) => set({ waveAmp })} />
+                  <Scrubber label="Offset X" value={fx.offsetX ?? 0} min={0} max={100} onChange={(offsetX) => set({ offsetX })} />
+                  <Scrubber label="Offset Y" value={fx.offsetY ?? 0} min={0} max={100} onChange={(offsetY) => set({ offsetY })} />
+                  <ColorOpacityField
+                    hex={fx.bgHex ?? "0A5D37"}
+                    opacity={fx.bgOpacity ?? 100}
+                    labelText="Background"
+                    onHexChange={(bgHex) => set({ bgHex })}
+                    onOpacityChange={(bgOpacity) => set({ bgOpacity })}
+                    onSwatchClick={() => handleSwatchClick("gfx-bg")}
+                    makePercentDrag={makePercentDrag}
+                  />
+                  <ColorOpacityField
+                    hex={fx.fgHex ?? "C7F8F8"}
+                    opacity={fx.fgOpacity ?? 100}
+                    labelText="Foreground"
+                    onHexChange={(fgHex) => set({ fgHex })}
+                    onOpacityChange={(fgOpacity) => set({ fgOpacity })}
+                    onSwatchClick={() => handleSwatchClick("gfx-fg")}
+                    makePercentDrag={makePercentDrag}
+                  />
+                  <Scrubber label="Center X" value={fx.cx ?? 50} min={0} max={100} onChange={(cx) => set({ cx })} />
+                  <Scrubber label="Center Y" value={fx.cy ?? 50} min={0} max={100} onChange={(cy) => set({ cy })} />
+                  <Scrubber label="Line width" value={fx.lineWidth ?? 8} min={1} max={100} onChange={(lineWidth) => set({ lineWidth })} />
+                  <Scrubber label="Angle" value={fx.angle ?? 90} min={-180} max={180} onChange={(angle) => set({ angle })} />
+                </>
+              ) : fx.type === "pistons" ? (
+                <>
+                  <Scrubber label="Columns" value={fx.cols ?? 60} min={10} max={150} onChange={(cols) => set({ cols })} />
+                  <Scrubber label="Gap" value={fx.gap ?? 18} min={2} max={50} onChange={(gap) => set({ gap })} />
+                  <Scrubber label="Min bar width" value={fx.minBar ?? 5} min={0} max={50} onChange={(minBar) => set({ minBar })} />
+                  <Scrubber label="Highlight" value={fx.highlight ?? 25} min={0} max={60} onChange={(highlight) => set({ highlight })} />
+                </>
+              ) : fx.type === "asciiwave" ? (
+                <>
+                  <Scrubber label="Rows" value={fx.rows ?? 20} min={5} max={60} onChange={(rows) => set({ rows })} />
+                  <Scrubber label="Amplitude" value={fx.amplitude ?? 60} min={0} max={100} onChange={(amplitude) => set({ amplitude })} />
+                  <Scrubber label="Frequency" value={fx.frequency ?? 20} min={0} max={100} onChange={(frequency) => set({ frequency })} />
+                  <Scrubber label="Angle" value={fx.angle ?? 38} min={-90} max={90} onChange={(angle) => set({ angle })} />
+                  <Scrubber label="Thickness" value={fx.thickness ?? 9} min={1} max={50} onChange={(thickness) => set({ thickness })} />
+                  <Scrubber label="Softness" value={fx.softness ?? 60} min={0} max={100} onChange={(softness) => set({ softness })} />
+                  <Scrubber label="Phase" value={fx.phase ?? 0} min={0} max={100} onChange={(phase) => set({ phase })} />
+                  <ColorOpacityField
+                    hex={fx.waveHex ?? "1166D9"}
+                    opacity={100}
+                    labelText="Wave color"
+                    onHexChange={(waveHex) => set({ waveHex })}
+                    onOpacityChange={() => {}}
+                    onSwatchClick={() => handleSwatchClick("gfx-wave")}
+                    makePercentDrag={makePercentDrag}
+                  />
+                  <ColorOpacityField
+                    hex={fx.waveBgHex ?? "060611"}
+                    opacity={100}
+                    labelText="Background"
+                    onHexChange={(waveBgHex) => set({ waveBgHex })}
+                    onOpacityChange={() => {}}
+                    onSwatchClick={() => handleSwatchClick("gfx-wavebg")}
+                    makePercentDrag={makePercentDrag}
+                  />
+                </>
+              ) : fx.type === "collapsinggrid" ? (
+                <>
+                  <Scrubber label="Grid size" value={fx.gridSize ?? 10} min={2} max={40} onChange={(gridSize) => set({ gridSize })} />
+                  <Scrubber label="Collapse" value={fx.collapse ?? 30} min={0} max={100} onChange={(collapse) => set({ collapse })} />
+                  <Scrubber label="Gap size" value={fx.gapSize ?? 5} min={0} max={50} onChange={(gapSize) => set({ gapSize })} />
+                  <Scrubber label="Corner radius" value={fx.cornerRadius ?? 10} min={0} max={50} onChange={(cornerRadius) => set({ cornerRadius })} />
+                  <ToggleRow label="Varying corners" checked={!!fx.varyCorners} onChange={(varyCorners) => set({ varyCorners })} />
+                  <ColorOpacityField
+                    hex={fx.bgHex ?? "000000"}
+                    opacity={fx.bgOpacity ?? 100}
+                    labelText="Gap color"
+                    onHexChange={(bgHex) => set({ bgHex })}
+                    onOpacityChange={(bgOpacity) => set({ bgOpacity })}
+                    onSwatchClick={() => handleSwatchClick("gfx-bg")}
+                    makePercentDrag={makePercentDrag}
+                  />
+                </>
+              ) : fx.type === "patternrefraction" ? (
+                <>
+                  <PopupDropdown value={fx.patternType ?? 0} options={REFRACT_PATTERNS} onChange={(patternType) => set({ patternType })} />
+                  <Scrubber label="Strength" value={fx.strength ?? 50} min={-100} max={100} onChange={(strength) => set({ strength })} />
+                  <Scrubber label="Smoothness" value={fx.smoothness ?? 0} min={0} max={100} onChange={(smoothness) => set({ smoothness })} />
+                  <Scrubber label="Frost" value={fx.frost ?? 0} min={0} max={100} onChange={(frost) => set({ frost })} />
+                  <Scrubber label="Dispersion" value={fx.dispersion ?? 4} min={-100} max={100} onChange={(dispersion) => set({ dispersion })} />
+                  <PopupDropdown value={fx.wrapMode ?? 0} options={WRAP_MODES} onChange={(wrapMode) => set({ wrapMode })} />
+                  <Scrubber label="Center X" value={fx.cx ?? 50} min={0} max={100} onChange={(cx) => set({ cx })} />
+                  <Scrubber label="Center Y" value={fx.cy ?? 50} min={0} max={100} onChange={(cy) => set({ cy })} />
+                  <Scrubber label="Size" value={fx.radius ?? 8} min={0} max={100} onChange={(radius) => set({ radius })} />
+                  <Scrubber label="Angle" value={fx.angle ?? 45} min={-180} max={180} onChange={(angle) => set({ angle })} />
+                </>
+              ) : fx.type === "banknote" ? (() => {
+                const D = FX_DEFAULTS.banknote;
+                const on = (k) => fx[k] ?? D[k];
+                const S = (label, k, min, max) => (
+                  <Scrubber key={k} label={label} value={on(k)} min={min} max={max} onChange={(v) => set({ [k]: v })} />
+                );
+                const H = (t) => (
+                  <span className="pt-2 text-[12px] font-medium tracking-[0.01em] text-[#8C8C8C] dark:text-[#9A9A9A]">{t}</span>
+                );
+                return (
+                  <>
+                    {H("Ink & paper")}
+                    <ColorOpacityField
+                      hex={on("inkHex")} opacity={on("inkOpacity")} labelText="Main ink"
+                      onHexChange={(inkHex) => set({ inkHex })} onOpacityChange={(inkOpacity) => set({ inkOpacity })}
+                      onSwatchClick={() => handleSwatchClick("gfx-ink")} makePercentDrag={makePercentDrag}
+                    />
+                    <ColorOpacityField
+                      hex={on("paperHex")} opacity={on("paperOpacity")} labelText="Paper"
+                      onHexChange={(paperHex) => set({ paperHex })} onOpacityChange={(paperOpacity) => set({ paperOpacity })}
+                      onSwatchClick={() => handleSwatchClick("gfx-paper")} makePercentDrag={makePercentDrag}
+                    />
+
+                    {H("Lines")}
+                    {S("Spacing", "spacing", 8, 120)}
+                    {S("Line weight", "lineWeight", 40, 160)}
+                    {S("Angle", "angle", -90, 90)}
+                    {S("Contour flow", "flow", 0, 160)}
+                    {S("Crosshatching", "crosshatch", 0, 100)}
+
+                    {H("Guilloche")}
+                    {S("Strength", "guilloche", 0, 100)}
+                    <PopupDropdown value={on("placement")} options={BANKNOTE_PLACEMENTS} onChange={(placement) => set({ placement })} />
+                    {on("placement") === 1 && S("Upper region reach", "patternExtent", 0, 100)}
+                    {S("Scale", "patternScale", 40, 300)}
+                    {S("Curvature", "curvature", 0, 160)}
+
+                    {H("Tone")}
+                    {S("Exposure", "exposure", -200, 200)}
+                    {S("Contrast", "contrast", 50, 200)}
+                    {S("Tone curve", "gamma", 40, 200)}
+                    {S("Detail", "detail", 0, 200)}
+
+                    {H("Print")}
+                    {S("Paper grain", "grain", 0, 100)}
+                    {S("Ink wear", "wear", 0, 100)}
+                    {S("Fine stippling", "stipple", 0, 100)}
+
+                    {H("Color accent")}
+                    <ToggleRow label="Preserve selected hue" checked={!!on("preserveHue")} onChange={(preserveHue) => set({ preserveHue })} />
+                    {on("preserveHue") && (
+                      <>
+                        {S("Hue", "hue", 0, 360)}
+                        {S("Tolerance", "tolerance", 1, 180)}
+                        {S("Feather", "feather", 1, 60)}
+                        {S("Min saturation", "minSaturation", 0, 90)}
+                        {S("Accent strength", "accentStrength", 0, 100)}
+                        {S("Keep shadows in ink", "shadowProtection", 0, 100)}
+                        <PopupDropdown value={on("accentMode")} options={BANKNOTE_ACCENT_MODES} onChange={(accentMode) => set({ accentMode })} />
+                        {on("accentMode") === 1 && (
+                          <ColorOpacityField
+                            hex={on("accentHex")} opacity={on("accentOpacity")} labelText="Accent ink"
+                            onHexChange={(accentHex) => set({ accentHex })} onOpacityChange={(accentOpacity) => set({ accentOpacity })}
+                            onSwatchClick={() => handleSwatchClick("gfx-accent")} makePercentDrag={makePercentDrag}
+                          />
+                        )}
+                        <ToggleRow label="Preview hue mask" checked={!!on("maskPreview")} onChange={(maskPreview) => set({ maskPreview })} />
+                      </>
+                    )}
+
+                    {H("Finish")}
+                    <ToggleRow label="Keep transparency" checked={!!on("keepAlpha")} onChange={(keepAlpha) => set({ keepAlpha })} />
+                    {S("Effect amount", "amount", 0, 100)}
+                  </>
+                );
+              })() : fx.type === "glitch" ? (() => {
+                const D = FX_DEFAULTS.glitch;
+                const on = (k) => fx[k] ?? D[k];
+                const S = (label, k, min, max) => (
+                  <Scrubber key={k} label={label} value={on(k)} min={min} max={max} onChange={(v) => set({ [k]: v })} />
+                );
+                const T = (label, k) => <ToggleRow key={k} label={label} checked={!!on(k)} onChange={(v) => set({ [k]: v })} />;
+                const H = (t) => (
+                  <span className="pt-2 text-[12px] font-medium tracking-[0.01em] text-[#8C8C8C] dark:text-[#9A9A9A]">{t}</span>
+                );
+                const speeds = fx.rollingSpeeds ?? D.rollingSpeeds;
+                return (
+                  <>
+                    {H("Master")}
+                    {S("Strength", "strength", 0, 100)}
+                    {S("Loop (s)", "loopSeconds", 1, 20)}
+                    {S("Effect mix", "effectMix", 0, 100)}
+                    <PopupDropdown value={on("edgeMode")} options={EDGE_MODES} onChange={(edgeMode) => set({ edgeMode })} />
+
+                    {H("Timing")}
+                    {S("Phase", "phase", 0, 100)}
+                    {S("Bursts per loop", "bursts", 1, 12)}
+                    {S("Burst duration", "burstDuration", 5, 400)}
+                    {S("Irregularity", "irregularity", 0, 100)}
+                    {S("Seed", "seed", 0, 9999)}
+
+                    {T("Tearing", "tearing")}
+                    {on("tearing") && (
+                      <>
+                        {S("Displacement", "tearAmount", 0, 40)}
+                        {S("Band thickness", "bandThickness", 2, 200)}
+                        {S("Band density", "bandDensity", 1, 48)}
+                        {S("Edge softness", "edgeSoftness", 0, 100)}
+                      </>
+                    )}
+
+                    {T("Fragments", "fragmentation")}
+                    {on("fragmentation") && (
+                      <>
+                        {S("Band extent", "blockSize", 2, 50)}
+                        {S("Displacement", "fragmentAmount", 0, 40)}
+                        {S("Coverage", "coverage", 0, 100)}
+                      </>
+                    )}
+
+                    {T("Color separation", "colorSplit")}
+                    {on("colorSplit") && (
+                      <>
+                        {S("Split distance", "splitDistance", 0, 30)}
+                        {S("Split angle", "splitAngle", -180, 180)}
+                      </>
+                    )}
+
+                    {T("Scanlines", "scanlines")}
+                    {on("scanlines") && (
+                      <>
+                        {S("Strength", "scanStrength", 0, 100)}
+                        {S("Spacing", "scanSpacing", 2, 24)}
+                      </>
+                    )}
+
+                    {T("Noise", "noiseEnabled")}
+                    {on("noiseEnabled") && (
+                      <>
+                        {S("Amount", "noiseAmount", 0, 50)}
+                        {S("Grain size", "grainSize", 10, 160)}
+                      </>
+                    )}
+
+                    {T("Flicker", "flicker")}
+                    {on("flicker") && S("Strength", "flickerStrength", 0, 50)}
+
+                    {T("Diagonal buzz", "diagonalEnabled")}
+                    {on("diagonalEnabled") && (
+                      <>
+                        {S("Amount", "diagonalAmount", 0, 100)}
+                        {S("Angle", "diagonalAngle", -180, 180)}
+                        {S("Width", "diagonalWidth", 1, 50)}
+                      </>
+                    )}
+
+                    {T("Rolling bands", "rollingEnabled")}
+                    {on("rollingEnabled") && (
+                      <>
+                        <PopupDropdown value={on("rollingDirection")} options={ROLL_DIRECTIONS} onChange={(rollingDirection) => set({ rollingDirection })} />
+                        {S("Master speed", "rollingPasses", 1, 8)}
+                        {S("Concurrent bands", "rollingCount", 3, 6)}
+                        {S("Core width", "rollingCoreWidth", 10, 400)}
+                        {S("Falloff", "rollingHaloExtent", 5, 200)}
+                        {S("Displacement", "rollingDisplacement", 0, 120)}
+                        {S("Color tearing", "rollingColorTearing", 0, 240)}
+                        {S("Static strength", "rollingStaticStrength", 0, 50)}
+                        {Array.from({ length: on("rollingCount") }, (_, i) => (
+                          <Scrubber
+                            key={`rs${i}`}
+                            label={`Line ${i + 1} speed`}
+                            value={speeds[i] ?? 1}
+                            min={1}
+                            max={8}
+                            onChange={(v) => set({ rollingSpeeds: Array.from({ length: 6 }, (_, j) => (j === i ? v : speeds[j] ?? 1)) })}
+                          />
+                        ))}
+                      </>
+                    )}
+                  </>
+                );
+              })() : (
+                <>
+                  <Scrubber label="Amount" value={fx.amount} min={0} max={100} onChange={(amount) => set({ amount })} />
+                  <Scrubber label="Scale" value={fx.scale} min={1} max={100} onChange={(scale) => set({ scale })} />
+                  <Scrubber label="Angle" value={fx.angle} min={-180} max={180} onChange={(angle) => set({ angle })} />
+                </>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
       {cropModalOpen && uploadedMediaThumb && uploadedImageDims && (
         <CropModal
           imageUrl={uploadedMediaThumb}
@@ -8916,6 +9869,101 @@ className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed borde
             } catch {}
           }}
         />
+      )}
+
+            {projectsPageOpen && (
+        <ProjectsPage
+          loading={!projectsLoaded}
+          projects={savedProjects}
+          selectedId={selectedProjectId}
+          folders={folders}
+          setFolders={setFolders}
+          onClose={() => setProjectsPageOpen(false)}
+          onOpen={openProject}
+          onNewProject={() => {
+            handleNewProject();
+            setProjectsPageOpen(false);
+          }}
+          onMenu={toggleProjectMenu}
+          menuId={projectMenu?.id ?? null}
+          renamingId={renamingProjectId}
+          renameDraft={renameDraft}
+          onRenameDraft={setRenameDraft}
+          onRenameCommit={commitRenameProject}
+          onRenameCancel={() => { renameCancelRef.current = true; }}
+          onMoveProject={handleMoveProject}
+          onTogglePin={handleTogglePin}
+          onTour={() => {
+            setProjectsPageOpen(false);
+            startTour();
+          }}
+          onVideoTour={() => {
+            setProjectsPageOpen(false);
+            if (imageOrVideo !== "video") {
+              setImageOrVideo("video");
+              setTimeout(startVideoTour, 450); // let the timeline mount
+            } else startVideoTour();
+          }}
+          onShortcuts={() => setShortcutsOpen(true)}
+          themePref={themePref}
+          onThemeChange={setThemePref}
+          onDeleteProject={handleDeleteProject}
+          onDeleteFolder={handleDeleteFolder}
+          onPurgeProject={handlePurgeProject}
+        />
+      )}
+
+      {!splashGone && !projectsPageOpen && (
+        <div
+          aria-hidden
+          className={`fixed inset-0 z-[10000] flex flex-col ${chrome.appBg} transition-opacity duration-300 ${
+            appReady ? "opacity-0 pointer-events-none" : "opacity-100"
+          }`}
+        >
+          {/* Top bar */}
+          <div className="flex items-center justify-between h-16 p-4 mx-2 rounded-b-2xl shrink-0 bg-[#FAF9FA] dark:bg-[#171717]">
+            <img src={`${import.meta.env.BASE_URL}logo-light.svg`} alt="" draggable={false} className="h-8 w-auto select-none dark:hidden" />
+            <img src={`${import.meta.env.BASE_URL}logo-dark.svg`} alt="" draggable={false} className="hidden h-8 w-auto select-none dark:block" />
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-8 w-28 rounded-2xl" />
+              <Skeleton className="h-8 w-28 rounded-2xl" />
+              <Skeleton className="h-8 w-32 rounded-2xl" />
+            </div>
+          </div>
+
+          <div className="flex-1 flex gap-2 p-2 overflow-hidden">
+            {/* Left rail + panel */}
+            <div className="flex gap-2 shrink-0">
+              <div className="flex flex-col gap-1 w-11">
+                {[0, 1, 2].map((i) => <Skeleton key={i} className="w-11 h-11 rounded-[10px]" />)}
+              </div>
+              <div className="w-[248px] p-4 flex flex-col gap-3 rounded-2xl overflow-hidden bg-[#FAF9FA] dark:bg-[#171717]">
+                <Skeleton className="h-[33px] rounded-[10px] shrink-0" />
+                {Array.from({ length: 20 }, (_, i) => <Skeleton key={i} className="h-8 rounded-lg shrink-0" />)}
+              </div>
+            </div>
+
+            {/* Canvas */}
+            <Skeleton className="flex-1 rounded-[16px]" />
+
+            {/* Right toolbar */}
+            <div className="w-[300px] shrink-0 flex flex-col rounded-2xl bg-[#FAF9FA] dark:bg-[#171717] overflow-hidden">
+              <div className="flex items-center gap-4 h-11 px-4 border-b border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10">
+                {[0, 1, 2].map((i) => <Skeleton key={i} className="h-3 w-12 rounded" />)}
+              </div>
+              <div className="p-4 flex flex-col gap-3 shrink-0">
+                <Skeleton className="h-3 w-16 rounded shrink-0" />
+                <Skeleton className="h-[66px] rounded-[10px] shrink-0" />
+                {[0, 1, 2].map((s) => (
+                  <React.Fragment key={s}>
+                    <Skeleton className="h-3 w-20 rounded mt-3 shrink-0" />
+                    {[0, 1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-9 rounded-[10px] shrink-0" />)}
+                  </React.Fragment>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {exportToast && (

@@ -5,8 +5,10 @@ import { sampleDeviceAnim, shotAnimPose } from "../lib/shotAnim.js";
 import { sampleShotFrames } from "../lib/frameKeys.js";
 import { frameRect, cornersOf } from "../lib/frameModel.js";
 import { frameFade } from "../lib/frameFade.js";
+import { planeBackFacing, sortByDepth, projectPlane, drawPlane3D, placeholderPlane, planeGrid } from "../lib/plane3d.js";
 import { layoutOf } from "../constants/templates.js";
 import { GRADIENT_PRESETS, IMAGE_PRESETS } from "../constants/presets.js";
+import { Skeleton } from "./controls.jsx";
 
 // Template card thumbnail for Frame mode: draws the layout using the current frames' images.
 export function FrameTemplateThumb({ tpl, frames }) {
@@ -77,6 +79,7 @@ export function VideoTemplateCard({ tpl, index, label, active, renderKey, render
   const stillsRef = useRef(renderStills);
   stillsRef.current = renderStills;
   const [hover, setHover] = useState(false);
+  const [ready, setReady] = useState(false);
 
   const camAt = (t) => {
     const c = sampleShots(tpl.shots, t);
@@ -109,6 +112,7 @@ export function VideoTemplateCard({ tpl, index, label, active, renderKey, render
   // Poster. Re-renders when the device, body colour or screenshot changes.
   useEffect(() => {
     cache.current = { poster: null, imgs: [], frames: null };
+    setReady(false);
     let dead = false, timer;
     const run = (n = 0) => {
       const urls = stillsRef.current([camAt(tpl.poster)]);
@@ -120,6 +124,7 @@ export function VideoTemplateCard({ tpl, index, label, active, renderKey, render
         if (dead || !im) return;
         cache.current.poster = im;
         paint(im, tpl.poster);
+        setReady(true);
       });
     };
     timer = setTimeout(run, 150 + index * 60);
@@ -200,6 +205,7 @@ export function VideoTemplateCard({ tpl, index, label, active, renderKey, render
         })()}
       >
         <canvas ref={canvasRef} width={VT_W} height={VT_H} className="absolute inset-0 w-full h-full" />
+        {!ready && <Skeleton className="absolute inset-0" />}
       </div>
       <span
         className={`tpl-title truncate text-left leading-4 transition-colors ${
@@ -224,10 +230,13 @@ function drawLiveScene(ctx, live, t) {
   ctx.scale(k, k);
   if (bg) ctx.drawImage(bg, 0, 0, box.w, box.h);
   const poses = sampleShotFrames(shots, t) ?? {};
-  frames.forEach((f) => {
-    if (f.hidden) return;
+  const posed = frames.map((f) => {
     const p = poses[f.id];
-    const fr = p ? { ...f, x: p.x, y: p.y, w: Math.round(p.w), h: Math.round(p.h), s: p.s, r: p.r ?? 0 } : f;
+    return p ? { ...f, x: p.x, y: p.y, w: Math.round(p.w), h: Math.round(p.h), s: p.s, r: p.r ?? 0, rx: p.rx ?? 0, ry: p.ry ?? 0, z: p.z ?? 0, sh: p.sh ?? 0 } : f;
+  });
+  sortByDepth(posed).forEach((fr) => {
+    const f = fr;
+    if (f.hidden) return;
     // a frame with its own row is hidden outside that row and animates with it
     let a = 1, ax = 0, ay = 0, sc = 1, rx = 0, ry = 0;
     const rows = shots.filter((s) => s.frameId === f.id);
@@ -236,6 +245,34 @@ function drawLiveScene(ctx, live, t) {
       if (!row) return;
       const q = shotAnimPose(row, t) ?? {};
       a = q.a ?? 1; ax = q.x ?? 0; ay = q.y ?? 0; sc = q.s ?? 1; rx = q.rx ?? 0; ry = q.ry ?? 0;
+    }
+    if (fr.rig) {
+      if (fr.rig.hide && planeBackFacing(fr, box)) return;
+      const rr = frameRect(fr, box);
+      if (rr.width < 2 || rr.height < 2) return; // hidden plane (shrunk to almost nothing). Canvas has no camera clipping, so it would project to a stray rectangle
+      if ((fr.z ?? 0) >= fr.rig.persp * 0.95) return; // at or past the camera
+      const proj = (u, v) => projectPlane(fr, rr, box, u, v);
+      const im = imgs.get(f.id);
+      ctx.save();
+      ctx.globalAlpha = vidClamp(a, 0, 1);
+      ctx.translate(ax * box.w, -ay * box.h);
+      if (im) {
+        const sc = Math.max(rr.width / im.naturalWidth, rr.height / im.naturalHeight);
+        const vw = rr.width / sc, vh = rr.height / sc;
+        drawPlane3D(ctx, im, { x: (im.naturalWidth - vw) / 2, y: (im.naturalHeight - vh) / 2, w: vw, h: vh }, proj, ...planeGrid(fr));
+      } else {
+        drawPlane3D(ctx, placeholderPlane(), { x: 0, y: 0, w: 64, h: 86 }, proj, ...planeGrid(fr));
+      }
+      if (fr.sh > 0) {
+        const q = [proj(0, 0), proj(1, 0), proj(1, 1), proj(0, 1)];
+        ctx.fillStyle = `rgba(0,0,0,${fr.sh})`;
+        ctx.beginPath();
+        q.forEach(([px, py], n) => (n ? ctx.lineTo(px, py) : ctx.moveTo(px, py)));
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.restore();
+      return;
     }
     const r = frameRect(fr, box);
     const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
@@ -280,6 +317,7 @@ export function FrameVideoTemplateCard({ tpl, index, label, active, renderKey, r
   const prepareRef = useRef(prepareLive);
   prepareRef.current = prepareLive;
   const [hover, setHover] = useState(false);
+  const [ready, setReady] = useState(false);
 
   const paint = (src, src2 = null, f = 0) => {
     const cv = canvasRef.current;
@@ -300,12 +338,14 @@ export function FrameVideoTemplateCard({ tpl, index, label, active, renderKey, r
 
   useEffect(() => {
     cache.current = { poster: null, live: null };
+    setReady(false);
     let dead = false;
     const timer = setTimeout(async () => {
       const c = await stillRef.current(tpl, tpl.poster, VT_W);
       if (dead || !c) return;
       cache.current.poster = c;
       paint(c);
+      setReady(true);
     }, 150 + index * 80);
     return () => {
       dead = true;
@@ -381,6 +421,7 @@ export function FrameVideoTemplateCard({ tpl, index, label, active, renderKey, r
     >
       <div className="relative w-full aspect-[3/4] rounded-lg overflow-hidden bg-[#EDEDED] dark:bg-[#292929] transition-transform duration-200 group-hover:scale-[1.015]">
         <canvas ref={canvasRef} width={VT_W} height={VT_H} className="absolute inset-0 w-full h-full" />
+        {!ready && <Skeleton className="absolute inset-0" />}
       </div>
       <span
         className={`tpl-title truncate text-left leading-4 transition-colors ${

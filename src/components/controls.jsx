@@ -857,6 +857,10 @@ export function FadeScrollerY({ children, className = "", wrapClassName = "", fa
   );
 }
 
+export function Skeleton({ className = "" }) {
+  return <div aria-hidden className={`skeleton ${className}`} />;
+}
+
 // Section header: whole row is the click target, and the caret sits in the same hover chip as AppearanceHeader.
 export function SectionHeader({ label, open, onToggle }) {
   return (

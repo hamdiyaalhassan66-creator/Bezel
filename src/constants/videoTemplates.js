@@ -1,6 +1,7 @@
 import { CAM_DEFAULT, hexRgba, buildGradientCss } from "../lib/frameUtils.js";
 import { vidEaseSpec } from "../lib/videoMath.js";
 import { GRADIENT_PRESETS, IMAGE_PRESETS } from "./presets.js";
+import { FRAME_LAYOUTS } from "./templates.js";
 
 // ---------- Video templates ----------
 // VK = camera keyframe (t is relative to the shot). VSHOT = a shot. poster = time (s) shown on the card at rest.
@@ -41,32 +42,143 @@ export const vtBgCss = (sn) =>
     : "transparent";
 
 const VT_RAW = [
-  // Spins a full turn from a wide-angle, far-away start, then lands on a calm close angle
-  { id: "vt-whiplash", label: "Whiplash", tags: "spin 360 fast fov zoom crazy wide", poster: 1.6,
-    bgs: [VBG(0, { type: "gradient", preset: "cobalt-flare" }, { grain: 6 })],
-    shots: [VSHOT("Whiplash", 0, 5, [
-      VK(0, { rotationX: -25, rotationY: -180, rotationZ: -20, zoom: 15, fov: 105 }, "expo-out"),
-      VK(1.6, { rotationX: -10, rotationY: 25, rotationZ: 4, zoom: 78, fov: 30 }, "sine-in-out"),
-      VK(3.2, { rotationX: -6, rotationY: -18, rotationZ: -6, zoom: 88, fov: 24 }, "expo-in-out"),
-      VK(5, { rotationX: -8, rotationY: 360, rotationZ: 0, zoom: 70, fov: 27 }),
-    ], { enter: { id: "flip-h", dur: 900, delay: 0 } })] },
+  // Hard-cut closeups on the headline, the photo and the nav pill, then pulls back to the full screen
+  { id: "vt-macro", label: "Macro Cuts", tags: "macro closeup close up detail cuts screen headline pull back montage", poster: 7,
+    bgs: [VBG(0, { type: "gradient", preset: "violet-noir" }, { grain: 8 })],
+    shots: [
+      VSHOT("Headline", 0, 1.8, [
+        VK(0, { rotationX: -6, rotationY: 14, positionX: 6, positionY: 42, zoom: 100, fov: 12 }, "sine-in-out"),
+        VK(1.8, { rotationX: -5, rotationY: 10, positionX: 2, positionY: 38, zoom: 100, fov: 12 }),
+      ]),
+      VSHOT("Photo", 1.8, 1.8, [
+        VK(0, { rotationX: 4, rotationY: -16, positionX: -4, positionY: -34, zoom: 100, fov: 12 }, "sine-in-out"),
+        VK(1.8, { rotationX: 3, rotationY: -12, positionX: 0, positionY: -38, zoom: 100, fov: 12 }),
+      ]),
+      VSHOT("Nav pill", 3.6, 1.8, [
+        VK(0, { rotationX: 0, rotationY: 8, positionX: 0, positionY: -58, zoom: 100, fov: 9 }, "sine-in-out"),
+        VK(1.8, { rotationX: 0, rotationY: 4, positionX: 0, positionY: -56, zoom: 100, fov: 9 }),
+      ]),
+      VSHOT("Pull back", 5.4, 3.6, [
+        VK(0, { rotationX: 0, rotationY: 4, positionY: -56, zoom: 100, fov: 9 }, "expo-out"),
+        VK(3.6, { rotationX: -6, rotationY: 12, positionY: 0, zoom: 62, fov: 27 }),
+      ]),
+    ] },
 
-  // Dolly zoom: camera flies in while the lens goes from telephoto to ultra-wide
-  { id: "vt-vertigo", label: "Vertigo", tags: "dolly zoom hitchcock fov warp distortion", poster: 3,
-    bgs: [VBG(0, { type: "gradient", preset: "midnight-magenta" }, { grain: 8 })],
-    shots: [VSHOT("Vertigo", 0, 6, [
-      VK(0, { rotationX: -8, rotationY: 20, zoom: 5, fov: 0 }, "cubic-in-out"),
-      VK(3.5, { rotationX: -14, rotationY: -12, rotationZ: 6, zoom: 100, fov: 120 }, "expo-out"),
-      VK(6, { rotationX: -10, rotationY: 8, rotationZ: 0, zoom: 55, fov: 60 }),
+  // One fast Y turn that lands on the screen, then pushes into a tight telephoto closeup
+  { id: "vt-gyro", label: "Gyro Flip", tags: "flip turn spin rotate y overshoot back gyro zoom push", poster: 5,
+    bgs: [VBG(0, { type: "gradient", preset: "deep-teal" }, { grain: 8 })],
+    shots: [VSHOT("Gyro flip", 0, 6, [
+      VK(0, { rotationX: -8, rotationY: 0, zoom: 45, fov: 27 }, "back-in-out"),
+      VK(2.4, { rotationX: -8, rotationY: 360, zoom: 85, fov: 40 }, "expo-out"),
+      VK(6, { rotationX: -4, rotationY: 360, zoom: 100, fov: 14 }),
     ])] },
 
-  // Full roll around the screen axis while swinging sideways and breathing zoom / fov
-  { id: "vt-roll", label: "Barrel Roll", tags: "roll rotate z 360 spin tilt", poster: 2.5,
-    bgs: [VBG(0, { type: "custom", preset: "iridescent-metallic-art" })],
-    shots: [VSHOT("Barrel roll", 0, 5, [
-      VK(0, { rotationX: -10, rotationY: 35, rotationZ: 0, zoom: 60, fov: 27 }, "cubic-in-out"),
-      VK(2.5, { rotationX: -22, rotationY: -35, rotationZ: 180, zoom: 90, fov: 70 }, "cubic-in-out"),
-      VK(5, { rotationX: -10, rotationY: 35, rotationZ: 360, zoom: 60, fov: 27 }),
+  // Starts tilted back with the screen in steep perspective, snaps level, then pushes in
+  { id: "vt-topdown", label: "Top-Down Slam", tags: "tilt perspective top down drop slam level hero push", poster: 1.2,
+    bgs: [VBG(0, { type: "gradient", preset: "steel-blue" }, { grain: 6 })],
+    shots: [VSHOT("Top-down slam", 0, 5, [
+      VK(0, { rotationX: -58, rotationY: 0, rotationZ: 0, zoom: 55, fov: 45 }, "expo-in-out"),
+      VK(1.8, { rotationX: -4, rotationY: 0, rotationZ: 0, zoom: 62, fov: 27 }, "expo-out"),
+      VK(3.4, { rotationX: -8, rotationY: 14, rotationZ: 3, zoom: 85, fov: 22 }, "cubic-in-out"),
+      VK(5, { rotationX: -4, rotationY: -8, rotationZ: 0, zoom: 100, fov: 14 }),
+    ])] },
+
+  // Zoom pumps between a tiny device and a screen-filling closeup, twice
+  { id: "vt-pulse", label: "Dolly Pulse", tags: "dolly zoom pulse push pull breathe repeat in out screen fill", poster: 2.4,
+    bgs: [VBG(0, { type: "gradient", preset: "ocean-blue" }, { grain: 8 })],
+    shots: [VSHOT("Dolly pulse", 0, 8, [
+      VK(0, { rotationX: -6, rotationY: 12, zoom: 20, fov: 24 }, "expo-in-out"),
+      VK(2, { rotationX: -2, rotationY: -6, zoom: 100, fov: 36 }, "expo-in-out"),
+      VK(4, { rotationX: -8, rotationY: 14, zoom: 25, fov: 24 }, "expo-in-out"),
+      VK(6, { rotationX: -2, rotationY: -4, zoom: 100, fov: 36 }, "expo-in-out"),
+      VK(8, { rotationX: -6, rotationY: 8, zoom: 68, fov: 27 }),
+    ])] },
+
+  // Opens on the back for a moment, whips round to the screen, then pushes in
+  { id: "vt-backflip", label: "Back Reveal", tags: "back rear flip reveal turn around spin 180 screen", poster: 2.6,
+    bgs: [VBG(0, { type: "gradient", preset: "dusk-horizon" }, { grain: 10 })],
+    shots: [VSHOT("Back reveal", 0, 6, [
+      VK(0, { rotationX: -10, rotationY: 180, rotationZ: -12, zoom: 70, fov: 24 }, "expo-out"),
+      VK(1.4, { rotationX: -6, rotationY: 0, rotationZ: 0, zoom: 65, fov: 30 }, "cubic-in-out"),
+      VK(6, { rotationX: -3, rotationY: -6, zoom: 100, fov: 12 }),
+    ])] },
+
+  // Rolls a full turn on Z while rushing in from far away, lands on the screen
+  { id: "vt-corkscrew", label: "Corkscrew Push", tags: "roll z spin corkscrew push in zoom rush twist entrance", poster: 2.2,
+    bgs: [VBG(0, { type: "gradient", preset: "amber-sky" }, { grain: 8 })],
+    shots: [VSHOT("Corkscrew push", 0, 6, [
+      VK(0, { rotationX: -14, rotationY: 20, rotationZ: -360, zoom: 8, fov: 60 }, "expo-out"),
+      VK(3, { rotationX: -8, rotationY: -12, rotationZ: 0, zoom: 75, fov: 30 }, "cubic-in-out"),
+      VK(6, { rotationX: -4, rotationY: 6, rotationZ: 0, zoom: 100, fov: 12 }),
+    ])] },
+
+  // Whips in from the left, locks onto the screen, holds a beat, then whips out to the right
+  { id: "vt-flyby", label: "Fly-By", tags: "fly by pass whip rotate in out sweep side exit", poster: 3,
+    bgs: [VBG(0, { type: "gradient", preset: "forest-green" }, { grain: 6 })],
+    shots: [VSHOT("Fly-by", 0, 6, [
+      VK(0, { rotationX: -10, rotationY: -70, rotationZ: -10, positionX: -90, zoom: 40, fov: 50 }, "expo-out"),
+      VK(2.5, { rotationX: -6, rotationY: 8, rotationZ: 0, positionX: 0, zoom: 85, fov: 24 }, "sine-in-out"),
+      VK(3.5, { rotationX: -6, rotationY: 12, rotationZ: 0, positionX: 0, zoom: 92, fov: 22 }, "cubic-in"),
+      VK(6, { rotationX: -10, rotationY: 70, rotationZ: 10, positionX: 90, zoom: 40, fov: 50 }),
+    ], { exit: { id: "scale", dur: 700, delay: 0 } })] },
+
+  // Tilted dutch angle on a tight shot of the screen that levels out as the camera pulls away
+  { id: "vt-dutch", label: "Dutch Reveal", tags: "dutch angle tilt roll closeup level reveal tension cinematic", poster: 0.3,
+    bgs: [VBG(0, { type: "gradient", preset: "cobalt-flare" }, { grain: 10 })],
+    shots: [VSHOT("Dutch reveal", 0, 6, [
+      VK(0, { rotationX: -10, rotationY: 24, rotationZ: -22, positionX: 8, positionY: -20, zoom: 100, fov: 12 }, "sine-in-out"),
+      VK(2.5, { rotationX: -8, rotationY: 20, rotationZ: -14, positionX: 4, positionY: -12, zoom: 100, fov: 12 }, "expo-in-out"),
+      VK(6, { rotationX: -6, rotationY: 8, rotationZ: 0, positionX: 0, positionY: 0, zoom: 68, fov: 26 }),
+    ])] },
+
+  // Reference 2: small device, slow push until the screen fills the frame, hold, then pull back out
+  { id: "vt-screenpush", label: "Screen Push", tags: "push in zoom fill screen hold pull out scale reveal hero", poster: 4.2,
+    bgs: [VBG(0, { type: "gradient", preset: "sunset-orange" }, { grain: 8 })],
+    shots: [VSHOT("Screen push", 0, 9, [
+      VK(0, { rotationX: 0, rotationY: 0, zoom: 35, fov: 24 }, "expo-in-out"),
+      VK(3.6, { rotationX: 0, rotationY: 0, zoom: 100, fov: 20 }, "sine-in-out"),
+      VK(5.4, { rotationX: -2, rotationY: 3, zoom: 100, fov: 20 }, "expo-in-out"),
+      VK(9, { rotationX: 0, rotationY: 0, zoom: 35, fov: 24 }),
+    ])] },
+
+  // Reference 1: steep tilted perspective straightens, then leans left and right with a roll, then settles
+  { id: "vt-herotilt", label: "Hero Tilt", tags: "tilt lean sway perspective roll left right hero straighten", poster: 4,
+    bgs: [VBG(0, { type: "gradient", preset: "burnt-clay" }, { grain: 10 })],
+    shots: [VSHOT("Hero tilt", 0, 9, [
+      VK(0, { rotationX: -30, rotationY: 0, rotationZ: 0, zoom: 50, fov: 36 }, "expo-out"),
+      VK(1.8, { rotationX: 0, rotationY: 0, rotationZ: 0, zoom: 60, fov: 27 }, "sine-in-out"),
+      VK(3.6, { rotationX: -8, rotationY: -22, rotationZ: 8, zoom: 85, fov: 24 }, "sine-in-out"),
+      VK(5.8, { rotationX: -8, rotationY: 22, rotationZ: -8, zoom: 85, fov: 24 }, "sine-in-out"),
+      VK(9, { rotationX: 0, rotationY: 0, rotationZ: 0, zoom: 62, fov: 27 }),
+    ])] },
+
+  // Swings left and right while the zoom pumps from wide to tight on every swing
+  { id: "vt-swing", label: "Swing Zoom", tags: "swing sway left right zoom pump alternate energy tilt", poster: 2.5,
+    bgs: [VBG(0, { type: "gradient", preset: "midnight-magenta" }, { grain: 8 })],
+    shots: [VSHOT("Swing zoom", 0, 8, [
+      VK(0, { rotationX: -6, rotationY: -28, rotationZ: 6, zoom: 35, fov: 30 }, "sine-in-out"),
+      VK(2, { rotationX: -6, rotationY: 28, rotationZ: -6, zoom: 100, fov: 20 }, "sine-in-out"),
+      VK(4, { rotationX: -6, rotationY: -22, rotationZ: 5, zoom: 40, fov: 30 }, "sine-in-out"),
+      VK(6, { rotationX: -4, rotationY: 16, rotationZ: -4, zoom: 100, fov: 18 }, "sine-in-out"),
+      VK(8, { rotationX: -4, rotationY: 0, rotationZ: 0, zoom: 70, fov: 27 }),
+    ])] },
+
+  // Dolly zoom on the screen: the device stays the same size while the perspective stretches around it
+  { id: "vt-dollyzoom", label: "Dolly Zoom", tags: "dolly zoom vertigo fov stretch perspective warp screen", poster: 3.2,
+    bgs: [VBG(0, { type: "gradient", preset: "violet-noir" }, { grain: 8 })],
+    shots: [VSHOT("Dolly zoom", 0, 6, [
+      VK(0, { rotationX: -4, rotationY: 8, zoom: 95, fov: 10 }, "cubic-in-out"),
+      VK(3.6, { rotationX: -6, rotationY: -6, zoom: 38, fov: 62 }, "expo-out"),
+      VK(6, { rotationX: -4, rotationY: 4, zoom: 70, fov: 27 }),
+    ])] },
+
+  // Macro lens glides down the screen from the headline to the photo to the nav pill, then pulls out
+  { id: "vt-scan", label: "Screen Scan", tags: "scan scroll glide pan down screen macro closeup detail pull out", poster: 3,
+    bgs: [VBG(0, { type: "gradient", preset: "dusk-horizon" }, { grain: 8 })],
+    shots: [VSHOT("Screen scan", 0, 8, [
+      VK(0, { rotationX: -4, rotationY: 14, positionY: 55, zoom: 100, fov: 12 }, "sine-in-out"),
+      VK(5, { rotationX: -4, rotationY: -10, positionY: -55, zoom: 100, fov: 12 }, "expo-out"),
+      VK(8, { rotationX: -6, rotationY: 6, positionY: 0, zoom: 66, fov: 27 }),
     ])] },
 
   // Starts jammed in one corner at extreme zoom, sweeps across to the opposite corner, then pulls out to hero
@@ -86,89 +198,24 @@ const VT_RAW = [
       ]),
     ] },
 
-  // Slams in with a heavy fisheye, then snaps flat with a spring
-  { id: "vt-crash", label: "Fisheye Crash", tags: "fisheye wide fov crash impact spring snap", poster: 0.4,
-    bgs: [VBG(0, { type: "gradient", preset: "sunset-orange" }, { grain: 10, enter: { id: "barrel", dur: 900, delay: 0 } })],
-    shots: [VSHOT("Fisheye crash", 0, 5, [
-      VK(0, { rotationX: -45, rotationY: 70, rotationZ: -35, zoom: 100, fov: 120 }, "spring"),
-      VK(2.4, { rotationX: -10, rotationY: 18, rotationZ: 0, zoom: 70, fov: 27 }, "sine-in-out"),
-      VK(5, { rotationX: -6, rotationY: 8, rotationZ: 2, zoom: 76, fov: 24 }),
-    ], { enter: { id: "scale", dur: 700, delay: 0 } })] },
-
-  // One flip around Y, then one flip around X, each with an overshoot
-  { id: "vt-flips", label: "Double Flip", tags: "flip turn rotate 360 x y back overshoot", poster: 1.8,
-    bgs: [
-      VBG(0, { type: "gradient", preset: "deep-teal" }, { grain: 6 }),
-      VBG(3, { type: "gradient", preset: "violet-noir" }, { grain: 8, enter: { id: "mask-expand", dur: 800, delay: 0 } }),
-    ],
-    shots: [
-      VSHOT("Flip Y", 0, 3, [
-        VK(0, { rotationX: -8, rotationY: 0, zoom: 62 }, "back-in-out"),
-        VK(3, { rotationX: -8, rotationY: 360, zoom: 62 }),
-      ]),
-      VSHOT("Flip X", 3, 3, [
-        VK(0, { rotationX: -8, rotationY: 360, zoom: 62 }, "back-in-out"),
-        VK(3, { rotationX: -368, rotationY: 360, zoom: 62 }),
-      ]),
-    ] },
-
-  // Starts straight above the device, spirals down while winding the roll, ends head-on
-  { id: "vt-spiral", label: "Spiral Down", tags: "overhead top down spiral rotate dive descend", poster: 3,
-    bgs: [VBG(0, { type: "gradient", preset: "dusk-horizon" })],
-    shots: [VSHOT("Spiral down", 0, 6, [
-      VK(0, { rotationX: -88, rotationY: 0, rotationZ: 180, zoom: 20, fov: 75 }, "cubic-in-out"),
-      VK(3, { rotationX: -55, rotationY: 30, rotationZ: -90, zoom: 60, fov: 45 }, "expo-out"),
-      VK(6, { rotationX: -4, rotationY: 0, rotationZ: 0, zoom: 76, fov: 27 }),
+  // Slow lean-and-sway arc with the zoom breathing between mid and tight, screen always in view
+  { id: "vt-arc", label: "Arc Sway", tags: "arc sway orbit light slow lean breathe zoom smooth cinematic", poster: 4.5,
+    bgs: [VBG(0, { type: "custom", preset: "iridescent-metallic-art" })],
+    shots: [VSHOT("Arc sway", 0, 9, [
+      VK(0, { rotationX: -10, rotationY: -35, rotationZ: 3, zoom: 55, fov: 24 }, "sine-in-out"),
+      VK(3, { rotationX: -4, rotationY: 0, rotationZ: 0, zoom: 95, fov: 18 }, "sine-in-out"),
+      VK(6, { rotationX: -10, rotationY: 35, rotationZ: -3, zoom: 60, fov: 24 }, "sine-in-out"),
+      VK(9, { rotationX: -6, rotationY: 8, rotationZ: 0, zoom: 75, fov: 24 }),
     ])] },
 
-  // Hard cuts between wildly different angles (no easing between poses), then settles
-  { id: "vt-strobe", label: "Strobe Cut", tags: "cut hard angles fast glitch beat jump", poster: 1.2,
-    bgs: [
-      VBG(0, { type: "gradient", preset: "violet-noir" }, { grain: 8 }),
-      VBG(1.5, { type: "gradient", preset: "midnight-magenta" }, { grain: 8, enter: { id: "glitch", dur: 600, delay: 0 } }),
-      VBG(3, { type: "custom", preset: "abstract-glowing-object" }, { enter: { id: "pixel", dur: 600, delay: 0 } }),
-    ],
-    shots: [VSHOT("Strobe cut", 0, 4.5, [
-      VK(0, { rotationX: -15, rotationY: 25, zoom: 70 }, "hold"),
-      VK(0.5, { rotationX: -12, rotationY: 28, rotationZ: -16, zoom: 70 }, "hold"),
-      VK(1, { rotationX: -22, rotationY: 38, positionX: 18, positionY: -42, zoom: 100, fov: 22 }, "hold"),
-      VK(1.5, { rotationX: -18, rotationY: 52, zoom: 88, fov: 105 }, "hold"),
-      VK(2, { rotationX: -88, rotationY: 0, zoom: 55 }, "hold"),
-      VK(2.5, { rotationX: -12, rotationY: 150, zoom: 70 }, "hold"),
-      VK(3, { rotationX: -30, rotationY: -60, rotationZ: 25, zoom: 64 }, "expo-out"),
-      VK(4.5, { rotationX: -8, rotationY: 10, rotationZ: 0, zoom: 74 }),
+  // Starts filling the frame with a rolled screen, spirals out to a small tilted device, then settles
+  { id: "vt-spiralout", label: "Spiral Out", tags: "spiral pull away roll zoom out shrink float tilt reveal", poster: 0.4,
+    bgs: [VBG(0, { type: "gradient", preset: "amber-dusk" }, { grain: 10 })],
+    shots: [VSHOT("Spiral out", 0, 7, [
+      VK(0, { rotationX: -4, rotationY: 8, rotationZ: 14, zoom: 100, fov: 12 }, "expo-out"),
+      VK(3, { rotationX: -14, rotationY: 30, rotationZ: -10, zoom: 25, fov: 40 }, "cubic-in-out"),
+      VK(7, { rotationX: -6, rotationY: 8, rotationZ: 0, zoom: 70, fov: 27 }),
     ])] },
-
-  // Big swings left and right that lose energy each time, with the camera pumping in and out
-  { id: "vt-pendulum", label: "Pendulum", tags: "swing sway rock left right pendulum zoom pump", poster: 2,
-    bgs: [VBG(0, { type: "gradient", preset: "burnt-clay" }, { grain: 8 })],
-    shots: [VSHOT("Pendulum", 0, 7, [
-      VK(0, { rotationX: -8, rotationY: -75, rotationZ: 14, zoom: 45, fov: 40 }, "sine-in-out"),
-      VK(1.75, { rotationX: -8, rotationY: 75, rotationZ: -14, zoom: 95, fov: 20 }, "sine-in-out"),
-      VK(3.5, { rotationX: -8, rotationY: -45, rotationZ: 9, zoom: 55, fov: 35 }, "sine-in-out"),
-      VK(5.25, { rotationX: -8, rotationY: 28, rotationZ: -5, zoom: 80, fov: 25 }, "sine-in-out"),
-      VK(7, { rotationX: -6, rotationY: 0, rotationZ: 0, zoom: 70, fov: 27 }),
-    ])] },
-
-  { id: "vt-reveal", label: "Reveal", tags: "macro close pull back two shots", poster: 5,
-    bgs: [
-      VBG(0, { type: "solid", hex: "0C0D10" }),
-      VBG(3, { type: "gradient", preset: "sunset-orange" }, { enter: { id: "mask-expand", dur: 900, delay: 0 } }),
-    ],
-    shots: [
-      VSHOT("Close-up", 0, 3, [VK(0, { rotationX: -22, rotationY: 38, zoom: 100, fov: 22 }, "sine-in-out"), VK(3, { rotationX: -20, rotationY: 34, zoom: 100, fov: 22 })]),
-      VSHOT("Pull back", 3, 3, [VK(0, { rotationX: -20, rotationY: 34, zoom: 100, fov: 22 }, "expo-out"), VK(3, { rotationX: -15, rotationY: 25, zoom: 62 })]),
-    ] },
-  { id: "vt-tumble", label: "Tumble", tags: "tumble spin exit dramatic", poster: 1,
-    bgs: [
-      VBG(0, { type: "gradient", preset: "steel-blue" }),
-      VBG(3, { type: "gradient", preset: "midnight-magenta" }, { grain: 8, enter: { id: "blur", dur: 800, delay: 0 } }),
-    ],
-    shots: [
-      VSHOT("Settle", 0, 3, [VK(0, { rotationX: -15, rotationY: 25 }, "sine-in-out"), VK(3, { rotationX: -12, rotationY: 18 })]),
-      VSHOT("Tumble", 3, 3, [VK(0, { rotationX: -12, rotationY: 18 }, "cubic-in-out"), VK(3, { rotationX: -30, rotationY: -60, rotationZ: 25, zoom: 64 })],
-        { exit: { id: "scale", dur: 800, delay: 0 } }),
-    ] },
 ];
 export const VIDEO_TEMPLATES = VT_RAW.map((t, i) => ({
   ...t,
@@ -185,61 +232,108 @@ const FK = (t, o = {}, ease, fo) => ({ ...VK(t, o, ease), ...(fo ? { fo } : {}) 
 //   order      : "start" | "end" | "center" | "random"
 //   cam0/cam1  : optional camera drift across the shot
 const STG = (o) => ({ step: 0.25, dur: 1.1, ease: "expo-out", order: "start", ...o });
+// Layout from FRAME_LAYOUTS with a corner radius and no effects, so no drop shadows come along.
+const FL_ = (key, radius = 5) => FRAME_LAYOUTS[key].map((s) => ({ ...s, radius, fx: [], blurs: [] }));
+// Slow camera move across the whole template (tilt / perspective drift).
+const CAMSHOT = (len, a, b) => VSHOT("Camera", 0, len, [VK(0, a, "sine-in-out"), VK(len, b)]);
+
 const FVT_RAW = [
-  { id: "fvt-cascade", label: "Cascade Rise", tags: "stagger cascade rise enter frames", poster: 4, layout: "triple",
-    bgs: [VBG(0, { type: "gradient", preset: "ocean-blue" })],
-    shots: [VSHOT("Cascade", 0, 5, [], { stagger: STG({ from: () => ({ dy: 1.6 }), step: 0.3, cam0: { zoom: 62 }, cam1: { zoom: 72 } }) })] },
+  // ---- from the references ----
+  { id: "fvt-brief-stack", label: "Brief Stack", tags: "editorial slides stacked alternate slide taupe flat presentation", poster: 3.5,
+    layout: FL_("stack3", 0), canvas: { w: 1080, h: 1440 },
+    bgs: [VBG(0, { type: "solid", hex: "9A9392" })],
+    shots: [VSHOT("Slides", 0, 5, [], { stagger: STG({ from: (i) => ({ dx: (i % 2 ? 1 : -1) * 1.6 }), step: 0.3, dur: 1.2 }) })] },
 
-  { id: "fvt-sides", label: "Alternate Sides", tags: "stagger slide left right alternate enter grid", poster: 4, layout: "grid",
-    bgs: [VBG(0, { type: "gradient", preset: "violet-noir" }, { grain: 8 })],
-    shots: [VSHOT("Sides", 0, 5, [], { stagger: STG({ from: (i) => ({ dx: (i % 2 ? 1 : -1) * 1.8 }), step: 0.3, ease: "cubic-out" }) })] },
+  { id: "fvt-soft-row", label: "Soft Row", tags: "three phones row rise light grey clean app screens", poster: 4,
+    layout: FL_("lightRow", 7), canvas: { w: 1080, h: 1350 },
+    bgs: [VBG(0, { type: "solid", hex: "E4E4E5" })],
+    shots: [VSHOT("Rise", 0, 5, [], { stagger: STG({ from: () => ({ dy: 1.6 }), step: 0.3, dur: 1.2 }) })] },
 
-  { id: "fvt-pop", label: "Pop Stagger", tags: "stagger pop scale bounce enter overlap", poster: 4, layout: "overlap",
-    bgs: [VBG(0, { type: "gradient", preset: "amber-sky" })],
-    shots: [VSHOT("Pop", 0, 5, [], { stagger: STG({ from: () => ({ k: 0.1 }), step: 0.2, dur: 0.9, ease: "back-out" }) })] },
+  { id: "fvt-pair-bleed", label: "Pair Bleed", tags: "two phones one cropped right edge taupe dark editorial", poster: 4,
+    layout: FL_("phonePair", 7), canvas: { w: 1080, h: 1350 },
+    bgs: [VBG(0, { type: "solid", hex: "625A59" })],
+    shots: [VSHOT("Pair", 0, 5, [], { stagger: STG({ from: (i) => (i ? { dx: 1.4 } : { dy: 1.6 }), step: 0.35, dur: 1.3 }) })] },
 
-  { id: "fvt-bounce", label: "Drop & Bounce", tags: "stagger drop bounce top enter", poster: 4.5, layout: "trio",
-    bgs: [VBG(0, { type: "gradient", preset: "steel-blue" })],
-    shots: [VSHOT("Drop", 0, 5.5, [], { stagger: STG({ from: () => ({ dy: -1.6 }), step: 0.25, dur: 1.4, ease: "bounce" }) })] },
-
-  { id: "fvt-fan", label: "Fan Out", tags: "stagger fan spread center stack reveal", poster: 4, layout: "overlap",
-    bgs: [VBG(0, { type: "gradient", preset: "midnight-magenta" }, { grain: 8 })],
-    shots: [VSHOT("Fan out", 0, 5, [], { stagger: STG({ from: (i, n, f) => ({ dx: -f.x, dy: -f.y, k: 0.9 }), step: 0.15, dur: 1.2, ease: "cubic-out", order: "center", cam0: { zoom: 58 }, cam1: { zoom: 70 } }) })] },
-
-  { id: "fvt-reverse", label: "Reverse Rise", tags: "stagger reverse last first rise", poster: 4, layout: "bleed",
-    bgs: [VBG(0, { type: "gradient", preset: "burnt-clay" })],
-    shots: [VSHOT("Reverse rise", 0, 5, [], { stagger: STG({ from: () => ({ dy: 1.6 }), order: "end", step: 0.3 }) })] },
-
-  { id: "fvt-converge", label: "Converge", tags: "stagger converge spread together slide", poster: 4, layout: "triple",
-    bgs: [VBG(0, { type: "gradient", preset: "cobalt-flare" })],
-    shots: [VSHOT("Converge", 0, 5, [], { stagger: STG({ from: (i, n) => ({ dx: (i - (n - 1) / 2) * 1.2 }), step: 0.12, dur: 1.4, order: "center" }) })] },
-
-  { id: "fvt-inout", label: "Rise & Exit", tags: "stagger enter exit rise up out loop grid", poster: 2.5, layout: "grid",
-    bgs: [VBG(0, { type: "gradient", preset: "deep-teal" }, { grain: 6 })],
-    shots: [VSHOT("Rise & exit", 0, 6, [], { stagger: STG({ from: () => ({ dy: 1.6 }), out: () => ({ dy: -1.6 }), step: 0.2, dur: 1 }) })] },
-
-  // all four cards travel as one strip: same direction, tiny stagger, slight camera drift
-  { id: "fvt-carousel", label: "Carousel", tags: "carousel strip row slide in out together", poster: 3, layout: "strip",
-    bgs: [VBG(0, { type: "custom", preset: "blue-sky-scene" })],
-    shots: [VSHOT("Carousel", 0, 6, [], { stagger: STG({ from: () => ({ dx: 1.8 }), out: () => ({ dx: -1.8 }), step: 0.1, dur: 1.4, ease: "cubic-out", outEase: "cubic-in", cam0: { positionX: 8 }, cam1: { positionX: -8 } }) })] },
-
-  { id: "fvt-push", label: "Push In", tags: "zoom push close hero", poster: 4, layout: "single",
-    bgs: [VBG(0, { type: "gradient", preset: "sunset-orange" })],
-    shots: [VSHOT("Push in", 0, 5, [], { stagger: STG({ from: () => ({ k: 0.6 }), step: 0, dur: 5, ease: "expo-out" }) })] },
-
-  // panning across frames that bleed off the edges
-  { id: "fvt-pan", label: "Pan", tags: "pan sweep slide horizontal bleed", poster: 2.5, layout: "bleed",
+  { id: "fvt-glass-panel", label: "Glass Panel", tags: "big panel bleed bottom right pastel sky gradient desktop app glide", poster: 3,
+    layout: FL_("notesPanel", 5), canvas: { w: 1080, h: 1080 },
     bgs: [VBG(0, { type: "custom", preset: "ethereal-gradient-abstraction" })],
-    shots: [VSHOT("Pan", 0, 5, [], { stagger: STG({ from: () => ({ dx: 0.35 }), step: 0, dur: 5, ease: "cubic-in-out" }) })] },
+    shots: [
+      VSHOT("Panel", 0, 5, [], { stagger: STG({ from: () => ({ dx: 0.7, dy: 0.7, k: 0.9 }), step: 0, dur: 2, ease: "expo-out" }) }),
+      CAMSHOT(5, { zoom: 70 }, { zoom: 76, positionX: -3 }),
+    ] },
 
-  { id: "fvt-drop", label: "Drop In", tags: "enter exit slide top tilt duo", poster: 2.5, layout: "duo",
-    bgs: [
-      VBG(0, { type: "solid", hex: "0C0D10" }),
-      VBG(2, { type: "gradient", preset: "forest-green" }, { enter: { id: "mask-expand", dur: 900, delay: 0 } }),
-    ],
-    shots: [VSHOT("Drop in", 0, 4, [],
-      { stagger: STG({ from: () => ({ dr: -4 }), step: 0, dur: 4, ease: "back-out" }),
-        enter: { id: "slide-top", dur: 900, delay: 0 }, exit: { id: "slide-bottom", dur: 700, delay: 0 } })] },
+  { id: "fvt-chat-peek", label: "Chat Peek", tags: "app panel beside cropped second panel photo mountain slide", poster: 4,
+    layout: FL_("chatPair", 5), canvas: { w: 1050, h: 1200 },
+    bgs: [VBG(0, { type: "custom", preset: "blue-sky-scene" })],
+    shots: [VSHOT("Peek", 0, 5, [], { stagger: STG({ from: (i) => (i === 0 ? { dx: -1 } : { dy: 1.3 }), step: 0.4, dur: 1.4 }) })] },
+
+  { id: "fvt-tilted-crop", label: "Tilted Crop", tags: "close up crop panel rotated white clean browser ui rise tilt", poster: 3.5,
+    layout: FL_("cropTilt", 6), canvas: { w: 1080, h: 1080 },
+    bgs: [VBG(0, { type: "solid", hex: "FFFFFF" })],
+    shots: [
+      VSHOT("Rise", 0, 5, [], { stagger: STG({ from: () => ({ dy: 1.4 }), step: 0, dur: 2.2 }) }),
+      CAMSHOT(5, { rotationX: -12, rotationY: 8, rotationZ: -8, zoom: 80 }, { rotationX: -8, rotationY: 4, rotationZ: -4, zoom: 84 }),
+    ] },
+
+  { id: "fvt-pixel-inset", label: "Pixel Inset", tags: "website wide panel inset margin green pixel grain landscape push", poster: 4,
+    layout: FL_("siteInset", 1), canvas: { w: 1470, h: 1030 },
+    bgs: [VBG(0, { type: "gradient", preset: "amber-sky" }, { grain: 14 })],
+    shots: [VSHOT("Push", 0, 5, [], { stagger: STG({ from: () => ({ k: 0.8, dy: 0.25 }), step: 0, dur: 2.4 }) })] },
+
+  // ---- extras in the same style ----
+  { id: "fvt-brief-red", label: "Brief Red", tags: "two wide slides stacked red editorial bold flat top bottom", poster: 3.5,
+    layout: FL_("stack2", 0), canvas: { w: 1080, h: 1350 },
+    bgs: [VBG(0, { type: "solid", hex: "C93A1B" })],
+    shots: [VSHOT("Slides", 0, 5, [], { stagger: STG({ from: (i) => ({ dy: i ? 1.6 : -1.6 }), step: 0.2, dur: 1.2 }) })] },
+
+  { id: "fvt-soft-tilt", label: "Soft Tilt", tags: "three phones row perspective receding converge light grey", poster: 4,
+    layout: FL_("lightRow", 7), canvas: { w: 1080, h: 1350 },
+    bgs: [VBG(0, { type: "solid", hex: "F4F4F5" })],
+    shots: [
+      VSHOT("Converge", 0, 5, [], { stagger: STG({ from: (i, n) => ({ dx: (i - (n - 1) / 2) * 1.4 }), step: 0.12, dur: 1.4, order: "center" }) }),
+      CAMSHOT(5, { rotationX: -10, rotationY: 20, rotationZ: -3, zoom: 74 }, { rotationX: -8, rotationY: 30, rotationZ: -3, zoom: 76 }),
+    ] },
+
+  { id: "fvt-trio-bleed", label: "Trio Bleed", tags: "three phones last cropped dark charcoal row pan glide", poster: 3,
+    layout: FL_("phoneBleed3", 7), canvas: { w: 1080, h: 1350 },
+    bgs: [VBG(0, { type: "solid", hex: "2A2527" })],
+    shots: [VSHOT("Pan", 0, 5, [], { stagger: STG({ from: () => ({ dx: 0.45 }), step: 0, dur: 5, ease: "cubic-in-out" }) })] },
+
+  { id: "fvt-corner-panel", label: "Corner Panel", tags: "panel top left bleed blue sky tilt desktop slide", poster: 4,
+    layout: FL_("panelTL", 5), canvas: { w: 1080, h: 1080 },
+    bgs: [VBG(0, { type: "gradient", preset: "ocean-blue" })],
+    shots: [
+      VSHOT("Panel", 0, 5, [], { stagger: STG({ from: () => ({ dx: -0.7, dy: -0.7 }), step: 0, dur: 2 }) }),
+      CAMSHOT(5, { rotationX: 6, rotationY: -14, rotationZ: -3, zoom: 74 }, { rotationX: 4, rotationY: -8, rotationZ: -2, zoom: 78 }),
+    ] },
+
+  { id: "fvt-chat-dusk", label: "Chat Dusk", tags: "app panel beside cropped panel dusk warm grain sway exit", poster: 3,
+    layout: FL_("chatPair", 5), canvas: { w: 1050, h: 1200 },
+    bgs: [VBG(0, { type: "gradient", preset: "dusk-horizon" }, { grain: 10 })],
+    shots: [
+      VSHOT("Peek & exit", 0, 6, [], { stagger: STG({
+        from: (i) => (i === 0 ? { dx: -1 } : { dy: 1.3 }),
+        out: (i) => (i === 0 ? { dx: -1 } : { dy: 1.3 }),
+        step: 0.3, dur: 1.2, outEase: "cubic-in",
+      }) }),
+      CAMSHOT(6, { rotationX: -6, rotationY: -14, zoom: 74 }, { rotationX: -6, rotationY: -4, zoom: 74 }),
+    ] },
+
+  { id: "fvt-dark-crop", label: "Dark Crop", tags: "close up crop panel rotated dark dutch roll", poster: 3.5,
+    layout: FL_("cropTilt", 6), canvas: { w: 1080, h: 1080 },
+    bgs: [VBG(0, { type: "solid", hex: "0C0D10" })],
+    shots: [
+      VSHOT("Rise", 0, 5, [], { stagger: STG({ from: () => ({ dy: 1.4 }), step: 0, dur: 2.2 }) }),
+      CAMSHOT(5, { rotationX: -12, rotationY: 8, rotationZ: -8, zoom: 80 }, { rotationX: -10, rotationY: 6, rotationZ: -2, zoom: 84 }),
+    ] },
+
+  { id: "fvt-pixel-tilt", label: "Pixel Tilt", tags: "website wide panel perspective teal grain landscape swing", poster: 4,
+    layout: FL_("siteInset", 2), canvas: { w: 1470, h: 1030 },
+    bgs: [VBG(0, { type: "gradient", preset: "deep-teal" }, { grain: 12 })],
+    shots: [
+      VSHOT("Slide", 0, 5, [], { stagger: STG({ from: () => ({ dx: 1.8 }), step: 0, dur: 2.4 }) }),
+      CAMSHOT(5, { rotationX: -14, rotationY: 18, rotationZ: -3, zoom: 76 }, { rotationX: -8, rotationY: 10, rotationZ: -1, zoom: 78 }),
+    ] },
 ];
 export const FRAME_VIDEO_TEMPLATES = FVT_RAW.map((t, i) => ({
   ...t,

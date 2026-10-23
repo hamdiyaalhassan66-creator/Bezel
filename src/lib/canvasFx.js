@@ -381,21 +381,6 @@ for (let j = 0; j < bandH; j++) {
   }
 }
 
-    for (let j = 0; j < bandH; j++) {
-      const d = top ? j + 0.5 : bandH - j - 0.5;
-      const o = glassOffset(p, d);
-      const row = j + rowOff;
-      const hi = Math.min(1, lightK * (1 - smooth(0, rimW, d)) * p.light * 0.9) * 255;
-      const pos = levelPos(glassFrost(p, d));
-      const lo = Math.floor(pos), up = Math.min(levels.length - 1, lo + 1), lf = up === lo ? 0 : pos - lo;
-      for (let x = 0; x < W; x++) {
-        const i = (j * W + x) * 4;
-        od[i]     = Math.min(255, sample(x, row + dir * o * (1 + p.dsp), 0, lo, up, lf) + hi);
-        od[i + 1] = Math.min(255, sample(x, row + dir * o, 1, lo, up, lf) + hi);
-        od[i + 2] = Math.min(255, sample(x, row + dir * o * (1 - p.dsp), 2, lo, up, lf) + hi);
-        od[i + 3] = 255;
-      }
-    }
     const oc = document.createElement("canvas");
     oc.width = W; oc.height = bandH;
     oc.getContext("2d").putImageData(out, 0, 0);

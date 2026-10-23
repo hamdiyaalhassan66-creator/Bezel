@@ -9,22 +9,27 @@ export const CAMERA_VIEW_PRESETS = [
 
 // Extra angles used only by templates. Key must match a template's cameraKey.
 const EXTRA_CAMERA_VIEWS = [
-  { key: "isometric", label: "Isometric", rotationX: -35, rotationY: 45, rotationZ: 0, positionX: 0, positionY: 0, zoom: 68, fov: 27 },
-  { key: "dutch", label: "Dutch tilt", rotationX: -12, rotationY: 28, rotationZ: -16, positionX: 0, positionY: 0, zoom: 70, fov: 27 },
-  { key: "overhead", label: "Overhead", rotationX: -75, rotationY: 25, rotationZ: 0, positionX: 0, positionY: 0, zoom: 66, fov: 27 },
-  { key: "low-angle", label: "Low angle", rotationX: 28, rotationY: -28, rotationZ: 0, positionX: 0, positionY: 0, zoom: 78, fov: 40 },
-  { key: "macro", label: "Macro", rotationX: -22, rotationY: 38, rotationZ: 0, positionX: 18, positionY: -42, zoom: 100, fov: 22 },
-  { key: "wide", label: "Fisheye", rotationX: -18, rotationY: 52, rotationZ: 0, positionX: 0, positionY: 0, zoom: 88, fov: 105 },
-  { key: "profile", label: "Profile", rotationX: -6, rotationY: 78, rotationZ: 0, positionX: 0, positionY: 0, zoom: 70, fov: 27 },
-  { key: "back", label: "Back", rotationX: -12, rotationY: 150, rotationZ: 0, positionX: 0, positionY: 0, zoom: 70, fov: 27 },
-  { key: "sideways", label: "Sideways", rotationX: -10, rotationY: 22, rotationZ: 90, positionX: 0, positionY: 0, zoom: 62, fov: 27 },
-  { key: "far", label: "Far", rotationX: -15, rotationY: -30, rotationZ: 0, positionX: 0, positionY: 0, zoom: 28, fov: 20 },
-  { key: "tumble", label: "Tumble", rotationX: -30, rotationY: -60, rotationZ: 25, positionX: 0, positionY: 0, zoom: 64, fov: 27 },
+  { key: "corner-bleed", label: "Corner bleed", rotationX: 12, rotationY: -24, rotationZ: 12, positionX: -8, positionY: -18, zoom: 76, fov: 24 },
+  { key: "bottom-edge", label: "Bottom edge", rotationX: 10, rotationY: 24, rotationZ: -6, positionX: 0, positionY: -22, zoom: 74, fov: 22 },
+  { key: "handheld", label: "Handheld", rotationX: -10, rotationY: 28, rotationZ: -10, positionX: 0, positionY: 0, zoom: 64, fov: 30 },
+  { key: "corner-mirror", label: "Corner mirror", rotationX: 12, rotationY: 24, rotationZ: -12, positionX: 8, positionY: -18, zoom: 76, fov: 24 },
+  { key: "top-edge", label: "Top edge", rotationX: -14, rotationY: -24, rotationZ: 6, positionX: 0, positionY: 22, zoom: 74, fov: 22 },
+  { key: "half-screen", label: "Half screen", rotationX: -6, rotationY: 14, rotationZ: -4, positionX: -22, positionY: 0, zoom: 76, fov: 22 },
+  { key: "float-tilt", label: "Float tilt", rotationX: -18, rotationY: 28, rotationZ: -14, positionX: 0, positionY: 0, zoom: 46, fov: 26 },
+  { key: "slant", label: "Slant", rotationX: -6, rotationY: -38, rotationZ: 0, positionX: 0, positionY: 0, zoom: 66, fov: 18 },
+  { key: "look-down", label: "Look down", rotationX: -30, rotationY: 8, rotationZ: 0, positionX: 0, positionY: 6, zoom: 68, fov: 26 },
+  { key: "macro-top", label: "Macro top", rotationX: -6, rotationY: 16, rotationZ: 0, positionX: 4, positionY: 26, zoom: 84, fov: 16 },
+  { key: "macro-bottom", label: "Macro bottom", rotationX: 4, rotationY: -16, rotationZ: 0, positionX: -4, positionY: -24, zoom: 84, fov: 16 },
+  { key: "fisheye-lean", label: "Fisheye lean", rotationX: -10, rotationY: 30, rotationZ: 8, positionX: 0, positionY: 0, zoom: 56, fov: 90 },
+  { key: "fisheye-close", label: "Fisheye close", rotationX: -4, rotationY: 14, rotationZ: 0, positionX: 0, positionY: 0, zoom: 70, fov: 85 },
+  { key: "low-tele", label: "Low tele", rotationX: 18, rotationY: -18, rotationZ: 0, positionX: 0, positionY: -8, zoom: 68, fov: 20 },
+  { key: "far-float", label: "Far float", rotationX: -10, rotationY: 20, rotationZ: 0, positionX: 0, positionY: 0, zoom: 25, fov: 24 },
+  { key: "persp-push", label: "Perspective push", rotationX: -4, rotationY: 38, rotationZ: 0, positionX: 0, positionY: 0, zoom: 70, fov: 50 },
 ];
 export const TEMPLATE_CAMERAS = [...CAMERA_VIEW_PRESETS, ...EXTRA_CAMERA_VIEWS];
 
 // Thumbnails pull the camera back a little so tilted / rotated devices don't clip the card.
 export const templatePreviewCam = (t) => {
   const cam = TEMPLATE_CAMERAS.find((p) => p.key === t.cameraKey) ?? CAMERA_VIEW_PRESETS[0];
-  return { ...cam, zoom: Math.max(0, cam.zoom - 15) };
+  return { ...cam, zoom: Math.max(0, cam.zoom - 25) };
 };

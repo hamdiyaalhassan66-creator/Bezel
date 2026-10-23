@@ -11,7 +11,10 @@ export function framePoseMap(frames, box) {
   const short = Math.min(box.w, box.h);
   const out = {};
   frames.forEach((f) => {
-    out[f.id] = { x: f.x, y: f.y, w: f.w, h: f.h, s: f.s ?? frameRect(f, box).width / (f.w * short), r: f.r ?? 0 };
+    out[f.id] = {
+      x: f.x, y: f.y, w: f.w, h: f.h, s: f.s ?? frameRect(f, box).width / (f.w * short), r: f.r ?? 0,
+      rx: f.rx ?? 0, ry: f.ry ?? 0, z: f.z ?? 0, sh: f.sh ?? 0,
+    };
   });
   return out;
 }
@@ -22,7 +25,11 @@ function framePoseChanged(a, b) {
     Math.abs(a.y - b.y) > 0.002 ||
     Math.abs(a.w * a.s - b.w * b.s) > 0.002 ||
     Math.abs(a.h * a.s - b.h * b.s) > 0.002 ||
-    Math.abs((a.r ?? 0) - (b.r ?? 0)) > 0.05
+    Math.abs((a.r ?? 0) - (b.r ?? 0)) > 0.05 ||
+    Math.abs((a.rx ?? 0) - (b.rx ?? 0)) > 0.05 ||
+    Math.abs((a.ry ?? 0) - (b.ry ?? 0)) > 0.05 ||
+    Math.abs((a.z ?? 0) - (b.z ?? 0)) > 0.002 ||
+    Math.abs((a.sh ?? 0) - (b.sh ?? 0)) > 0.01
   );
 }
 
@@ -41,7 +48,7 @@ function sampleFrameKeys(keys, t, ease = smoothstep) {
         const f = a.ease ? vidEaseFn(a.ease, ease) : ease;
         const u = f((t - a.t) / Math.max(1e-6, b.t - a.t));
         const o = {};
-        ["x", "y", "w", "h", "s", "r"].forEach((p) => {
+        ["x", "y", "w", "h", "s", "r", "rx", "ry", "z", "sh"].forEach((p) => {
           const va = a.frames[id][p] ?? 0, vb = b.frames[id][p] ?? 0;
           o[p] = va + (vb - va) * u;
         });

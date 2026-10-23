@@ -2,10 +2,13 @@ import React, { useRef, useState, useEffect, useLayoutEffect, useMemo } from "re
 import { isDefaultCamera, getFrameCamera, frameCameraCss, hexRgba } from "../lib/frameUtils.js";
 import { fishEyeMap, vignetteStops, glassProfile, glassVec, frostLayers } from "../lib/canvasFx.js";
 import { backFillOf, backOpacityOf, frameAppearanceOf, frameRect, cloneFrame } from "../lib/frameModel.js";
+import { frameDim, DIM_TRANSITION } from "../lib/frameFade.js";
 import { chromeKey, chromeOps, ChromeCanvas, SocialOverlay } from "./SocialOverlay.jsx";
 import { RESIZE_HANDLES } from "../constants/canvasControls.js";
 import { PB_BANDS, pbBandBlur, pbMask, pbParams, pbPts } from "../lib/progressiveBlur.js";
 import { PbHandles } from "./PbHandles.jsx";
+import { planeCss, planePoly, rigPerspective } from "../lib/plane3d.js";
+import { CurvedPlane } from "./CurvedPlane.jsx";
 
 // Chromium only: SVG url() filters inside backdrop-filter (refraction + dispersion).
 const URL_BACKDROP =
@@ -78,7 +81,7 @@ function glassMaps(canvasW, canvasH, g, side, ext = 0) {
   return { map: url(mapImg), hi: url(hiImg), scale: S };
 }
 
-export function FrameLayer({ onFrameClick, frames, selectedIds, onSelect, onFramesChange, aspectLocked, environment, camera, cameraEase, background, textBehind, sizeRef, onPickFile, onRotate, onZoom, backVisible, chromeColors, nextFrameId, stageRef, animRef, onStageReady, groupOf, onFrameDoubleClick, videoMode, onVideoReady, locked, fishCanvasRef, useFishCanvas }) {
+export function FrameLayer({ onFrameClick, markIds = [], onFrameHover, frames, selectedIds, onSelect, onFramesChange, aspectLocked, environment, camera, cameraEase, background, textBehind, sizeRef, onPickFile, onRotate, onZoom, backVisible, chromeColors, nextFrameId, stageRef, animRef, onStageReady, groupOf, onFrameDoubleClick, videoMode, onVideoReady, locked, fishCanvasRef, useFishCanvas, playing }) {
   const wrapRef = useRef(null);
   const [box, setBox] = useState(null);
   const [guides, setGuides] = useState({ v: false, h: false }); // v = vertical line (centered in X), h = horizontal line (centered in Y)
@@ -418,6 +421,11 @@ export function FrameLayer({ onFrameClick, frames, selectedIds, onSelect, onFram
   })();
 
   const cameraCss = box ? frameCameraCss(getFrameCamera(camera, box.h)) : undefined;
+  const rigP = box ? rigPerspective(frames, box) : undefined;
+  // far planes first: z-index follows depth, so the DOM order (and any playing videos) never changes
+  const depthRank = frames.some((f) => f.rig)
+    ? new Map([...frames].sort((a, b) => (a.z ?? 0) - (b.z ?? 0)).map((f, n) => [f.id, n + 1]))
+    : null;
   // the first visible frame that has progressive blurs sets them for the whole canvas (all of its progressive effects apply)
   const isPb = (e) => e.visible && e.type === "layerBlur" && e.mode === "progressive" && (e.blur > 0 || (e.startBlur ?? 0) > 0);
   const pbOwner = frames.find((f) => !f.hidden && (f.effects ?? []).some(isPb));
@@ -462,6 +470,12 @@ const bandMaps = useMemo(
     <div
       ref={wrapRef}
       onPointerDown={handlePointerDown}
+      onPointerMove={(e) => {
+        if (!locked) return;
+        const hit = e.target.closest?.("[data-frame-id]");
+        onFrameHover?.(hit ? Number(hit.dataset.frameId) : null);
+      }}
+      onPointerLeave={() => locked && onFrameHover?.(null)}
       className={`fade-enter absolute inset-0 overflow-hidden bg-[#FAF9FA] dark:bg-[#171717] touch-none ${locked ? "" : "cursor-grab active:cursor-grabbing"}`}
     >
       {background}
@@ -522,6 +536,7 @@ const bandMaps = useMemo(
             className="absolute inset-0"
             style={{
               isolation: "isolate",
+              perspective: rigP,
               willChange: "filter",
               opacity: canvasFish ? 0 : undefined, // still hit-testable, the canvas shows instead
               filter: [ubBlur > 0 ? `blur(${ubBlur}px)` : "", fishMap && !canvasFish ? "url(#bezel-fisheye)" : ""].filter(Boolean).join(" ") || undefined,
@@ -533,6 +548,17 @@ const bandMaps = useMemo(
             const imgUrl = f.img ? (f.img.cropUrl ?? f.img.url) : null;
             const fShort = Math.min(r.width, r.height);
             const borderRadius = ap.radiiFrac.map((p) => `${fShort * p}px`).join(" ");
+            if (f.rig?.curve) {
+              return (
+                <div key={f.id} onDoubleClick={() => onFrameDoubleClick?.(f.id)} style={{ display: "contents" }}>
+                  <CurvedPlane
+                    f={f} r={r} short={Math.min(box.w, box.h)} radiiFrac={ap.radiiFrac} imgUrl={imgUrl}
+                    backVisible={backVisible} zIndex={depthRank?.get(f.id)} transform={planeCss(f, Math.min(box.w, box.h))} ap={ap}
+                    dim={frameDim(f, box)} playing={playing}
+                  />
+                </div>
+              );
+            }
             return (
               <div
                 key={f.id}
@@ -547,7 +573,9 @@ const bandMaps = useMemo(
                   height: r.height,
                   borderRadius,
                   boxShadow: withGlow(f, ap.boxShadow),
-                  transform: f.r ? `rotate(${f.r}deg)` : undefined,
+                  transform: planeCss(f, Math.min(box.w, box.h)),
+                  zIndex: depthRank?.get(f.id),
+                  backfaceVisibility: f.rig?.hide ? "hidden" : undefined,
                   cursor: editable ? "default" : undefined,
                 }}
               >
@@ -611,6 +639,15 @@ const bandMaps = useMemo(
                   <div key={ap.sheenKey} className="fade-enter absolute inset-0 pointer-events-none" style={{ backgroundImage: ap.sheen }} />
                 )}
 
+                <div
+                  aria-hidden
+                  className="absolute inset-0 pointer-events-none bg-black"
+                  style={{
+                    opacity: 1 - (1 - (f.sh || 0)) * (1 - frameDim(f, box)),
+                    transition: playing ? "none" : DIM_TRANSITION,
+                  }}
+                />
+
                 {ap.insetStroke && (
                   <div className="absolute inset-0 pointer-events-none" style={{ borderRadius, boxShadow: ap.insetStroke }} />
                 )}
@@ -624,13 +661,13 @@ const bandMaps = useMemo(
               <React.Fragment key={`pb-${n}`}>
                 {g.base > 0 && (
                   <div aria-hidden className="absolute inset-0 pointer-events-none"
-                    style={{ zIndex: 10, backdropFilter: `blur(${g.base}px)`, WebkitBackdropFilter: `blur(${g.base}px)` }} />
+                    style={{ zIndex: 1000, backdropFilter: `blur(${g.base}px)`, WebkitBackdropFilter: `blur(${g.base}px)` }} />
                 )}
                 {g.extra > 0 && Array.from({ length: PB_BANDS }, (_, i) => {
                   const m = pbMask(g, i, box.w, box.h), f = `blur(${pbBandBlur(g.extra)}px)`;
                   return (
                     <div key={i} aria-hidden className="absolute inset-0 pointer-events-none"
-                      style={{ zIndex: 10, backdropFilter: f, WebkitBackdropFilter: f, maskImage: m, WebkitMaskImage: m }} />
+                      style={{ zIndex: 1000, backdropFilter: f, WebkitBackdropFilter: f, maskImage: m, WebkitMaskImage: m }} />
                   );
                 })}
               </React.Fragment>
@@ -638,16 +675,31 @@ const bandMaps = useMemo(
           })}
           </div>
 
-          {/* Selection outlines, one per selected frame */}
-          {!locked && selectedIds.map((id) => {
+          {/* Selection outlines (locked canvas: selected + hovered assets, 2px) */}
+          {(locked ? markIds : selectedIds).map((id) => {
             const f = frames.find((x) => x.id === id);
-            if (!f) return null;
+            if (!f || f.hidden) return null;
+            if (f.rig) {
+              const pts = planePoly(f, box).map((p) => p.join(",")).join(" ");
+              return (
+                <svg key={`sel-${id}`} className="absolute inset-0 w-full h-full pointer-events-none overflow-visible">
+                  <polygon points={pts} fill="none" stroke="#FF47BC" strokeWidth={locked ? 2 : 1} />
+                </svg>
+              );
+            }
             const r = frameRect(f, box);
+            const radii = frameAppearanceOf(f, environment, camera.rotationX, camera.rotationY).radiiFrac;
+            const fs = Math.min(r.width, r.height);
             return (
               <div
                 key={`sel-${id}`}
                 className="absolute pointer-events-none"
-                style={{ left: r.left, top: r.top, width: r.width, height: r.height, outline: "1px solid #FF47BC", transform: f.r ? `rotate(${f.r}deg)` : undefined }}
+                style={{
+                  left: r.left, top: r.top, width: r.width, height: r.height,
+                  outline: locked ? "2px solid #FF47BC" : "1px solid #FF47BC",
+                  borderRadius: radii.map((p) => `${fs * p}px`).join(" "),
+                  transform: f.r ? `rotate(${f.r}deg)` : undefined,
+                }}
               />
             );
           })}

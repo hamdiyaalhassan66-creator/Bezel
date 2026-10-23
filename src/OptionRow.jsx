@@ -12,7 +12,17 @@ export default function OptionRow({ label, sublabel, selected, onClick, leading,
       }`}
     >
       <span className="flex items-center gap-2 min-w-0">
-        {leading}
+        {leading && (
+          <span
+            className={`flex items-center shrink-0 transition-colors duration-100 ${
+              selected
+                ? "text-[#FF47BC]"
+                : "text-[#8C8C8C] dark:text-[#9A9A9A] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
+            }`}
+          >
+            {leading}
+          </span>
+        )}
         <span
           className={`truncate text-[12px] font-medium tracking-[-0.005em] transition-colors duration-100 ${
             selected

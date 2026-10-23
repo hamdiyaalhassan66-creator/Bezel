@@ -23,6 +23,8 @@ export function paintChromatic(ctx, ox, oy, x, y, w, h, dx, dy) {
     sc.globalCompositeOperation = "multiply"; // keeps only this channel
     sc.fillStyle = color;
     sc.fillRect(0, 0, W, H);
+    sc.globalCompositeOperation = "destination-in"; // multiply paints over transparent pixels, so put the frame's alpha back
+    sc.drawImage(copy, 0, 0);
     ctx.drawImage(scratch, x + dx * s, y + dy * s, W, H);
   });
   ctx.restore();

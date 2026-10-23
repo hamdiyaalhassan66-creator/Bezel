@@ -183,6 +183,22 @@ body .shortcut-keys.shortcut-keys.shortcut-keys * {
 
         .tooltip-enter { animation: fade-enter 140ms cubic-bezier(0.22, 1, 0.36, 1) both; }
 
+        /* Skeleton placeholder: base fill + one shimmer sweep. Reduced motion freezes the sweep. */
+        .skeleton { position: relative; overflow: hidden; background: #EDEDED; }
+        .dark .skeleton { background: #292929; }
+        .skeleton::after {
+          content: "";
+          position: absolute;
+          inset: 0;
+          transform: translateX(-100%);
+          background: linear-gradient(90deg, transparent, rgba(255,255,255,0.55), transparent);
+          animation: skeleton-shimmer 1.4s linear infinite;
+        }
+        .dark .skeleton::after {
+          background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent);
+        }
+        @keyframes skeleton-shimmer { to { transform: translateX(100%); } }
+
         /* New gradient stop handle pops in from its base. */
         @keyframes stop-enter {
           from { opacity: 0; transform: scale(0.6); }

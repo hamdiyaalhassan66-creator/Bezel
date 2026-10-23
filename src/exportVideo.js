@@ -24,7 +24,7 @@ export function fitVideoDims(ratio, long) {
   return ratio >= 1 ? { w: even(long), h: even(long / ratio) } : { w: even(long * ratio), h: even(long) };
 }
 
-const bitrateFor = (w, h, fps) => Math.round(Math.min(60e6, Math.max(1e6, w * h * fps * 0.12)));
+const bitrateFor = (w, h, fps) => Math.round(Math.min(120e6, Math.max(4e6, w * h * fps * 0.35)));
 
 export function estimateVideoBytes(format, w, h, fps, frames) {
   if (format === "gif") return w * h * frames * 0.15;
@@ -67,11 +67,13 @@ async function encodeWebCodecs(kind, { width, height, fps, count, transparent, r
   const isMp4 = kind === "mp4";
   let useAlpha = !isMp4 && transparent;
   const config = {
-    codec: isMp4 ? "avc1.640034" : "vp09.00.10.08",
+    codec: isMp4 ? "avc1.640033" : "vp09.00.10.08",
     width,
     height,
     framerate: fps,
     bitrate: bitrateFor(width, height, fps),
+    bitrateMode: "quantizer", // quality is set per frame below, the bitrate target is ignored
+    latencyMode: "quality", // prefer picture quality over encode speed
     ...(useAlpha ? { alpha: "keep" } : {}),
   };
   if (useAlpha && !(await VideoEncoder.isConfigSupported(config)).supported) {
@@ -108,7 +110,7 @@ async function encodeWebCodecs(kind, { width, height, fps, count, transparent, r
       timestamp: Math.round((i * 1e6) / fps),
       duration: Math.round(1e6 / fps),
     });
-    encoder.encode(frame, { keyFrame: i % (fps * 2) === 0 });
+    encoder.encode(frame, { keyFrame: i % (fps * 2) === 0, avc: { quantizer: 12 }, vp9: { quantizer: 12 } });
     frame.close();
     while (encoder.encodeQueueSize > 8) await new Promise((r) => setTimeout(r, 4));
     if (failure) throw failure;
