@@ -12,6 +12,7 @@ import { useDismissable, CTX_ITEM } from "./timelineParts.jsx";
 import Tooltip from "../Tooltip.jsx";
 import KeyCombo from "../KeyCombo.jsx";
 import { THEME_OPTIONS } from "../constants/uiOptions.js";
+import { toast } from "../lib/toast.js";
 
 const TYPE_OPTIONS = [
   { value: "mockup", label: "Mockup", Icon: Devices },
@@ -309,7 +310,8 @@ const [moveFolderId, setMoveFolderId] = useState(null);
     e.stopPropagation();
     if (folderMenu?.id === id) return setFolderMenu(null);
     const r = e.currentTarget.getBoundingClientRect();
-    const up = window.innerHeight - r.bottom < 200;
+    const below = window.innerHeight - r.bottom;
+    const up = below < 230 && r.top > below;
     setFolderMenu({
       id,
       left: Math.min(r.left, window.innerWidth - 190),
@@ -942,8 +944,15 @@ const [moveFolderId, setMoveFolderId] = useState(null);
     <div className="fade-enter fixed inset-0 z-[45] flex flex-col overflow-hidden bg-[#EFEFF0] dark:bg-[#0D0B0C] text-[#737373] dark:text-[#ABABAB]">
       {/* Top bar */}
       <div className="relative z-10 flex items-center justify-between h-16 p-4 mx-2 rounded-b-2xl shrink-0 bg-[#FAF9FA] dark:bg-[#171717]">
-        <img src={`${import.meta.env.BASE_URL}logo-light.svg`} alt="Bezel" draggable={false} className="h-6 w-auto select-none dark:hidden" />
-        <img src={`${import.meta.env.BASE_URL}logo-dark.svg`} alt="Bezel" draggable={false} className="hidden h-6 w-auto select-none dark:block" />
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Back to editor"
+          className="flex items-center rounded-lg transition-transform duration-150 active:scale-[0.97]"
+        >
+          <img src={`${import.meta.env.BASE_URL}logo-light.svg`} alt="Bezel" draggable={false} className="h-6 w-auto select-none dark:hidden" />
+          <img src={`${import.meta.env.BASE_URL}logo-dark.svg`} alt="Bezel" draggable={false} className="hidden h-6 w-auto select-none dark:block" />
+        </button>
         <div className="flex items-center gap-3">
           {sideSkeleton ? (
             <>
@@ -1558,6 +1567,7 @@ const [moveFolderId, setMoveFolderId] = useState(null);
             onMove={(parentId) => {
               setFolders((prev) => prev.map((x) => (x.id === mf.id ? { ...x, parentId } : x)));
               setMoveFolderId(null);
+              toast(`“${mf.name}” moved`);
             }}
           />
         );

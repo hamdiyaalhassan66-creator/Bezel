@@ -116,6 +116,28 @@ body .shortcut-keys.shortcut-keys.shortcut-keys * {
           .rail-icon { transform: none !important; }
         }
 
+        /* Splash: icon pops in, wordmark slides out from it, then the progress bar.
+           transform + opacity only, one easing. */
+        @keyframes splash-icon-in {
+          from { opacity: 0; transform: scale(0.82); }
+          to { opacity: 1; transform: scale(1); }
+        }
+        @keyframes splash-word-in {
+          from { opacity: 0; transform: translateX(-8px); }
+          to { opacity: 1; transform: translateX(0); }
+        }
+        .splash-icon { animation: splash-icon-in 380ms cubic-bezier(0.22, 1, 0.36, 1) both; transform-origin: 50% 50%; }
+        .splash-word { animation: splash-word-in 460ms cubic-bezier(0.22, 1, 0.36, 1) 260ms both; }
+        @keyframes splash-bar {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(300%); }
+        }
+        .splash-bar { animation: splash-bar 1100ms cubic-bezier(0.65, 0, 0.35, 1) infinite; }
+        .splash-track { animation: fade-enter 300ms cubic-bezier(0.22, 1, 0.36, 1) 600ms both; }
+        @media (prefers-reduced-motion: reduce) {
+          .splash-bar { animation: none; width: 100%; }
+        }
+
         /* Small stagger for the Templates grid — transform + opacity only,
            same easing as the rest of the app, capped so it never feels slow. */
         @keyframes template-enter {
@@ -216,6 +238,12 @@ body .shortcut-keys.shortcut-keys.shortcut-keys * {
         .modal-enter { animation: modal-enter 200ms cubic-bezier(0.22, 1, 0.36, 1) both; }
 
         .tooltip-enter { animation: fade-enter 140ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+                /* Toast exit: mirrors pop-enter-up. */
+        @keyframes toast-exit {
+          to { opacity: 0; transform: translateY(4px) scale(0.98); }
+        }
+        .toast-exit { animation: toast-exit 140ms cubic-bezier(0.22, 1, 0.36, 1) forwards; }
 
         /* Skeleton placeholder: base fill + one shimmer sweep. Reduced motion freezes the sweep. */
         .skeleton { position: relative; overflow: hidden; background: #EDEDED; }

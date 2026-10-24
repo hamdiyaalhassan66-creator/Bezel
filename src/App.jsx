@@ -70,6 +70,8 @@ import {
   DEVICE_CATEGORIES, cropImageToDataUrl, surfaceHex, formatEditedAt, useFileDrop, seekVideo, loadVideoMeta,
 } from "./lib/appUtils.js";
 import { loadProjects, syncProjects, packProject, hydrateProject } from "./lib/projectStore.js";
+import { Toaster } from "./components/Toaster.jsx";
+import { toast } from "./lib/toast.js";
 import {
   chromeKey,
   sampleChromeColors,
@@ -273,7 +275,7 @@ export default function App() {
     const check = () => {
       if (dead) return;
       const sceneOk = !!sceneRef.current?.isReady?.(deviceType);
-      if ((sceneOk && fontsOk) || performance.now() - started > 10000) setAppReady(true);
+      if ((sceneOk && fontsOk && performance.now() - started > 1000) || performance.now() - started > 10000) setAppReady(true);
       else timer = setTimeout(check, 100);
     };
     check();
@@ -736,6 +738,7 @@ frameUploadRef.current = addFrameImage;
 
   const deleteFrames = (ids) => {
     if (!ids.length) return;
+    toast(ids.length > 1 ? `${ids.length} frames deleted` : "Frame deleted");
     const goneUrls = frames.filter((f) => ids.includes(f.id)).map((f) => f.img?.url).filter(Boolean);
     if (goneUrls.length) assetPoolRef.current = assetPoolRef.current.filter((a) => !goneUrls.includes(a.url));
     const remaining = frames.filter((f) => !ids.includes(f.id));
@@ -1114,6 +1117,7 @@ frameUploadRef.current = addFrameImage;
     framesLatestRef.current = next;
     setFrames(next);
     setSelectedIds(copies.map((c) => c.id));
+    toast(copies.length > 1 ? `${copies.length} frames duplicated` : "Frame duplicated");
   };
 
   // Adds an empty frame next to the selected one, with the same look. Its timeline row is created by the effect.
@@ -1430,6 +1434,76 @@ useEffect(() => {
   try { localStorage.setItem("bezel:folders", JSON.stringify(folders)); } catch {}
 }, [folders]);
 
+// ---- Projects undo / redo (separate from the editor history; saves and autosaves are never recorded) ----
+const projHistRef = useRef({ past: [], future: [] });
+const projLastRecordRef = useRef(0);
+const projCtxRef = useRef(false); // true while the last undoable action was a project / folder action (not an editor edit)
+const projTrackedIdsRef = useRef(new Set()); // ids that undo / redo may add or remove (duplicates, purged projects)
+const [, setProjHistTick] = useState(0);
+const savedProjectsRef = useRef(savedProjects);
+savedProjectsRef.current = savedProjects;
+const foldersRef = useRef(folders);
+foldersRef.current = folders;
+
+// call right before a project / folder change. Calls within 80ms merge, so bulk actions are one undo step.
+const recordProjects = () => {
+  projCtxRef.current = true;
+  const now = performance.now();
+  const merge = now - projLastRecordRef.current < 80;
+  projLastRecordRef.current = now;
+  if (merge) return;
+  const h = projHistRef.current;
+  h.past.push({ projects: savedProjectsRef.current, folders: foldersRef.current });
+  if (h.past.length > 50) h.past.shift();
+  h.future = [];
+  setProjHistTick((n) => n + 1);
+};
+// folder changes made inside the Projects page go through this
+const setFoldersTracked = (u) => {
+  recordProjects();
+  setFolders(u);
+};
+const applyProjectsSnapshot = (snap) => {
+  const cur = savedProjectsRef.current;
+  const curById = new Map(cur.map((p) => [p.id, p]));
+  const snapIds = new Set(snap.projects.map((p) => p.id));
+  // projects that exist now keep their latest saved content and only take the managed fields back
+  const restored = snap.projects.map((p) => {
+    const c = curById.get(p.id);
+    return c ? { ...c, title: p.title, pinned: p.pinned, folderId: p.folderId, deletedAt: p.deletedAt } : p;
+  });
+  // projects saved after the snapshot stay, unless undo / redo itself created or removed them
+  const kept = cur.filter((p) => !snapIds.has(p.id) && !projTrackedIdsRef.current.has(p.id));
+  const next = [...kept, ...restored];
+  setSavedProjects(next);
+  setFolders(snap.folders);
+  const open = next.find((p) => p.id === selectedProjectId);
+  if (!open || open.deletedAt) setSelectedProjectId(null);
+  else setProjectTitle(open.title);
+};
+const undoProjects = () => {
+  const h = projHistRef.current;
+  const prev = h.past.pop();
+  if (!prev) return;
+  projCtxRef.current = true;
+  h.future.push({ projects: savedProjectsRef.current, folders: foldersRef.current });
+  applyProjectsSnapshot(prev);
+  setProjHistTick((n) => n + 1);
+  toast("Undone");
+};
+const redoProjects = () => {
+  const h = projHistRef.current;
+  const next = h.future.pop();
+  if (!next) return;
+  projCtxRef.current = true;
+  h.past.push({ projects: savedProjectsRef.current, folders: foldersRef.current });
+  applyProjectsSnapshot(next);
+  setProjHistTick((n) => n + 1);
+  toast("Redone");
+};
+const canUndoProjects = projHistRef.current.past.length > 0;
+const canRedoProjects = projHistRef.current.future.length > 0;
+
 const [projectsLoaded, setProjectsLoaded] = useState(false);
 useEffect(() => {
   let dead = false;
@@ -1490,7 +1564,8 @@ const toggleProjectMenu = (e, id) => {
     return;
   }
   const r = e.currentTarget.getBoundingClientRect();
-  const opensUp = window.innerHeight - r.bottom < 220;
+  const below = window.innerHeight - r.bottom;
+  const opensUp = below < 290 && r.top > below; // the menu is ~280px tall; flip up only if there's more room above
   setProjectMenu({
     id,
     left: Math.max(8, Math.min(r.left, window.innerWidth - 188)),
@@ -1503,45 +1578,77 @@ const handleOpenProjectInNewTab = (p) => window.open(projectLink(p.id), "_blank"
 const handleCopyProjectLink = async (p) => {
   try {
     await navigator.clipboard.writeText(projectLink(p.id));
+    toast("Link copied");
   } catch (err) {
     console.error("Copy link failed:", err);
+    toast("Couldn't copy the link", { type: "error" });
   }
 };
-const handleDuplicateProject = (p) =>
+const handleDuplicateProject = (p) => {
+  recordProjects();
+  const id = `${Date.now()}`;
+  projTrackedIdsRef.current.add(id);
   setSavedProjects((prev) => {
     const i = prev.findIndex((x) => x.id === p.id);
-    const copy = { ...p, id: `${Date.now()}`, title: `${p.title} copy`, editedAt: new Date() };
+    const copy = { ...p, id, title: `${p.title} copy`, editedAt: new Date() };
     const next = [...prev];
     next.splice(i + 1, 0, copy);
     return next;
   });
+  toast("Project duplicated");
+};
 const startRenameProject = (p) => setRenamingProjectId(p.id);
 const commitRenameProject = (name) => {
   const title = name.trim();
   const id = renamingProjectId;
   if (title) {
+    recordProjects();
     setSavedProjects((prev) => prev.map((x) => (x.id === id ? { ...x, title, editedAt: new Date() } : x)));
     if (id === selectedProjectId) setProjectTitle(title); // so the next manual save doesn't restore the old name
+    toast("Project renamed");
   }
   setRenamingProjectId(null);
 };
 const handleDeleteProject = (id) => {
+  recordProjects();
+  const name = savedProjects.find((x) => x.id === id)?.title ?? "Project";
   setSavedProjects((prev) => prev.map((x) => (x.id === id ? { ...x, deletedAt: new Date(), pinned: false } : x)));
   setSelectedProjectId((cur) => (cur === id ? null : cur));
+  toast(`“${name}” moved to Trash`, { action: { label: "Undo", onClick: () => undoProjects() } });
 };
-const handleRestoreProject = (id) =>
+const handleRestoreProject = (id) => {
+  recordProjects();
   setSavedProjects((prev) => prev.map((x) => (x.id === id ? { ...x, deletedAt: null } : x)));
-const handlePurgeProject = (id) => setSavedProjects((prev) => prev.filter((x) => x.id !== id));
-const handleTogglePin = (id) =>
+  toast("Project restored");
+};
+const handlePurgeProject = (id) => {
+  recordProjects();
+  projTrackedIdsRef.current.add(id);
+  setSavedProjects((prev) => prev.filter((x) => x.id !== id));
+  toast("Project deleted permanently");
+};
+const handleTogglePin = (id) => {
+  recordProjects();
+  const wasPinned = savedProjects.find((x) => x.id === id)?.pinned;
   setSavedProjects((prev) => prev.map((x) => (x.id === id ? { ...x, pinned: !x.pinned } : x)));
-const handleMoveProject = (id, folderId) =>
+  toast(wasPinned ? "Project unpinned" : "Project pinned");
+};
+const handleMoveProject = (id, folderId) => {
+  recordProjects();
   setSavedProjects((prev) => prev.map((x) => (x.id === id ? { ...x, folderId: folderId ?? null } : x)));
+  const folderName = folders.find((f) => f.id === folderId)?.name;
+  toast(folderName ? `Moved to “${folderName}”` : "Removed from folder");
+};
 const handleCreateFolder = (name) => {
+  recordProjects();
   const id = `folder-${Date.now()}`;
   setFolders((prev) => [...prev, { id, name, createdAt: Date.now(), parentId: null }]);
+  toast(`Folder “${name}” created`);
   return id;
 };
 const handleDeleteFolder = (id) => {
+  recordProjects();
+  toast("Folder deleted");
   setFolders((prev) => {
     const gone = prev.find((f) => f.id === id);
     return prev
@@ -1596,7 +1703,7 @@ const [reflectionMatte, setReflectionMatte] = useState(20);
   const [exportProgress, setExportProgress] = useState(null); // 0-1 while a video export runs
   const [exportTransparent, setExportTransparent] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [exportToast, setExportToast] = useState(null);
+  const setExportToast = (m) => m && toast(m); // old calls keep working, the null "clear" calls are ignored
   const exportRef = useRef(null);
   const [finish, setFinish] = useState("Desert titanium");
   const [bodyHex, setBodyHex] = useState("2C1D1D");
@@ -3495,17 +3602,17 @@ if (!backFacing && (fr.statusBar || fr.homeIndicator)) {
   const handleExport = async () => {
     if (exporting) return;
     if (videoOn) {
+      const vLabel = VIDEO_FORMATS.find((f) => f.value === videoFormat).label;
       setExporting(true);
       setExportProgress(0);
+      toast(`Exporting ${vLabel}…`, { duration: 3000 });
       await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
       try {
         await exportVideo();
-        setExportToast(`Exporting ${VIDEO_FORMATS.find((f) => f.value === videoFormat).label} · download started`);
-        setTimeout(() => setExportToast(null), 2400);
+        toast(`${vLabel} exported`);
       } catch (err) {
         console.error("Video export failed:", err);
-        setExportToast(err?.message || "Video export failed");
-        setTimeout(() => setExportToast(null), 4000);
+        toast(err?.message || "Video export failed", { type: "error", duration: 4000 });
       } finally {
         setExporting(false);
         setExportProgress(null);
@@ -3515,6 +3622,7 @@ if (!backFacing && (fr.statusBar || fr.homeIndicator)) {
     }
     const fmt = EXPORT_FORMATS.find((f) => f.value === exportFormat);
     setExporting(true);
+    toast(`Exporting ${fmt.label}…`, { duration: 3000 });
     // let the spinner paint before the heavy synchronous render starts
     await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
     try {
@@ -3533,10 +3641,10 @@ if (!backFacing && (fr.statusBar || fr.homeIndicator)) {
           sceneRef.current?.setBackgroundCanvas?.(renderGradientFxCanvas(LW, LH, LW / canvasDims.w));
         }
       }
-      setExportToast(`Exporting ${fmt.label} · download started`);
-      setTimeout(() => setExportToast(null), 2400);
+      toast(`${fmt.label} exported`);
     } catch (err) {
       console.error("Export failed:", err);
+      toast(err?.message || "Export failed", { type: "error", duration: 4000 });
     } finally {
       setExporting(false);
       setExportOpen(false);
@@ -3747,6 +3855,7 @@ setSelText(null);
         setTextItems([]);
     setSelectedTextId(null);
     setTextPopupOpen(false);
+    toast("New project started");
   }, [darkMode, handleClearUpload, handleClearCustomImage]);
 
   const handleViewChange = useCallback((view) => {
@@ -6183,6 +6292,7 @@ vidDuration,
       if (h.past.length > 100) h.past.shift();
       h.future = [];
       h.committed = historyKey;
+      projCtxRef.current = false; // the editor made the latest change, so Cmd/Ctrl+Z belongs to it again
       setHistoryTick((n) => n + 1);
     }, 400);
     return () => clearTimeout(t);
@@ -6420,8 +6530,7 @@ if (s.vidShots) {
       setOpenTick((n) => n + 1);
     } catch (err) {
       console.error("Opening project failed:", err);
-      setExportToast("Couldn't open this project");
-      setTimeout(() => setExportToast(null), 3000);
+      toast("Couldn't open this project", { type: "error", duration: 3000 });
     }
   };
 
@@ -6512,6 +6621,11 @@ const reloadTabRef = useRef(
       newProject: handleNewProject,
       undo,
       redo,
+      undoProjects,
+      redoProjects,
+      projectsPanel: sidebarOpen && projCtxRef.current, // any sidebar panel (Devices, Templates, Projects)
+      projUndoable: projHistRef.current.past.length > 0,
+      projRedoable: projHistRef.current.future.length > 0,
       setPanel: (p) => {
         setSidebarPanel(p);
         setSidebarOpen(true);
@@ -6554,6 +6668,16 @@ const reloadTabRef = useRef(
         e.preventDefault();
         h.cycleTheme();
         return;
+      }
+      // Projects undo / redo: always on the Projects page. In the editor, only while the Projects panel is open
+      // and the last undoable action was a project one, so editor undo is never hijacked.
+      if ((h.projectsPage || h.projectsPanel) && !typing && !h.shortcutsOpen && !h.tourOpen && !h.cropOpen && (e.metaKey || e.ctrlKey) && !e.altKey) {
+        const zk = key.toLowerCase();
+        const page = h.projectsPage;
+        const wantsRedo = (zk === "z" && e.shiftKey) || (zk === "y" && !e.shiftKey);
+        const wantsUndo = zk === "z" && !e.shiftKey;
+        if (wantsRedo && (page || h.projRedoable)) { e.preventDefault(); h.redoProjects(); return; }
+        if (wantsUndo && (page || h.projUndoable)) { e.preventDefault(); h.undoProjects(); return; }
       }
       if (h.shortcutsOpen || h.cropOpen || h.tourOpen || h.projectsPage) return;
 
@@ -7422,14 +7546,42 @@ const chrome = {
               <span className="relative flex items-center h-7 text-[14px] font-medium tracking-[-0.005em] leading-[17px] text-[#3A3A3A] dark:text-[#FAF9FA]">
                 {{ create: "Devices", templates: "Templates", projects: "Projects" }[sidebarPanel]}
               </span>
-              <Tooltip label="Close sidebar" shortcut={["mod", "\\"]} placement="bottom">
-                <button
-                  onClick={() => setSidebarOpen(false)}
-                  className="group flex flex-row items-center justify-center w-7 h-7 p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-                >
-                  <SidebarSimple size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
-</button>
-              </Tooltip>
+              <div className="flex items-center gap-1">
+                {sidebarPanel === "projects" && (
+                  <>
+                    <Tooltip label="Undo" placement="bottom">
+                      <button
+                        type="button"
+                        aria-label="Undo project change"
+                        onClick={undoProjects}
+                        disabled={!canUndoProjects}
+                        className="group flex items-center justify-center w-7 h-7 rounded-lg enabled:hover:bg-black/5 dark:enabled:hover:bg-white/5 transition-[background-color,transform,opacity] duration-150 active:scale-[0.94] disabled:opacity-30 disabled:cursor-not-allowed disabled:active:scale-100"
+                      >
+                        <ArrowUUpLeft size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-enabled:group-hover:text-[#3A3A3A] dark:group-enabled:group-hover:text-[#FAF9FA] transition-colors" />
+                      </button>
+                    </Tooltip>
+                    <Tooltip label="Redo" placement="bottom">
+                      <button
+                        type="button"
+                        aria-label="Redo project change"
+                        onClick={redoProjects}
+                        disabled={!canRedoProjects}
+                        className="group flex items-center justify-center w-7 h-7 rounded-lg enabled:hover:bg-black/5 dark:enabled:hover:bg-white/5 transition-[background-color,transform,opacity] duration-150 active:scale-[0.94] disabled:opacity-30 disabled:cursor-not-allowed disabled:active:scale-100"
+                      >
+                        <ArrowUUpRight size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-enabled:group-hover:text-[#3A3A3A] dark:group-enabled:group-hover:text-[#FAF9FA] transition-colors" />
+                      </button>
+                    </Tooltip>
+                  </>
+                )}
+                <Tooltip label="Close sidebar" shortcut={["mod", "\\"]} placement="bottom">
+                  <button
+                    onClick={() => setSidebarOpen(false)}
+                    className="group flex flex-row items-center justify-center w-7 h-7 p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                  >
+                    <SidebarSimple size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
+                  </button>
+                </Tooltip>
+              </div>
             </div>
 
             <div className="relative w-full flex-1 min-h-0 overflow-hidden">
@@ -7581,7 +7733,7 @@ const chrome = {
                             </div>
                             <div className="flex items-center w-full">
                               <span
-                                className={`tpl-title flex-1 min-w-0 text-left leading-4 truncate transition-colors duration-150 ${
+                                className={`flex-1 min-w-0 text-left text-[12px] font-medium leading-4 tracking-[-0.005em] truncate transition-colors duration-150 ${
                                   activeTemplateId === tpl.id
                                     ? "text-[#FF47BC]"
                                     : "text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
@@ -9912,7 +10064,11 @@ className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed borde
           projects={savedProjects}
           selectedId={selectedProjectId}
           folders={folders}
-          setFolders={setFolders}
+          setFolders={setFoldersTracked}
+          onUndo={undoProjects}
+          onRedo={redoProjects}
+          canUndo={canUndoProjects}
+          canRedo={canRedoProjects}
           onClose={() => setProjectsPageOpen(false)}
           onOpen={openProject}
           onNewProject={() => {
@@ -9971,61 +10127,41 @@ className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed borde
       {!splashGone && !projectsPageOpen && (
         <div
           aria-hidden
-          className={`fixed inset-0 z-[10000] flex flex-col ${chrome.appBg} transition-opacity duration-300 ${
+          className={`fixed inset-0 z-[10000] flex flex-col items-center justify-center gap-6 ${chrome.appBg} transition-opacity duration-300 ${
             appReady ? "opacity-0 pointer-events-none" : "opacity-100"
           }`}
         >
-          {/* Top bar */}
-          <div className="flex items-center justify-between h-16 p-4 mx-2 rounded-b-2xl shrink-0 bg-[#FAF9FA] dark:bg-[#171717]">
-            <img src={`${import.meta.env.BASE_URL}logo-light.svg`} alt="" draggable={false} className="h-8 w-auto select-none dark:hidden" />
-            <img src={`${import.meta.env.BASE_URL}logo-dark.svg`} alt="" draggable={false} className="hidden h-8 w-auto select-none dark:block" />
-            <div className="flex items-center gap-3">
-              <Skeleton className="h-8 w-28 rounded-2xl" />
-              <Skeleton className="h-8 w-28 rounded-2xl" />
-              <Skeleton className="h-8 w-32 rounded-2xl" />
-            </div>
+          <div
+            className={`relative h-10 aspect-[79/15] transition-transform duration-300 ${
+              appReady ? "scale-[1.04]" : "scale-100"
+            }`}
+          >
+            {/* icon sits in the first 14 of the logo's 79 units */}
+            <img
+              src={`${import.meta.env.BASE_URL}logo-icon.png`}
+              alt=""
+              draggable={false}
+              className="splash-icon absolute left-0 top-0 h-[93.33%] w-auto select-none"
+            />
+            <img
+              src={`${import.meta.env.BASE_URL}logo-wordmark-light.svg`}
+              alt=""
+              draggable={false}
+              className="splash-word absolute inset-0 w-full h-full select-none dark:hidden"
+            />
+            <img
+              src={`${import.meta.env.BASE_URL}logo-wordmark-dark.svg`}
+              alt=""
+              draggable={false}
+              className="splash-word absolute inset-0 w-full h-full select-none hidden dark:block"
+            />
           </div>
-
-          <div className="flex-1 flex gap-2 p-2 overflow-hidden">
-            {/* Left rail + panel */}
-            <div className="flex gap-2 shrink-0">
-              <div className="flex flex-col gap-1 w-11">
-                {[0, 1, 2].map((i) => <Skeleton key={i} className="w-11 h-11 rounded-[10px]" />)}
-              </div>
-              <div className="w-[248px] p-4 flex flex-col gap-3 rounded-2xl overflow-hidden bg-[#FAF9FA] dark:bg-[#171717]">
-                <Skeleton className="h-[33px] rounded-[10px] shrink-0" />
-                {Array.from({ length: 20 }, (_, i) => <Skeleton key={i} className="h-8 rounded-lg shrink-0" />)}
-              </div>
-            </div>
-
-            {/* Canvas */}
-            <Skeleton className="flex-1 rounded-[16px]" />
-
-            {/* Right toolbar */}
-            <div className="w-[300px] shrink-0 flex flex-col rounded-2xl bg-[#FAF9FA] dark:bg-[#171717] overflow-hidden">
-              <div className="flex items-center gap-1 h-11 px-2 shrink-0 border-b border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10">
-                {[0, 1, 2].map((i) => <Skeleton key={i} className="h-7 w-16 rounded-lg shrink-0" />)}
-              </div>
-              <div className="p-4 flex flex-col gap-3 shrink-0">
-                <Skeleton className="h-3 w-16 rounded shrink-0" />
-                <Skeleton className="h-[66px] rounded-[10px] shrink-0" />
-                {[0, 1, 2].map((s) => (
-                  <React.Fragment key={s}>
-                    <Skeleton className="h-3 w-20 rounded mt-3 shrink-0" />
-                    {[0, 1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-9 rounded-[10px] shrink-0" />)}
-                  </React.Fragment>
-                ))}
-              </div>
-            </div>
+          <div className="splash-track relative w-12 h-[3px] rounded-full overflow-hidden bg-[#3A3A3A]/10 dark:bg-[#FAF9FA]/10">
+            <div className="splash-bar absolute inset-y-0 left-0 w-1/3 rounded-full bg-[#FF47BC]" />
           </div>
         </div>
       )}
-
-      {exportToast && (
-        <div className="pop-enter-up fixed bottom-6 left-1/2 -translate-x-1/2 z-[9999] flex items-center gap-2 h-8 px-3 rounded-2xl bg-[#3A3A3A] dark:bg-[#FAF9FA] text-[13px] font-medium text-[#FAF9FA] dark:text-[#171717] shadow-[0_4px_12px_rgba(0,0,0,0.2)]">
-          <Check size={14} weight="regular" /> {exportToast}
-        </div>
-      )}
+      <Toaster />
     </div>
   );
 }
