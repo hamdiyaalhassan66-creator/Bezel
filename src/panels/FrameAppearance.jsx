@@ -164,12 +164,12 @@ export function FrameAppearance({
               type="button"
               aria-label={fx.visible ? "Hide" : "Show"}
               onClick={() => updateEffect(fx.id, { visible: !fx.visible })}
-              className="flex items-center justify-center w-6 h-6 shrink-0 rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition-[background-color,transform] duration-150 active:scale-[0.94]"
+              className="flex items-center justify-center w-5 h-5 shrink-0 rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition-[background-color,transform] duration-150 active:scale-[0.94]"
             >
               {fx.visible ? (
-                <Eye size={16} weight="regular" className={active ? "text-[#FF47BC]" : "text-[#737373] dark:text-[#ABABAB]"} />
+                <Eye size={14} weight="regular" className={active ? "text-[#FF47BC]" : "text-[#737373] dark:text-[#ABABAB]"} />
               ) : (
-                <EyeSlash size={16} weight="regular" className={active ? "text-[#FF47BC]" : "text-[#737373] dark:text-[#ABABAB]"} />
+                <EyeSlash size={14} weight="regular" className={active ? "text-[#FF47BC]" : "text-[#737373] dark:text-[#ABABAB]"} />
               )}
             </button>
           </Tooltip>
@@ -178,9 +178,9 @@ export function FrameAppearance({
               type="button"
               aria-label="Remove"
               onClick={() => removeEffect(fx.id)}
-              className="group/x flex items-center justify-center w-6 h-6 shrink-0 rounded-md hover:bg-[#F04438]/10 transition-[background-color,transform] duration-150 active:scale-[0.94]"
+              className="group/x flex items-center justify-center w-5 h-5 shrink-0 rounded-md hover:bg-[#F04438]/10 transition-[background-color,transform] duration-150 active:scale-[0.94]"
             >
-              <X size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover/x:text-[#F04438] transition-colors" />
+              <X size={14} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover/x:text-[#F04438] transition-colors" />
             </button>
           </Tooltip>
         </div>

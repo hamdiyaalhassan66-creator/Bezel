@@ -2,6 +2,7 @@ import React from "react";
 import { Scrubber, PopupDropdown, SEG_ON, SEG_OFF } from "./controls.jsx";
 import { EaseBezierEditor } from "./EasePopover.jsx";
 import { VID_EASE_PRESETS, VID_EASE_CUSTOM_DEFAULT } from "../lib/videoMath.js";
+import CameraPathControl from "./CameraPathControl.jsx";
 
 const LABEL = "text-[13px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]";
 
@@ -34,7 +35,9 @@ export function TemplateParams({ params, values, onChange }) {
   });
 
   const render = (p) =>
-    p.type === "ease" ? (
+    p.type === "campath" ? (
+      <CameraPathControl key={p.key} param={p} value={values[p.key]} count={values.count} onChange={(v) => onChange(p.key, v)} />
+    ) : p.type === "ease" ? (
       <EaseControl key={p.key} value={values[p.key]} onChange={(v) => onChange(p.key, v)} />
     ) : p.type === "segmented" ? (
       <div key={p.key} className="flex flex-col gap-2">

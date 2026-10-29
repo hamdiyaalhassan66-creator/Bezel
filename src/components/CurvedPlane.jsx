@@ -10,10 +10,10 @@ export function CurvedPlane({ f, r, short, radiiFrac, imgUrl, backVisible, zInde
   const len = horiz ? r.width : r.height;
   const n = Math.min(64, Math.max(12, Math.round(len / 10)));
   const sl = len / n;
-  const fs = Math.min(r.width, r.height);
-  const [tl, tr, br, bl] = radiiFrac.map((p) => p * fs);
+  const half = Math.min(r.width, r.height) / 2;
+  const [tl, tr, br, bl] = radiiFrac.map((p) => Math.min(p * short, half));
   const fill = backVisible ? backFillOf(f) : null;
-  const shade = 1 - (1 - (f.sh || 0)) * (1 - dim); // existing 3D shade + fade dim
+  const shade = f.sh || 0; // 3D shade only. The fade is real opacity on each strip, below
 
   return (
     <div
@@ -51,6 +51,8 @@ export function CurvedPlane({ f, r, short, radiiFrac, imgUrl, backVisible, zInde
               borderRadius: radii,
               transform: horiz ? `translate3d(${pos}px, 0, ${z}px) rotateY(${sg * deg}deg)` : `translate3d(0, ${pos}px, ${z}px) rotateX(${-sg * deg}deg)`,
               backfaceVisibility: f.rig.hide ? "hidden" : undefined,
+              opacity: dim > 0 ? 1 - dim : undefined,
+              transition: playing ? "none" : DIM_TRANSITION,
             }}
           >
             {fill ? (
@@ -77,11 +79,9 @@ export function CurvedPlane({ f, r, short, radiiFrac, imgUrl, backVisible, zInde
             {ap?.insetStroke && (
               <div className="absolute pointer-events-none" style={{ ...face, borderRadius: `${tl}px ${tr}px ${br}px ${bl}px`, boxShadow: ap.insetStroke }} />
             )}
-            <div
-              aria-hidden
-              className="absolute inset-0 pointer-events-none bg-black"
-              style={{ opacity: shade, transition: playing ? "none" : DIM_TRANSITION }}
-            />
+            {shade > 0 && (
+              <div aria-hidden className="absolute inset-0 pointer-events-none bg-black" style={{ opacity: shade }} />
+            )}
           </div>
         );
       })}

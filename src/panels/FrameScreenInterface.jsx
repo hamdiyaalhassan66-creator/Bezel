@@ -2,12 +2,14 @@ import { UploadSimple, Trash } from "@phosphor-icons/react";
 import Tooltip from "../Tooltip.jsx";
 import ToolbarDropdown from "../Dropdown.jsx";
 import { SOCIAL_OPTIONS } from "../lib/social.js";
+import { SAFARI_TABS_OPTIONS } from "../constants/uiOptions.js";
 import { SEG_ON, SEG_OFF, SectionHeader, ToggleRow } from "../components/controls.jsx";
 import { SOCIAL_FULL_WIDTH, SocialField, ImageUploadField } from "../components/SocialFields.jsx";
 
 export function FrameScreenInterface({
   toolbarMode, openSections, toggleSection,
   frameStatusBar, setFrameStatusBar, frameHomeIndicator, setFrameHomeIndicator,
+  frameBrowser, updateBrowser, browserOptions,
   frameSocial, toggleSocialOn, changeSocialPlatform, changeSocialMode,
   activeSocialPlatform, activeSocialMode, updateSocial,
   avatarInputRef, handleAvatarUpload,
@@ -25,7 +27,58 @@ export function FrameScreenInterface({
                 <div className="pt-4 flex flex-col gap-2">
                   <ToggleRow label="Status bar" checked={!!frameStatusBar} onChange={setFrameStatusBar} />
                   <ToggleRow label="Home indicator" checked={!!frameHomeIndicator} onChange={setFrameHomeIndicator} />
-                  <ToggleRow label="Social media UI" checked={frameSocial.on} onChange={toggleSocialOn} />
+                  <ToggleRow label="Browser" checked={frameBrowser.on} onChange={(on) => updateBrowser({ on })} disabled={frameSocial.on} />
+                  {frameBrowser.on && (
+                    <div className="fx-enter flex flex-col gap-2">
+                      <div className="flex items-center p-0.5 w-full h-8 bg-[#F0F0F0] dark:bg-black rounded-2xl">
+                        {["light", "dark"].map((t) => (
+                          <button
+                            key={t}
+                            onClick={() => updateBrowser({ theme: t })}
+                            className={`seg-tab flex-1 h-7 flex items-center justify-center gap-2 px-2.5 py-1 rounded-[14px] leading-5 capitalize transition-colors duration-200 ${
+                              frameBrowser.theme === t ? SEG_ON : SEG_OFF
+                            }`}
+                          >
+                            {t}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <label className="text-[13px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]">Browser</label>
+                        <ToolbarDropdown value={frameBrowser.type} options={browserOptions} onChange={(type) => updateBrowser({ type })} />
+                      </div>
+                      {frameBrowser.type === "safari" && (
+                        <div className="flex flex-col gap-2">
+                          <label className="text-[13px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]">Tabs</label>
+                          <div className="flex items-center p-0.5 w-full h-8 bg-[#F0F0F0] dark:bg-black rounded-2xl">
+                            {SAFARI_TABS_OPTIONS.map((o) => (
+                              <button
+                                key={o.value}
+                                onClick={() => updateBrowser({ tabs: o.value })}
+                                className={`seg-tab flex-1 h-7 flex items-center justify-center gap-2 px-2.5 py-1 rounded-[14px] leading-5 transition-colors duration-200 ${
+                                  frameBrowser.tabs === o.value ? SEG_ON : SEG_OFF
+                                }`}
+                              >
+                                {o.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      <div className="flex flex-col gap-2">
+                        <label className="text-[12px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]">Address</label>
+                        <div className="flex items-center px-2 py-2 bg-[#EDEDED] hover:bg-[#E3E3E3] focus-within:bg-[#E3E3E3] dark:focus-within:bg-[#333333] rounded-[10px] border border-transparent focus-within:border-[#FF47BC] transition-colors">
+                          <input
+                            value={frameBrowser.url}
+                            onChange={(e) => updateBrowser({ url: e.target.value })}
+                            placeholder="bezel.app"
+                            className="flex-1 min-w-0 bg-transparent text-[13px] font-medium tracking-[-0.005em] text-[#3A3A3A] placeholder:text-[#737373] dark:text-[#FAF9FA] outline-none"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  <ToggleRow label="Social media UI" checked={frameSocial.on} onChange={toggleSocialOn} disabled={frameBrowser.on} />
 
 {frameSocial.on && (
   <div className="fx-enter flex flex-col gap-2">

@@ -3,9 +3,12 @@ import { hexRgba } from "../lib/frameUtils.js";
 import { mixHex, txtUnitStates, txtTree, sampleTextAnim } from "../lib/textAnim.js";
 import {
   withTextFill, truncateTextItem, kernAdjust, readEditable, useBoxSize,
-  textFlexAlign, textBlockStyle, snapAxis,
+  textFlexAlign, textBlockStyle, snapAxis, scaleTextItem, textPad, TEXT_PAD,
 } from "../lib/textUtils.js";
 import { RESIZE_HANDLES } from "../constants/canvasControls.js";
+
+// Variable width: only set when the Variable toggle is on
+const varStretch = (it) => (it?.variable ? { fontStretch: `${it.varWidth ?? 100}%` } : null);
 
 // anim = { spec, p } from sampleTextAnim. Without it (or with spec null) the text renders plain.
 function TextLines({ item, anim }) {
@@ -102,12 +105,17 @@ function TextOverlayOne({ item, vidAnim }) {
     return () => cancelAnimationFrame(raf);
   }, [vidAnim]);
   const animState = vidAnim ? sampleTextAnim(vidAnim.getTexts(), item.id, vidAnim.timeRef.current) : undefined;
-  const shown = truncateTextItem(item, dims);
+  const scaled = scaleTextItem(item, dims);
+  const shown = truncateTextItem(scaled, dims);
   const fill = withTextFill(shown);
   return (
-    <div ref={ref} className="absolute inset-0 pointer-events-none overflow-hidden flex p-6" style={textFlexAlign(item)}>
+    <div
+      ref={ref}
+      className="absolute inset-0 pointer-events-none overflow-hidden flex"
+      style={{ ...textFlexAlign(item), padding: scaled?.pad ?? TEXT_PAD }}
+    >
       {dims && animState !== null && (
-        <div style={textBlockStyle(shown, dims, hexRgba(fill.hex, fill.opacity))}>
+        <div style={{ ...textBlockStyle(shown, dims, hexRgba(fill.hex, fill.opacity)), ...varStretch(item) }}>
           <TextLines item={shown} anim={animState ?? undefined} />
         </div>
       )}
@@ -223,6 +231,7 @@ export function TextEditor({ item, selected, onSelect, onChange, onDuplicate, is
     const wr = wrapRef.current.getBoundingClientRect();
     const r = boxRef.current.getBoundingClientRect();
     const W = wr.width, H = wr.height;
+    const pad = textPad({ w: W, h: H });
     const left0 = r.left - wr.left, top0 = r.top - wr.top;
     const start = itemRef.current;
     const x0 = e.clientX, y0 = e.clientY;
@@ -239,8 +248,8 @@ export function TextEditor({ item, selected, onSelect, onChange, onDuplicate, is
         duplicated = true;
         onDuplicateRef.current?.(); // copy stays at the start position, this layer keeps moving
       }
-      const sx = snapAxis(left0 + dx, r.width, W);
-      const sy = snapAxis(top0 + dy, r.height, H);
+      const sx = snapAxis(left0 + dx, r.width, W, pad);
+      const sy = snapAxis(top0 + dy, r.height, H, pad);
       if (sx) dx += sx.d;
       if (sy) dy += sy.d;
       setGuides({ x: sx ? sx.line : null, y: sy ? sy.line : null });
@@ -353,14 +362,15 @@ export function TextEditor({ item, selected, onSelect, onChange, onDuplicate, is
     window.addEventListener("pointercancel", onUp);
   };
 
-  const shown = editing ? item : truncateTextItem(item, dims);
+  const scaled = scaleTextItem(item, dims);
+  const shown = editing ? scaled : truncateTextItem(scaled, dims);
   const fill = withTextFill(item);
 
   return (
     <div
       ref={wrapRef}
-      className="absolute inset-0 pointer-events-none flex p-6"
-      style={{ ...textFlexAlign(item), zIndex: 10 + Math.min(9, item.zIndex ?? 1) }}
+      className="absolute inset-0 pointer-events-none flex"
+      style={{ ...textFlexAlign(item), padding: scaled?.pad ?? TEXT_PAD, zIndex: 10 + Math.min(9, item.zIndex ?? 1) }}
     >
       {live && dims && (
         <div
@@ -377,7 +387,8 @@ export function TextEditor({ item, selected, onSelect, onChange, onDuplicate, is
           }
           className={`relative touch-none ${editing ? "" : "select-none"}`}
           style={{
-            ...textBlockStyle(editing ? item : shown, dims, front || editing ? hexRgba(fill.hex, fill.opacity) : "transparent"),
+            ...textBlockStyle(shown, dims, front || editing ? hexRgba(fill.hex, fill.opacity) : "transparent"),
+            ...varStretch(item),
             pointerEvents: interactive && animState !== null ? "auto" : "none",
             visibility: animState === null ? "hidden" : undefined, // outside its clip
             cursor: editing ? "text" : interactive ? "move" : undefined,

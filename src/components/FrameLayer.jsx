@@ -81,11 +81,27 @@ function glassMaps(canvasW, canvasH, g, side, ext = 0) {
   return { map: url(mapImg), hi: url(hiImg), scale: S };
 }
 
-export function FrameLayer({ onFrameClick, markIds = [], onFrameHover, frames, selectedIds, onSelect, onFramesChange, aspectLocked, environment, camera, cameraEase, background, textBehind, sizeRef, onPickFile, onRotate, onZoom, backVisible, chromeColors, nextFrameId, stageRef, animRef, onStageReady, groupOf, onFrameDoubleClick, videoMode, onVideoReady, locked, fishCanvasRef, useFishCanvas, playing }) {
+// Guide lines are a deeper shade of the accent (#FF47BC) so they stay visible over pink frames
+const GUIDE = "#E0149F";
+
+// Outer edges of a frame in canvas px. Rotated frames use the box that contains the rotation.
+const boundsOf = (f, b) => {
+  const r = frameRect(f, b);
+  if (!f.r) return { l: r.left, t: r.top, r: r.left + r.width, b: r.top + r.height };
+  const rad = (f.r * Math.PI) / 180;
+  const c = Math.abs(Math.cos(rad)), s = Math.abs(Math.sin(rad));
+  const hw = (r.width * c + r.height * s) / 2;
+  const hh = (r.width * s + r.height * c) / 2;
+  const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+  return { l: cx - hw, t: cy - hh, r: cx + hw, b: cy + hh };
+};
+
+export function FrameLayer({ depthTint, nativeSizeOf, onFrameClick, markIds = [], onFrameHover, frames, selectedIds, onSelect, onFramesChange, aspectLocked, environment, camera, cameraEase, background, textBehind, sizeRef, onPickFile, onRotate, onZoom, backVisible, chromeColors, nextFrameId, stageRef, animRef, onStageReady, groupOf, onFrameDoubleClick, videoMode, onVideoReady, locked, fishCanvasRef, useFishCanvas, playing, onContextMenu }) {
   const wrapRef = useRef(null);
   const [box, setBox] = useState(null);
   const [guides, setGuides] = useState({ v: false, h: false }); // v = vertical line (centered in X), h = horizontal line (centered in Y)
   const [marquee, setMarquee] = useState(null); // { left, top, width, height } while Shift-dragging
+  const [nativeGuide, setNativeGuide] = useState(null); // { l, t, r, b, mw, mh, w, h } while a resize matches the image's original size
   const [altHeld, setAltHeld] = useState(false); // Alt / Option held: show distances to the canvas edges
   useEffect(() => {
     const sync = (e) => {
@@ -148,6 +164,7 @@ export function FrameLayer({ onFrameClick, markIds = [], onFrameHover, frames, s
       dragEndRef.current(null, true); // silent: cancels the stale drag without running its click / selection logic
       setGuides({ v: false, h: false });
       setMarquee(null);
+      setNativeGuide(null);
     }
     let live = true;
     const end = (ev, silent) => {
@@ -160,8 +177,12 @@ export function FrameLayer({ onFrameClick, markIds = [], onFrameHover, frames, s
       if (dragEndRef.current === end) dragEndRef.current = null;
       if (!silent) onUp(ev);
     };
+    // "No buttons" only counts as a lost pointerup once a button was seen held. Trackpad tap-and-drag
+    // (double tap, then drag) can report buttons = 0 for the whole gesture, which ended the drag instantly.
+    let sawButton = false;
     const move = (ev) => {
-      if (ev.buttons === 0) return end(ev); // the pointerup was lost: finish instead of dragging on
+      if (ev.buttons > 0) sawButton = true;
+      else if (sawButton) return end(ev); // the pointerup was lost: finish instead of dragging on
       onMove(ev);
     };
     dragEndRef.current = end;
@@ -171,7 +192,7 @@ export function FrameLayer({ onFrameClick, markIds = [], onFrameHover, frames, s
     window.addEventListener("blur", end);
   };
 
-  const startMove = (e, hitId) => {
+  const startMove = (e, hitId, inGroup = false) => {
     const b = boxRef.current;
     if (!b) return;
     const grp = groupMembers(hitId);
@@ -185,10 +206,20 @@ export function FrameLayer({ onFrameClick, markIds = [], onFrameHover, frames, s
       onSelect(ids);
     }
     const short = Math.min(b.w, b.h);
-    const start = framesRef.current.filter((f) => ids.includes(f.id));
+    const start = framesRef.current.filter((f) => ids.includes(f.id) && !f.locked);
+    if (!start.length) {
+      // everything selected is locked: a click still selects, a drag does nothing
+      trackDrag(() => {}, () => { if (!e.shiftKey && ids.length > grp.length) onSelect(grp); });
+      return;
+    }
     const rects = start.map((f) => frameRect(f, b));
     const gcx = (Math.min(...rects.map((r) => r.left)) + Math.max(...rects.map((r) => r.left + r.width))) / 2 - b.w / 2;
     const gcy = (Math.min(...rects.map((r) => r.top)) + Math.max(...rects.map((r) => r.top + r.height))) / 2 - b.h / 2;
+    // edges of the moving group, and of every other visible frame (snap targets)
+    const sb = start.map((f) => boundsOf(f, b));
+    const gl = Math.min(...sb.map((x) => x.l)), gr = Math.max(...sb.map((x) => x.r));
+    const gt = Math.min(...sb.map((x) => x.t)), gB = Math.max(...sb.map((x) => x.b));
+    const others = framesRef.current.filter((f) => !f.hidden && !ids.includes(f.id)).map((f) => boundsOf(f, b));
     const startX = e.clientX;
     const startY = e.clientY;
     let moved = false;
@@ -213,7 +244,37 @@ export function FrameLayer({ onFrameClick, markIds = [], onFrameHover, frames, s
       const h = Math.abs(gcy + dy) < SNAP;
       if (v) dx = -gcx;
       if (h) dy = -gcy;
-      setGuides({ v, h });
+
+      // Snap to the other frames' edges (the canvas-center snap above wins on its own axis)
+      const nearest = (mine, theirs) => {
+        let best = null;
+        mine.forEach((m) => theirs.forEach((t) => {
+          const d = t - m;
+          if (Math.abs(d) < SNAP && (best === null || Math.abs(d) < Math.abs(best))) best = d;
+        }));
+        return best;
+      };
+      if (!v) {
+        const d = nearest([gl + dx, gr + dx], others.flatMap((o) => [o.l, o.r]));
+        if (d !== null) dx += d;
+      }
+      if (!h) {
+        const d = nearest([gt + dy, gB + dy], others.flatMap((o) => [o.t, o.b]));
+        if (d !== null) dy += d;
+      }
+
+      // One guide per aligned edge, reaching the frames it lines up with
+      const EPS = 0.5;
+      const lines = [];
+      [gl + dx, gr + dx].forEach((x) => {
+        const hit = others.filter((o) => Math.abs(o.l - x) < EPS || Math.abs(o.r - x) < EPS);
+        if (hit.length) lines.push({ x1: x, x2: x, y1: Math.min(gt + dy, ...hit.map((o) => o.t)), y2: Math.max(gB + dy, ...hit.map((o) => o.b)) });
+      });
+      [gt + dy, gB + dy].forEach((y) => {
+        const hit = others.filter((o) => Math.abs(o.t - y) < EPS || Math.abs(o.b - y) < EPS);
+        if (hit.length) lines.push({ y1: y, y2: y, x1: Math.min(gl + dx, ...hit.map((o) => o.l)), x2: Math.max(gr + dx, ...hit.map((o) => o.r)) });
+      });
+      setGuides({ v, h, lines });
       onFramesChange((prev) =>
         prev.map((f) => {
           const s0 = targets.get(f.id);
@@ -223,7 +284,7 @@ export function FrameLayer({ onFrameClick, markIds = [], onFrameHover, frames, s
     };
     const onUp = () => {
       setGuides({ v: false, h: false });
-      if (!moved && !e.shiftKey && ids.length > grp.length) onSelect(grp); // click without dragging = pick just this one (and its group)
+      if (!moved && !e.shiftKey && !inGroup && ids.length > grp.length) onSelect(grp); // click without dragging = pick just this one (and its group). Not for the empty group area, which has no frame to pick
     };
     trackDrag(onMove, onUp);
   };
@@ -235,7 +296,7 @@ export function FrameLayer({ onFrameClick, markIds = [], onFrameHover, frames, s
     const b = boxRef.current;
     if (!b) return;
     const short = Math.min(b.w, b.h);
-    const sel = framesRef.current.filter((f) => selectedRef.current.includes(f.id));
+    const sel = framesRef.current.filter((f) => selectedRef.current.includes(f.id) && !f.locked);
     if (!sel.length) return;
     const items = sel.map((f) => {
       const r = frameRect(f, b);
@@ -250,6 +311,11 @@ export function FrameLayer({ onFrameClick, markIds = [], onFrameHover, frames, s
     const startX = e.clientX;
     const startY = e.clientY;
     const MIN = 12;
+    // original size, only for one unrotated frame that holds an image
+    const nat = sel.length === 1 && !sel[0].r && !sel[0].social?.on ? nativeSizeOf?.(sel[0]) ?? null : null;
+    const tw = nat ? nat.w * items[0].s0 * short : 0; // original width / height in canvas px at the frame's scale
+    const th = nat ? nat.h * items[0].s0 * short : 0;
+    console.log("native guide", { hasProp: !!nativeSizeOf, nat, tw, th, canvas: b });
 
     const onMove = (ev) => {
       const dx = ev.clientX - startX;
@@ -259,6 +325,28 @@ export function FrameLayer({ onFrameClick, markIds = [], onFrameHover, frames, s
       if (key.includes("e")) R = Math.max(R + dx, L + MIN);
       if (key.includes("n")) T = Math.min(T + dy, B - MIN);
       if (key.includes("s")) B = Math.max(B + dy, T + MIN);
+      // snap to the image's original size (hold Ctrl / Cmd to bypass)
+      if (nat && !ev.ctrlKey && !ev.metaKey) {
+        const asp = aspectRef.current || ev.shiftKey;
+        const snapW = key.includes("e") || key.includes("w");
+        const snapH = (key.includes("n") || key.includes("s")) && !(asp && key.length === 2); // corners with locked ratio: width drives
+        if (snapW && Math.abs(R - L - tw) < SNAP) { if (key.includes("e")) R = L + tw; else L = R - tw; }
+        if (snapH && Math.abs(B - T - th) < SNAP) { if (key.includes("s")) B = T + th; else T = B - th; }
+      }
+      // snap to the image's aspect ratio (not when the ratio is locked, or after a size match)
+      if (nat && !ev.ctrlKey && !ev.metaKey && !(aspectRef.current || ev.shiftKey)) {
+        const rr = nat.w / nat.h;
+        const sizeSnapped = Math.abs(R - L - tw) < 0.5 || Math.abs(B - T - th) < 0.5;
+        if (!sizeSnapped) {
+          if (key === "e" || key === "w") {
+            const tgt = (B - T) * rr; // width that matches the ratio at the current height
+            if (Math.abs(R - L - tgt) < SNAP) { if (key === "e") R = L + tgt; else L = R - tgt; }
+          } else {
+            const tgt = (R - L) / rr; // height that matches the ratio at the current width
+            if (Math.abs(B - T - tgt) < SNAP) { if (key.includes("s")) B = T + tgt; else T = B - tgt; }
+          }
+        }
+      }
       if (aspectRef.current || ev.shiftKey) {
         const w = R - L, h = B - T;
         if (key.length === 2) {
@@ -271,6 +359,16 @@ export function FrameLayer({ onFrameClick, markIds = [], onFrameHover, frames, s
           const nw = h * ratio, cx = (L + R) / 2;
           L = cx - nw / 2; R = cx + nw / 2;
         }
+      }
+      if (nat) {
+        const horiz = key.includes("e") || key.includes("w"); // width is being adjusted
+        const vert = key.includes("n") || key.includes("s"); // height is being adjusted
+        const mw = horiz && Math.abs(R - L - tw) < 0.5;
+        const mh = vert && Math.abs(B - T - th) < 0.5;
+        const mr = Math.abs(R - L - (B - T) * (nat.w / nat.h)) < 0.5;
+        const fw = Math.round((R - L) / (items[0].s0 * short));
+        const fh = Math.round((B - T) / (items[0].s0 * short));
+        setNativeGuide(mw || mh || mr ? { l: L, t: T, r: R, b: B, mw, mh, mr, w: nat.w, h: nat.h, fw, fh, dim: key === "e" || key === "w" ? "w" : "h" } : null);
       }
       const kx = (R - L) / gw;
       const ky = (B - T) / gh;
@@ -293,7 +391,7 @@ export function FrameLayer({ onFrameClick, markIds = [], onFrameHover, frames, s
         })
       );
     };
-    trackDrag(onMove, () => {});
+    trackDrag(onMove, () => setNativeGuide(null));
   };
 
   const startMarquee = (e) => {
@@ -327,6 +425,16 @@ export function FrameLayer({ onFrameClick, markIds = [], onFrameHover, frames, s
     trackDrag(onMove, onUp);
   };
 
+    // Multi-selection: anywhere inside the group's bounding box (gaps included) drags the whole group.
+  // Shift keeps its marquee behaviour.
+  const inGroupArea = (e) => {
+    if (!group || !editable || selectedRef.current.length < 2 || e.shiftKey) return false;
+    const wr = wrapRef.current?.getBoundingClientRect();
+    if (!wr) return false;
+    const x = e.clientX - wr.left, y = e.clientY - wr.top;
+    return x >= group.left && x <= group.left + group.width && y >= group.top && y <= group.top + group.height;
+  };
+
   const handlePointerDown = (e) => {
     if (e.button !== 0) return;
     const hit = e.target.closest?.("[data-frame-id]");
@@ -335,6 +443,7 @@ export function FrameLayer({ onFrameClick, markIds = [], onFrameHover, frames, s
       return;
     }
     if (hit) startMove(e, Number(hit.dataset.frameId));
+    else if (inGroupArea(e)) startMove(e, selectedRef.current[0], true);
     else startMarquee(e);
   };
 
@@ -376,7 +485,8 @@ export function FrameLayer({ onFrameClick, markIds = [], onFrameHover, frames, s
     if (box) readyRef.current?.();
   }, [!!box]);
 
-  const selRects = box ? frames.filter((f) => selectedIds.includes(f.id)).map((f) => frameRect(f, box)) : [];
+  const selRects = box ? frames.filter((f) => selectedIds.includes(f.id) && !f.hidden).map((f) => frameRect(f, box)) : [];
+  const allLocked = selectedIds.length > 0 && frames.filter((f) => selectedIds.includes(f.id)).every((f) => f.locked);
   const group = selRects.length
     ? (() => {
         const left = Math.min(...selRects.map((r) => r.left));
@@ -470,13 +580,24 @@ const bandMaps = useMemo(
     <div
       ref={wrapRef}
       onPointerDown={handlePointerDown}
+      onMouseDown={(e) => { if (e.detail > 1) e.preventDefault(); }} // a double click must not select anything, or the next drag turns into a native drag
+      onDragStart={(e) => e.preventDefault()}
+      onContextMenu={(e) => {
+        if (locked || !onContextMenu) return;
+        const hit = e.target.closest?.("[data-frame-id]");
+        const hitId = hit ? Number(hit.dataset.frameId) : null;
+        if (hitId == null && !inGroupArea(e)) return; // empty canvas keeps the browser menu
+        e.preventDefault();
+        if (hitId != null && !selectedRef.current.includes(hitId)) onSelect(groupMembers(hitId));
+        onContextMenu({ x: e.clientX, y: e.clientY });
+      }}
       onPointerMove={(e) => {
         if (!locked) return;
         const hit = e.target.closest?.("[data-frame-id]");
         onFrameHover?.(hit ? Number(hit.dataset.frameId) : null);
       }}
       onPointerLeave={() => locked && onFrameHover?.(null)}
-      className={`fade-enter absolute inset-0 overflow-hidden bg-[#FAF9FA] dark:bg-[#171717] touch-none ${locked ? "" : "cursor-grab active:cursor-grabbing"}`}
+      className={`fade-enter absolute inset-0 overflow-hidden bg-[#FAF9FA] dark:bg-[#171717] touch-none select-none ${locked ? "" : "cursor-grab active:cursor-grabbing"}`}
     >
       {background}
       <svg width="0" height="0" aria-hidden style={{ position: "absolute" }}>
@@ -547,7 +668,11 @@ const bandMaps = useMemo(
             const ap = frameAppearanceOf(f, environment, camera.rotationX, camera.rotationY);
             const imgUrl = f.img ? (f.img.cropUrl ?? f.img.url) : null;
             const fShort = Math.min(r.width, r.height);
-            const borderRadius = ap.radiiFrac.map((p) => `${fShort * p}px`).join(" ");
+            const canvasShort = Math.min(box.w, box.h);
+            const borderRadius = ap.radiiFrac.map((p) => `${Math.min(canvasShort * p, fShort / 2)}px`).join(" ");
+            const flipCss = imgUrl && !backVisible && !f.social?.on && (f.flipX || f.flipY)
+              ? `scale(${f.flipX ? -1 : 1}, ${f.flipY ? -1 : 1})`
+              : undefined;
             if (f.rig?.curve) {
               return (
                 <div key={f.id} onDoubleClick={() => onFrameDoubleClick?.(f.id)} style={{ display: "contents" }}>
@@ -564,21 +689,27 @@ const bandMaps = useMemo(
                 key={f.id}
                 data-frame-id={f.id}
                 onDoubleClick={() => onFrameDoubleClick?.(f.id)}
-                className="absolute overflow-hidden"
+                className="absolute"
                 style={{
                   display: f.hidden ? "none" : undefined,
                   left: r.left,
                   top: r.top,
                   width: r.width,
                   height: r.height,
-                  borderRadius,
-                  boxShadow: withGlow(f, ap.boxShadow),
                   transform: planeCss(f, Math.min(box.w, box.h)),
                   zIndex: depthRank?.get(f.id),
                   backfaceVisibility: f.rig?.hide ? "hidden" : undefined,
                   cursor: editable ? "default" : undefined,
                 }}
               >
+               <div
+                className="absolute inset-0 overflow-hidden"
+                style={{
+                  borderRadius,
+                  boxShadow: withGlow(f, ap.boxShadow),
+                }}
+               >
+                <div className="absolute inset-0" style={{ transform: flipCss }}>
                 {backVisible ? (
                   // scaleX(-1) undoes the mirroring you get from behind, so a gradient reads as authored
                   <div className="w-full h-full" style={{ background: backFillOf(f), opacity: backOpacityOf(f), transform: "scaleX(-1)" }} />
@@ -619,11 +750,12 @@ const bandMaps = useMemo(
                   </div>
                 )}
 
+                </div>
                 {f.social?.on && !backVisible && (
                   <SocialOverlay social={{ ...f.social, media: imgUrl }} width={r.width} height={r.height} />
                 )}
 
-                {!backVisible && (f.statusBar || f.homeIndicator) && (
+                {!backVisible && (f.statusBar || f.homeIndicator || f.browser?.on) && (
                   <ChromeCanvas o={chromeOps(f, r.width, r.height, chromeColors?.[chromeKey(f)])[0]} />
                 )}
 
@@ -639,18 +771,27 @@ const bandMaps = useMemo(
                   <div key={ap.sheenKey} className="fade-enter absolute inset-0 pointer-events-none" style={{ backgroundImage: ap.sheen }} />
                 )}
 
-                <div
-                  aria-hidden
-                  className="absolute inset-0 pointer-events-none bg-black"
-                  style={{
-                    opacity: 1 - (1 - (f.sh || 0)) * (1 - frameDim(f, box)),
-                    transition: playing ? "none" : DIM_TRANSITION,
-                  }}
-                />
+                {(() => {
+                  const dim = frameDim(f, box); // a tint toward the background, the frame stays opaque
+                  const shade = Math.min(1, (f.sh || 0) + dim);
+                  if (shade <= 0) return null;
+                  return (
+                    <div
+                      aria-hidden
+                      className="absolute inset-0 pointer-events-none"
+                      style={{
+                        opacity: shade,
+                        background: f.tint === "bg" || dim > 0 ? depthTint : "#000",
+                        transition: playing ? "none" : DIM_TRANSITION,
+                      }}
+                    />
+                  );
+                })()}
 
                 {ap.insetStroke && (
                   <div className="absolute inset-0 pointer-events-none" style={{ borderRadius, boxShadow: ap.insetStroke }} />
                 )}
+               </div>
               </div>
             );
           })}
@@ -690,6 +831,7 @@ const bandMaps = useMemo(
             const r = frameRect(f, box);
             const radii = frameAppearanceOf(f, environment, camera.rotationX, camera.rotationY).radiiFrac;
             const fs = Math.min(r.width, r.height);
+            const cs = Math.min(box.w, box.h);
             return (
               <div
                 key={`sel-${id}`}
@@ -697,7 +839,7 @@ const bandMaps = useMemo(
                 style={{
                   left: r.left, top: r.top, width: r.width, height: r.height,
                   outline: locked ? "2px solid #FF47BC" : "1px solid #FF47BC",
-                  borderRadius: radii.map((p) => `${fs * p}px`).join(" "),
+                  borderRadius: radii.map((p) => `${Math.min(cs * p, fs / 2)}px`).join(" "),
                   transform: f.r ? `rotate(${f.r}deg)` : undefined,
                 }}
               />
@@ -705,7 +847,7 @@ const bandMaps = useMemo(
           })}
 
           {/* Resize box: the frame itself for one selection, the group bounds for several */}
-          {group && editable && !locked && (
+          {group && editable && !locked && !allLocked && (
             <div
               className="absolute pointer-events-none"
               style={{
@@ -804,8 +946,44 @@ const bandMaps = useMemo(
           style={{ left: marquee.left, top: marquee.top, width: marquee.width, height: marquee.height }}
         />
       )}
-      {guides.v && <div className="absolute z-30 top-0 bottom-0 left-1/2 w-px bg-[#FF47BC] pointer-events-none" />}
-      {guides.h && <div className="absolute z-30 left-0 right-0 top-1/2 h-px bg-[#FF47BC] pointer-events-none" />}
+      {nativeGuide && (() => {
+        const g = nativeGuide;
+        const ratioOnly = g.mr && !g.mw && !g.mh; // same shape as the image, different size
+        const heightGuide = ratioOnly ? g.dim === "h" : g.mh && !g.mw; // height-only: line on the right edge
+        const widthGuide = ratioOnly ? g.dim === "w" : g.mw && !g.mh; // width-only: line on the bottom edge
+        const label = ratioOnly ? (g.dim === "w" ? `${g.fw}` : `${g.fh}`) : g.mw && g.mh ? `${g.w} × ${g.h}` : g.mw ? `${g.w}` : `${g.h}`;
+        return (
+          <div aria-hidden className="absolute z-30 pointer-events-none">
+            {heightGuide ? (
+              <div className="absolute" style={{ left: g.r, top: g.t, width: 1, height: g.b - g.t, background: GUIDE }} />
+            ) : widthGuide ? (
+              <div className="absolute" style={{ left: g.l, top: g.b, width: g.r - g.l, height: 1, background: GUIDE }} />
+            ) : (
+              <div className="absolute" style={{ left: g.l, top: g.t, width: g.r - g.l, height: g.b - g.t, outline: `1px solid ${GUIDE}` }} />
+            )}
+            <span
+              className="absolute px-1 h-4 rounded-[4px] text-[10px] leading-4 font-medium tabular-nums text-[#FAF9FA] whitespace-nowrap"
+              style={{
+                background: GUIDE,
+                left: heightGuide ? g.r + 6 : (g.l + g.r) / 2,
+                top: heightGuide ? (g.t + g.b) / 2 : g.b + 12,
+                transform: heightGuide ? "translate(0, -50%)" : "translate(-50%, -50%)",
+              }}
+            >
+              {label}
+            </span>
+          </div>
+        );
+      })()}
+      {guides.v && <div className="absolute z-30 top-0 bottom-0 left-1/2 w-px pointer-events-none" style={{ background: GUIDE }} />}
+      {guides.h && <div className="absolute z-30 left-0 right-0 top-1/2 h-px pointer-events-none" style={{ background: GUIDE }} />}
+      {guides.lines?.map((l, i) => (
+        <div
+          key={i}
+          className="absolute z-30 pointer-events-none"
+          style={{ background: GUIDE, left: l.x1, top: l.y1, width: Math.max(1, l.x2 - l.x1), height: Math.max(1, l.y2 - l.y1) }}
+        />
+      ))}
 
       {/* Alt held: distance from the selection to each canvas edge */}
       {measureSegs.map((s) => {
@@ -813,8 +991,9 @@ const bandMaps = useMemo(
         return (
           <div key={`measure-${s.key}`} aria-hidden className="absolute pointer-events-none z-30">
             <div
-              className="absolute bg-[#FF47BC]"
+              className="absolute"
               style={{
+                background: GUIDE,
                 left: s.x,
                 top: s.y,
                 width: horizontal ? s.w : 1,
@@ -822,8 +1001,9 @@ const bandMaps = useMemo(
               }}
             />
             <span
-              className="absolute px-1 h-4 rounded-[4px] bg-[#FF47BC] text-[10px] leading-4 font-medium tabular-nums text-[#FAF9FA]"
+              className="absolute px-1 h-4 rounded-[4px] text-[10px] leading-4 font-medium tabular-nums text-[#FAF9FA]"
               style={{
+                background: GUIDE,
                 left: horizontal ? Math.min(box.w - 14, Math.max(14, s.x + s.w / 2)) : Math.min(box.w - 14, Math.max(14, s.x)),
                 top: horizontal ? Math.min(box.h - 10, Math.max(10, s.y)) : Math.min(box.h - 10, Math.max(10, s.y + s.h / 2)),
                 transform: "translate(-50%, -50%)",

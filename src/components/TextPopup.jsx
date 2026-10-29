@@ -15,6 +15,8 @@ import { ALIGN_ACTIONS } from "../constants/canvasControls.js";
 import {
   TEXT_FONTS, TEXT_WEIGHTS, TEXT_CASES, TEXT_ALIGNS, TEXT_DECORATIONS, TEXT_WRAPS, decoSwitchPatch,
 } from "../lib/textUtils.js";
+import { FontPicker } from "./FontPicker.jsx";
+import { fontWeights, nearestWeight } from "../lib/fontCatalog.js";
 
 function TextAdvanced({ value, set, onBack, onClose, onSwatchClick, makePercentDrag, onOpenDecoration }) {
   const sectionLabel = "section-title text-[#737373] dark:text-[#ABABAB]";
@@ -111,6 +113,43 @@ function TextAdvanced({ value, set, onBack, onClose, onSwatchClick, makePercentD
             <div className="fx-enter flex flex-col gap-2">
               <label className={smallLabel}>Max lines</label>
               <Scrubber compact label="" value={value.truncateLines ?? 3} min={1} max={20} onChange={(truncateLines) => set({ truncateLines })} />
+            </div>
+          )}
+        </div>
+
+        {/* Variable */}
+        <div className="flex flex-col gap-2">
+          <ToggleRow
+            muted
+            label="Variable"
+            checked={!!value.variable}
+            disabled={!value.fontMeta?.variable}
+            onChange={(on) =>
+              set(
+                on
+                  ? { variable: true, varWidth: value.varWidth ?? 100 }
+                  : { variable: false, varWidth: 100, weight: String(nearestWeight(value.fontMeta, Number(value.weight))) }
+              )
+            }
+          />
+          {value.variable && (
+            <div className="fx-enter flex flex-col gap-2">
+              {value.fontMeta?.wdRange && (
+                <Scrubber
+                  label="Width"
+                  value={value.varWidth ?? 100}
+                  min={value.fontMeta.wdRange[0]}
+                  max={value.fontMeta.wdRange[1]}
+                  onChange={(varWidth) => set({ varWidth })}
+                />
+              )}
+              <Scrubber
+                label="Weight"
+                value={Number(value.weight)}
+                min={value.fontMeta?.wRange?.[0] ?? 100}
+                max={value.fontMeta?.wRange?.[1] ?? 900}
+                onChange={(w) => set({ weight: String(w) })}
+              />
             </div>
           )}
         </div>
@@ -397,7 +436,7 @@ export function TextPopup({ popupRef, anchorRef, toolbarRef, value, onChange, on
       const face = new FontFace(family, await file.arrayBuffer());
       await face.load();
       document.fonts.add(face);
-      set({ font: family, customFonts: [...value.customFonts.filter((f) => f !== family), family] });
+      set({ font: family, fontMeta: null, customFonts: [...value.customFonts.filter((f) => f !== family), family] });
     } catch (err) {
       console.error("Custom font failed to load:", err);
     }
@@ -411,7 +450,12 @@ export function TextPopup({ popupRef, anchorRef, toolbarRef, value, onChange, on
     `seg-tab flex-1 h-7 flex items-center justify-center gap-2 px-2.5 py-1 rounded-[14px] leading-5 transition-colors duration-200 ${
       on ? SEG_ON : SEG_OFF
     }`;
-  const fonts = [...TEXT_FONTS, ...value.customFonts.map((v) => ({ value: v, label: v }))];
+  // only weights this font really has, so a 400-only font can't be set to Bold
+  const stdWeights = TEXT_WEIGHTS.filter((w) => fontWeights(value.fontMeta).includes(Number(w.value)));
+  const weightOptions =
+    value.variable && !stdWeights.some((w) => w.value === String(value.weight))
+      ? [...stdWeights, { value: String(value.weight), label: String(value.weight) }].sort((a, b) => Number(a.value) - Number(b.value))
+      : stdWeights;
 
   // Align buttons map onto the existing 9-point position (e.g. "tl", "mc", "br").
   const ALIGN_TO_POS = {
@@ -607,7 +651,19 @@ export function TextPopup({ popupRef, anchorRef, toolbarRef, value, onChange, on
             <label className={label}>Font</label>
             <div className="flex items-start gap-1">
               <div className="flex-1 min-w-0">
-                <PopupDropdown value={value.font} options={fonts} onChange={(font) => set({ font })} />
+                <FontPicker
+                  value={value.font}
+                  customFonts={value.customFonts}
+                  onChange={(font, meta) =>
+                    set({
+                      font,
+                      fontMeta: meta,
+                      weight: String(nearestWeight(meta, Number(value.weight))),
+                      variable: !!value.variable && !!meta?.variable,
+                      varWidth: 100,
+                    })
+                  }
+                />
               </div>
               <Tooltip label="Upload custom font" placement="bottom">
                 <button
@@ -626,7 +682,7 @@ export function TextPopup({ popupRef, anchorRef, toolbarRef, value, onChange, on
           <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col gap-2 min-w-0">
               <label className={label}>Weight</label>
-              <PopupDropdown value={value.weight} options={TEXT_WEIGHTS} onChange={(weight) => set({ weight })} />
+              <PopupDropdown value={value.weight} options={weightOptions} onChange={(weight) => set({ weight })} />
             </div>
             <div className="flex flex-col gap-2 min-w-0">
               <label className={label}>Size</label>

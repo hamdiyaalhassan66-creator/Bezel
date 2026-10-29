@@ -3867,9 +3867,23 @@ function loadEnvironmentTexture(renderer, key) {
 // on a 440 x 956 pt screen fitted to the frame (centered horizontally, status bar hangs from
 // the top, home indicator from the bottom). `color` is passed in because Frame has no pixels
 // to sample, it picks black/white from the social UI's theme.
-export function paintPhoneChrome(ctx, w, h, { statusBar, homeIndicator, color = "#FFFFFF", statusColor, homeColor, deviceLabel = "iPhone 16 Pro Max" }) {
+export function paintPhoneChrome(ctx, w, h, {
+  statusBar, homeIndicator, color = "#FFFFFF", statusColor, homeColor, deviceLabel = "iPhone 16 Pro Max",
+  browser = "none", browserTheme = "light", browserTabs = "top", browserUrl = "",
+}) {
   const { w: lw, h: baseH } = SCREEN_LOGICAL_PT[deviceLabel] ?? SCREEN_LOGICAL_PT.default;
   const k = Math.min(w / lw, h / baseH);
+  if (browser !== "none") {
+    // bars span the full frame width, so they scale by width rather than by the centered phone layout
+    const kb = w / lw;
+    const bm = getPhoneBrowserMetrics(deviceLabel, { browser, browserTabs });
+    if (bm) {
+      ctx.save();
+      ctx.scale(kb, kb);
+      drawPhoneBrowser(ctx, lw, h / kb, bm, browser, browserTheme === "dark", (browserUrl || DEFAULT_BROWSER_URL).trim());
+      ctx.restore();
+    }
+  }
   ctx.save();
   ctx.translate((w - lw * k) / 2, 0);
   ctx.scale(k, k);
@@ -5314,6 +5328,44 @@ function videoFrameSource(s, el) {
   return c;
 }
 
+// Default screen images, in public/mockup-defaults/. One per device family; tablets also have -portrait / -landscape.
+const DEFAULT_SCREEN_FAMILY = {
+  'MacBook Pro 14"': "laptop",
+  'MacBook Pro 16"': "laptop",
+  "MacBook Air": "laptop",
+  "Pro Display XDR": "display",
+  "Apple Watch Ultra": "watch",
+  "Apple Watch Series 9": "watch",
+  "Apple Watch Series 7": "watch",
+  "iPad mini": "mini",
+  "iPad Air": "air",
+  "iPad Pro 12.9-inch": "pro",
+  "iPad Pro 11-inch": "pro",
+  // every other device is an iPhone
+};
+const defaultScreenImgs = new Map(); // file -> <img>
+let onDefaultScreenLoaded = null; // set by the component, repaints the screen once an image arrives
+
+function getDefaultScreenImage(deviceLabel, overlays) {
+  const family = DEFAULT_SCREEN_FAMILY[deviceLabel] ?? "phone";
+  const orient = TABLET_DEVICES[deviceLabel] ? (isLandscape(deviceLabel, overlays) ? "-landscape" : "-portrait") : "";
+  const file = `${family}${orient}.png`;
+  const hit = defaultScreenImgs.get(file);
+  if (hit) return hit.complete && hit.naturalWidth ? hit : null;
+  const im = new Image();
+  im.onload = () => onDefaultScreenLoaded?.();
+  im.src = `${import.meta.env.BASE_URL}mockup-defaults/${file}`;
+  defaultScreenImgs.set(file, im);
+  return null; // still loading: the gradient shows for a moment, then the image
+}
+
+function makeDefaultTexture(deviceLabel, overlays) {
+  const img = overlays?.socialPaint ? null : getDefaultScreenImage(deviceLabel, overlays);
+  return img
+    ? paintScreenTexture(img, undefined, deviceLabel, overlays)
+    : makePlaceholderTexture(deviceLabel, overlays);
+}
+
 function resolveScreenTexture(s, deviceLabel) {
   const overlays = s.screenOverlays;
   if (s.screenSource) {
@@ -5323,7 +5375,7 @@ function resolveScreenTexture(s, deviceLabel) {
     s.screenTexture = paintScreenTexture(src, s.screenSource.cropRect, deviceLabel, overlays);
     return s.screenTexture;
   }
-  return makePlaceholderTexture(deviceLabel, overlays);
+  return makeDefaultTexture(deviceLabel, overlays);
 }
 
 function makePlaceholderTexture(deviceLabel, overlays) {
@@ -5435,10 +5487,16 @@ function applyGrain(ctx, width, height, intensity) {
  */
 // Paints a Text popup item onto a canvas. `scale` = output px per on-screen px, so the live view,
 // Mockup export and Frame export all match. Mirrors TextOverlay's layout (24px padding, pre-wrap).
+// Canvas only accepts keyword widths, so the slider value snaps to the nearest one
+const CANVAS_STRETCH = [
+  [50, "ultra-condensed"], [62.5, "extra-condensed"], [75, "condensed"], [87.5, "semi-condensed"],
+  [100, "normal"], [112.5, "semi-expanded"], [125, "expanded"], [150, "extra-expanded"], [200, "ultra-expanded"],
+];
+
 export function paintTextItem(ctx, item, w, h, scale = 1) {
   if (!item || !item.content) return;
   const size = item.size * scale;
-  const pad = 24 * scale;
+  const pad = (item.pad ?? 24) * scale; // pad is set by scaleTextItem via prepText
   const n = parseInt(item.hex || "000000", 16);
   const color = `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${item.opacity / 100})`;
   let text = item.content;
@@ -5448,6 +5506,10 @@ export function paintTextItem(ctx, item, w, h, scale = 1) {
 
   ctx.save();
   ctx.font = `${item.weight} ${size}px "${item.font}", sans-serif`;
+  if (item.variable) {
+    const vw = item.varWidth ?? 100;
+    ctx.fontStretch = CANVAS_STRETCH.reduce((b, s) => (Math.abs(s[0] - vw) < Math.abs(b[0] - vw) ? s : b))[1];
+  }
   ctx.letterSpacing = `${(item.letterSpacing / 100) * size}px`;
   ctx.textBaseline = "middle";
   ctx.fillStyle = color;
@@ -6501,6 +6563,13 @@ s.materials.frame.forEach((m) => { m.color.copy(blend(frameBase)); m.needsUpdate
   }
 
   useEffect(() => {
+    onDefaultScreenLoaded = () => {
+      if (!stateRef.current.screenSource) refreshScreenTexture(); // only while no screenshot is uploaded
+    };
+    return () => { onDefaultScreenLoaded = null; };
+  }, []);
+
+  useEffect(() => {
     const mount = mountRef.current;
     let cancelled = false;
     const width = mount.clientWidth;
@@ -7491,7 +7560,7 @@ if (lidarOverlay) {
       const s = stateRef.current;
       s.uploadToken = (s.uploadToken ?? 0) + 1; // cancels any upload still loading
       if (!s.materials?.screen) return;
-      const tex = makePlaceholderTexture(s.currentDeviceLabel, s.screenOverlays);
+      const tex = makeDefaultTexture(s.currentDeviceLabel, s.screenOverlays);
       s.materials.screen.map = tex;
       s.materials.screen.emissiveMap = tex;
       s.materials.screen.needsUpdate = true;

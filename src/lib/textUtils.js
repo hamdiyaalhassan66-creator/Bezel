@@ -26,7 +26,7 @@ export const TEXT_ALIGNS = [
   { value: "justify", Icon: TextAlignJustify },
 ];
 export const DEFAULT_TEXT = {
-  name: "Your text", content: "Your text", font: "Inter", weight: "700", size: 32, lineHeight: 120, letterSpacing: 0,
+  name: "Your text", content: "Your text", font: "Inter", fontMeta: null, weight: "700", size: 32, lineHeight: 120, letterSpacing: 0,
   hex: "000000", opacity: 100, align: "left", textCase: "none", position: "mc", layer: "front", zIndex: 1, customFonts: [], dx: 0, dy: 0, boxW: null, boxH: null,
   fillHex: null, fillOpacity: 100, decoration: null,
   decoStyle: "solid", decoThickness: 0, decoOffset: 0, decoHex: null, decoOpacity: 100, decoSkipInk: true, // thickness / offset: 0 = auto
@@ -74,7 +74,7 @@ export function truncateTextItem(item, dims) {
   truncCtx ??= document.createElement("canvas").getContext("2d");
   const ctx = truncCtx;
   const maxLines = Math.max(1, item.truncateLines ?? 3);
-  const wrapW = item.boxW ? item.boxW * dims.w : dims.w - TEXT_PAD * 2;
+  const wrapW = item.boxW ? item.boxW * dims.w : dims.w - (item.pad ?? TEXT_PAD) * 2;
   const cased = (s) => {
     if (item.textCase === "uppercase") return s.toUpperCase();
     if (item.textCase === "lowercase") return s.toLowerCase();
@@ -121,7 +121,7 @@ export function truncateTextItem(item, dims) {
 }
 
 // What every renderer should draw: truncated, with Fill applied.
-export const prepText = (item, dims) => withTextFill(truncateTextItem(item, dims));
+export const prepText = (item, dims) => withTextFill(truncateTextItem(scaleTextItem(item, dims), dims));
 
 // Kerning between two letters, in px. Separate inline-blocks can't kern, so this is added back as a margin.
 let kernCtx;
@@ -135,8 +135,27 @@ export function kernAdjust(item, a, b) {
 }
 
 // ---------- Text on canvas: layout helpers ----------
-const TEXT_PAD = 24; // must match the padding in paintTextItem (MockupScene.jsx)
+export const TEXT_PAD = 24; // padding at the reference size. Scaled by textUnit() everywhere it's used
+export const TEXT_REF = 720; // stored sizes mean "px when the canvas's short side is this many px"
 const TEXT_SNAP = 6; // px
+
+// Same unit frames use: the canvas's short side.
+export const textUnit = (dims) => (dims && dims.w > 0 && dims.h > 0 ? Math.min(dims.w, dims.h) / TEXT_REF : 1);
+export const textPad = (dims) => TEXT_PAD * textUnit(dims);
+
+// Stored values -> on-screen px for this canvas. Every renderer draws the result.
+export function scaleTextItem(item, dims) {
+  if (!item || !dims) return item;
+  const k = textUnit(dims);
+  return {
+    ...item,
+    size: item.size * k,
+    paragraphSpacing: (item.paragraphSpacing ?? 0) * k,
+    decoThickness: (item.decoThickness ?? 0) * k, // 0 = auto stays 0
+    decoOffset: (item.decoOffset ?? 0) * k,
+    pad: TEXT_PAD * k, // consumed by truncateTextItem, the DOM wrapper and paintTextItem
+  };
+}
 
 export function useBoxSize(ref) {
   const [size, setSize] = useState(null);
@@ -187,12 +206,12 @@ export const textBlockStyle = (item, dims, color) => ({
 });
 
 // Closest snap of a box (start pos + size) to the canvas margins / center on one axis.
-export function snapAxis(pos, size, limit) {
+export function snapAxis(pos, size, limit, pad = TEXT_PAD) {
   let best = null;
   [
-    [TEXT_PAD - pos, TEXT_PAD],
+    [pad - pos, pad],
     [limit / 2 - (pos + size / 2), limit / 2],
-    [limit - TEXT_PAD - (pos + size), limit - TEXT_PAD],
+    [limit - pad - (pos + size), limit - pad],
   ].forEach(([d, line]) => {
     if (Math.abs(d) < TEXT_SNAP && (!best || Math.abs(d) < Math.abs(best.d))) best = { d, line };
   });

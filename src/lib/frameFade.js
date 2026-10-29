@@ -1,8 +1,9 @@
 import { frameRect } from "./frameModel.js";
 
-// 0-100 fade: only the frame sitting in the center stays undimmed. Returns a black overlay alpha (0 = untouched).
+// 0-100 fade: only the frame sitting in the center stays fully visible.
+// Returns how much a frame fades (0 = untouched). Callers use it as opacity: 1 - frameDim(...).
 // Distance is measured along the fade axis in units of the frame's own size.
-const MAX_DIM = 0.75; // how dark a fully faded frame gets
+const MAX_DIM = 0.8; // a fully faded frame keeps 20% opacity
 
 export function frameDim(f, box) {
   if (!f.fade || !box) return 0;
@@ -15,5 +16,5 @@ export function frameDim(f, box) {
   return (f.fade / 100) * k * MAX_DIM;
 }
 
-export const frameFade = () => 1; // kept so old imports don't break; fade no longer touches opacity
+export const frameFade = () => 1; // kept so old imports don't break
 export const DIM_TRANSITION = "opacity 180ms cubic-bezier(0.23, 1, 0.32, 1)";

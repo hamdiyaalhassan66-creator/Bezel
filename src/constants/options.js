@@ -10,11 +10,11 @@ export const CANVAS_SIZE_OPTIONS = [
   { value: "Fill", label: "Fill", ratio: null },
   { value: "3:4", label: "3:4", sublabel: "1080×1440", ratio: 3 / 4, w: 1080, h: 1440 },
   { value: "3:2", label: "3:2", sublabel: "1620×1080", ratio: 3 / 2, w: 1620, h: 1080 },
-  { value: "9:16", label: "9:16", sublabel: "1080×1920", ratio: 9 / 16, w: 1080, h: 1920 },
+  { value: "16:9", label: "16:9", sublabel: "1920×1080", ratio: 16 / 9, w: 1920, h: 1080 },
   { value: "1:1", label: "1:1", sublabel: "1080×1080", ratio: 1, w: 1080, h: 1080 },
   { value: "4:3", label: "4:3", sublabel: "1440×1080", ratio: 4 / 3, w: 1440, h: 1080 },
-  { value: "2:3", label: "2:3", sublabel: "1080×1620", ratio: 2 / 3, w: 1080, h: 1620 },
-  { value: "16:9", label: "16:9", sublabel: "1920×1080", ratio: 16 / 9, w: 1920, h: 1080 },
+  { value: "2:3", label: "2:3", sublabel: "1080×1620", ratio: 2 / 3, w: 1080, h: 1620 }, 
+  { value: "9:16", label: "9:16", sublabel: "1080×1920", ratio: 9 / 16, w: 1080, h: 1920 },
 ];
 
 export const EXPORT_SIZES = [

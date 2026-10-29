@@ -47,13 +47,19 @@ function chromeOps(f, w, h, auto) {
   const darkText = !!m && m.themed && s.theme !== "dark";
   // With a social UI on, its theme decides. Otherwise the image decides.
   const socialColor = s.on ? (darkText ? "#000000" : "#FFFFFF") : null;
+  const b = f.browser?.on ? f.browser : null;
+  const barColor = socialColor ?? (b ? (b.theme === "dark" ? "#FFFFFF" : "#000000") : null);
   return [{
     t: "chrome", w, h,
     statusBar: !!f.statusBar,
     homeIndicator: !!f.homeIndicator,
-    color: socialColor ?? "#FFFFFF",
-    statusColor: socialColor ?? auto?.status ?? "#FFFFFF",
-    homeColor: socialColor ?? auto?.home ?? "#FFFFFF",
+    color: barColor ?? "#FFFFFF",
+    statusColor: barColor ?? auto?.status ?? "#FFFFFF",
+    homeColor: barColor ?? auto?.home ?? "#FFFFFF",
+    browser: b ? b.type : "none",
+    browserTheme: b?.theme ?? "light",
+    browserTabs: b?.tabs ?? "top",
+    browserUrl: b?.url ?? "",
   }];
 }
 
@@ -68,7 +74,7 @@ function ChromeCanvas({ o }) {
     const ctx = c.getContext("2d");
     ctx.scale(dpr, dpr);
     paintPhoneChrome(ctx, o.w, o.h, o);
-    }, [o.w, o.h, o.statusBar, o.homeIndicator, o.color, o.statusColor, o.homeColor]);
+    }, [o.w, o.h, o.statusBar, o.homeIndicator, o.color, o.statusColor, o.homeColor, o.browser, o.browserTheme, o.browserTabs, o.browserUrl]);
   return <canvas ref={ref} className="absolute inset-0" style={{ width: o.w, height: o.h }} />;
 }
 

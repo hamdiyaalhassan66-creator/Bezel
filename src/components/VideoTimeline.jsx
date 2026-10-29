@@ -248,6 +248,18 @@ useEffect(() => {
     setEditingId(null);
   };
 
+    // Requests from outside the timeline: the frame right-click menu on the canvas
+  const lastReqRef = useRef(v.request?.n ?? 0); // a request already in App state when this mounts is old news
+  useEffect(() => {
+    const r = v.request;
+    if (!r || r.n === lastReqRef.current) return;
+    lastReqRef.current = r.n;
+    const s = shots.find((x) => x.id === r.sid);
+    if (!s) return;
+    if (r.type === "anim") openAnim(s, r.kind);
+    else if (r.type === "rename") startRename(s);
+  }, [v.request]);
+
   const [textEditingId, setTextEditingId] = useState(null); // clip id
   const [textDraft, setTextDraft] = useState("");
   const textCancelRef = useRef(false);
