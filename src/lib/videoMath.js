@@ -124,6 +124,7 @@ export const VID_EASE_PRESETS = [
   { id: "css-ease", label: "CSS ease", group: "Basic", kind: "bezier", p: [0.25, 0.1, 0.25, 1] },
   { id: "glide", label: "Glide", group: "Basic", kind: "bezier", p: [0.33, 0, 0, 1] },
   { id: "sweep", label: "Sweep", group: "Basic", kind: "bezier", p: [0.7, 0.1, 0.3, 0.9] },
+  { id: "steep", label: "Steep", group: "Basic", kind: "bezier", p: [0.86, 0.14, 0.14, 0.86] },
 
   // Ease: Sine
   { id: "sine-in", label: "Sine in", group: "Ease", kind: "bezier", p: [0.47, 0, 0.745, 0.715] },

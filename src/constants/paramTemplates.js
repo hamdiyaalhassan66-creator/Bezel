@@ -23,6 +23,16 @@ export const defaultParams = (params) => Object.fromEntries(params.map((p) => [p
 // [{ id, type: "fade" | "blur" | <SHARED_FX type>, on, ...settings }]
 const FX_PARAM = { key: "fxList", type: "flag", default: [], section: "effects" };
 const easeParam = (def = "linear") => ({ key: "ease", label: "Easing", type: "ease", default: vidEaseSpec(def), section: "motion" });
+// Direction options follow the Stack axis. optionsBy tells the param panel which key drives the options.
+const DIR_BY_STACK = { Horizontal: ["Left", "Right"], Vertical: ["Up", "Down"] };
+const dirParam = (d, fallback = { Horizontal: "Left", Vertical: "Up" }) => {
+  const st = d.stack ?? "Horizontal";
+  return {
+    key: "direction", label: "Direction", type: "segmented",
+    options: DIR_BY_STACK[st], optionsBy: { key: "stack", map: DIR_BY_STACK },
+    default: d.direction ?? fallback[st],
+  };
+};
 const fxLayout = (fxList = []) => {
   const fade = Math.max(0, ...fxList.filter((x) => x.type === "fade" && x.on).map((x) => x.fade));
   const blurs = fxList
@@ -119,7 +129,7 @@ const ring3dParams = (d) => [
   { key: "size", label: "Plane Size", type: "slider", min: 15, max: 90, default: d.size, group: "Frame" },
   { key: "gap", label: "Gap", type: "slider", min: -100, max: 100, default: d.gap ?? 0, group: "Frame" },
   ...(d.distance === false ? [] : [{ key: "distance", label: "Distance", type: "slider", min: -100, max: 100, default: d.distance ?? 0, group: "Frame" }]),
-  { key: "corner", label: "Corner Radius", type: "slider", min: 0, max: 50, default: 6, group: "Frame" },
+  { key: "corner", label: "Corner Radius", type: "slider", min: 0, max: 50, default: 0, group: "Frame" },
   { key: "radius", label: "Circumference", type: "slider", min: 0, max: 1000, default: d.radius, group: "Frame" },
   { key: "tiltX", label: "X - Rotation", type: "slider", min: -180, max: 180, default: d.tiltX ?? 0, group: "Rotation" },
   { key: "tiltY", label: "Y - Rotation", type: "slider", min: -180, max: 180, default: 0, group: "Rotation" },
@@ -233,13 +243,13 @@ const Rt = mulMat(mulMat(RX(tiltX), RY(tiltY)), RZ(tiltZ));
 
 // ---------- Carousel: a strip of planes that travels from one end of the canvas to the other (loops) ----------
 const carouselParams = (d) => [
-  { key: "direction", label: "Direction", type: "segmented", options: ["Left", "Right"], default: d.direction ?? "Left" },
+  dirParam(d),
   { key: "stack", label: "Stack", type: "segmented", options: ["Horizontal", "Vertical"], default: d.stack ?? "Horizontal" },
   ...(d.surface ? [{ key: "surface", label: "Surface", type: "segmented", options: ["Flat", "Curved"], default: d.surface }] : []),
   { key: "count", label: "Count", type: "slider", min: 3, max: 40, default: d.count, group: "Frame" },
   { key: "size", label: "Plane Size", type: "slider", min: 15, max: 90, default: d.size, group: "Frame" },
   { key: "gap", label: "Gap", type: "slider", min: -50, max: 100, default: d.gap, group: "Frame" },
-  { key: "corner", label: "Corner Radius", type: "slider", min: 0, max: 50, default: 6, group: "Frame" },
+  { key: "corner", label: "Corner Radius", type: "slider", min: 0, max: 50, default: 0, group: "Frame" },
   { key: "curve", label: "Curve", type: "slider", min: 0, max: 80, default: d.curve, group: "Frame" },
   ...(d.solo ? [{ key: "solo", label: "Solo", type: "segmented", options: ["Off", "On"], default: d.solo, group: "Frame" }] : []),
   { key: "perspective", label: "Perspective", type: "slider", min: -1200, max: 1200, default: d.perspective, group: "Camera" },
@@ -278,7 +288,7 @@ const carouselBuild = ({ direction, stack: axis, surface = "Curved", count, size
   const ux = bx * Math.cos(ang) - by * Math.sin(ang);
   const uy = bx * Math.sin(ang) + by * Math.cos(ang);
   const half = Math.min(kx / 2 / Math.max(Math.abs(ux), 1e-6), ky / 2 / Math.max(Math.abs(uy), 1e-6)); // half the canvas along the path
-  const sgn = direction === "Right" || direction === "Forward" ? 1 : -1; // "Forward" = projects saved before the rename
+  const sgn = direction === "Right" || direction === "Up" || direction === "Forward" ? 1 : -1; // Right / Up = the old "Right"; "Forward" = projects saved before the rename
 
   // Virtual cylinder: Curve = the angle where a plane's center reaches the canvas edge
   const cap = (Math.max(curve, 0.01) * Math.PI) / 180; // curve 0 = straight strip; the clamp keeps R finite
@@ -378,11 +388,11 @@ const carouselBuild = ({ direction, stack: axis, surface = "Curved", count, size
 
 // ---------- Wheel: planes fanned along the top arc of a big vertical wheel (loops) ----------
 const wheelParams = (d) => [
-  { key: "direction", label: "Direction", type: "segmented", options: ["Left", "Right"], default: d.direction ?? "Left" },
+  dirParam(d),
   { key: "stack", label: "Stack", type: "segmented", options: ["Horizontal", "Vertical"], default: d.stack ?? "Horizontal" },
   { key: "count", label: "Count", type: "slider", min: 3, max: 40, default: d.count, group: "Frame" },
   { key: "size", label: "Plane Size", type: "slider", min: 15, max: 90, default: d.size, group: "Frame" },
-  { key: "corner", label: "Corner Radius", type: "slider", min: 0, max: 50, default: 6, group: "Frame" },
+  { key: "corner", label: "Corner Radius", type: "slider", min: 0, max: 50, default: 0, group: "Frame" },
   { key: "radius", label: "Wheel Radius", type: "slider", min: 20, max: 300, default: d.radius, group: "Frame" },
   { key: "scrub", label: "Z - Rotation", type: "slider", min: -180, max: 180, default: d.scrub ?? 0, group: "Rotation" },
   { ...FX_PARAM, default: d.fxList ?? [] },
@@ -397,7 +407,7 @@ const wheelBuild = ({ direction, stack, count, size, corner, radius, scrub, fxLi
   const { fade: fadeAmt, blurs, fx } = fxLayout(fxList);
   const h = size / 100;
   const R = (radius / 100) * ky; // wheel radius, same basis as the ring's
-  const sgn = direction === "Right" ? 1 : -1;
+  const sgn = direction === "Right" || direction === "Up" ? 1 : -1;
   const vert = stack === "Vertical";
   const step = 360 / count; // planes sit evenly around the whole wheel
   const steps = cycles * count; // each step turns the wheel by one plane, whole laps = seamless loop
@@ -431,6 +441,164 @@ const wheelBuild = ({ direction, stack, count, size, corner, radius, scrub, fxLi
     poster: +(duration * 0.1).toFixed(2),
     layout,
     shots: [{ name: "Wheel", start: 0, len: duration, keys: [], stagger: { track } }],
+  };
+};
+
+// ---------- Wheel arc: planes spread over Cycle Deg of a wheel and shift along it (loops) ----------
+const wheelRingParams = (d) => [
+  { key: "direction", label: "Direction", type: "segmented", options: ["Forward", "Reverse"], default: d.direction ?? "Forward" },
+  { key: "spinThumbs", label: "Spin Thumbs", type: "segmented", options: ["Off", "On"], default: d.spinThumbs ?? "On" },
+  ...(d.bg !== undefined
+    ? [
+        { key: "bg", label: "Background Image", type: "segmented", options: ["Off", "On"], default: d.bg },
+        { key: "bgScale", label: "Scale", type: "slider", min: 100, max: 200, default: d.bgScale ?? 115 },
+        { key: "bgSettle", label: "Settle", type: "slider", min: 0, max: 10, default: d.bgSettle ?? 7 }, // tenths of a step spent settling
+        { key: "bgDim", label: "Dim", type: "slider", min: 0, max: 100, default: d.bgDim ?? 10 },
+      ]
+    : []),
+  { key: "repeat", label: "Repeat Images", type: "segmented", options: ["Off", "On"], default: d.repeat ?? "On" },
+  { key: "count", label: "Count", type: "slider", min: 3, max: 40, default: d.count ?? 10, group: "Frame" },
+  { key: "radius", label: "Ring Radius", type: "slider", min: 20, max: 300, default: d.radius ?? 70, group: "Frame" },
+  { key: "size", label: "Thumb Size", type: "slider", min: 5, max: 60, default: d.size ?? 20, group: "Frame" },
+  { key: "corner", label: "Corner Radius", type: "slider", min: 0, max: 50, default: d.corner ?? 0, group: "Frame" },
+  { key: "offsetX", label: "Offset X", type: "slider", min: -100, max: 100, default: d.offsetX ?? 0, group: "Frame" },
+  { key: "offsetY", label: "Offset Y", type: "slider", min: -100, max: 100, default: d.offsetY ?? -30, group: "Frame" },
+  { key: "cycleDeg", label: "Cycle Deg", type: "slider", min: 30, max: 360, default: d.cycleDeg ?? 180, group: "Frame" },
+  { ...FX_PARAM, default: d.fxList ?? [] },
+  { key: "cycles", label: "Cycles", type: "slider", min: 1, max: 4, default: d.cycles ?? 1, group: "Timing" },
+  { key: "duration", label: "Duration (s)", type: "slider", min: 1, max: 20, hardMax: 600, default: d.duration ?? 13.3, group: "Timing" },
+  { key: "delay", label: "Delay (s)", type: "slider", min: 0, max: 10, default: d.delay ?? 0, group: "Timing" },
+  easeParam(d.ease ?? "linear"),
+];
+
+const wheelRingBuild = ({ direction, spinThumbs, bg, bgScale = 115, bgSettle = 7, bgDim = 10, repeat, count, size, corner, radius, offsetX, offsetY, cycleDeg, fxList, cycles, duration, delay, ease }, ctx) => {
+  const { kx, ky } = axes(ctx.aspect ?? 1);
+  const { fade, blurs, fx } = fxLayout(fxList);
+  const h = size / 100;
+  const R = (radius / 100) * ky; // ring radius, same basis as the other wheel
+  const sgn = direction === "Reverse" ? -1 : 1;
+  // Count planes are spread over Cycle Deg, and the same spacing continues around the whole wheel,
+  // so a plane leaving the arc keeps travelling instead of vanishing
+  const n = Math.max(count, Math.round((360 * count) / cycleDeg));
+  const step = 360 / n;
+  const mid = bg === "On" ? Math.floor((n - 1) / 2) : (n - 1) / 2; // Background Image: one plane rests exactly at the top
+  const half = 180; // the seam is at the bottom of the wheel, off canvas
+  const steps = Math.max(1, Math.round(cycleDeg / step)) * cycles; // each step turns the wheel by one plane, like Wheel 01
+  const total = sgn * steps * step; // whole plane steps, so the loop is seamless
+  const u0 = clamp(delay / duration, 0, 0.9); // Delay: rest first
+  const easeFn = vidEaseFn(ease ?? vidEaseSpec("linear"));
+  const spin = (u) => {
+    const s = clamp((u - u0) / (1 - u0), 0, 1) * steps;
+    const j = Math.min(steps - 1, Math.floor(s + 1e-9));
+    return sgn * (j + easeFn(clamp(s - j, 0, 1))) * step; // every step eases on its own
+  };
+  const K = clamp(Math.floor(480 / steps), 4, 16); // samples per step: the easing is baked in
+  const N = steps * K;
+
+  const pose = (u, a) => {
+    const th = (a * Math.PI) / 180;
+    return {
+      u,
+      dx: R * Math.sin(th) + (offsetX / 100) * kx,
+      dy: R * (1 - Math.cos(th)) + (offsetY / 100) * ky, // y grows downward: the sides drop away from the top
+      ...(spinThumbs === "On" ? { dr: a } : {}),
+    };
+  };
+
+  const track = (i) => {
+    const a0 = (i - mid) * step; // centered on the top of the wheel
+    const end = a0 + total;
+    const lo = Math.min(a0, end), hi = Math.max(a0, end);
+    // times where the plane crosses the seam at +-Cycle Deg / 2: it wraps to the other end (hard cut)
+    const cuts = [];
+    for (let m = Math.ceil((lo - half) / 360); ; m++) {
+      const T = half + m * 360;
+      if (T >= hi - 1e-9) break;
+      if (T <= lo + 1e-9) continue;
+      let a = 0, b = 1;
+      for (let it = 0; it < 40; it++) {
+        const mid = (a + b) / 2;
+        if ((a0 + spin(mid) < T) === (end > a0)) a = mid;
+        else b = mid;
+      }
+      cuts.push((a + b) / 2);
+    }
+    const pts = [];
+    cuts.forEach((u) => {
+      pts.push({ ...pose(u, sgn * half), order: 0 }); // last position before the wrap
+      pts.push({ ...pose(u, -sgn * half), order: 1 }); // first position after it
+    });
+    for (let q = 0; q <= N; q++) {
+      const u = q / N;
+      if (cuts.some((c) => Math.abs(c - u) < 1e-6)) continue;
+      pts.push({ ...pose(u, wrap(a0 + spin(u), 360)), order: 0 });
+    }
+    return pts.sort((p, r) => p.u - r.u || p.order - r.order).map(({ order, ...k }) => k);
+  };
+
+  const A = repeat === "On" ? Math.max(1, Math.ceil(count / 2)) : count; // distinct images. Repeat Images: they go around twice
+  const assetOf = (i) => i % A;
+
+  // Background Image: the big image behind the thumbs is the one sitting at the top of the wheel
+  const bgOn = bg === "On";
+  const tS = (s) => u0 + (s * (1 - u0)) / steps; // start of step s on the timeline (same mapping as spin)
+  const focusAsset = (k) => {
+    // image of the plane nearest the top after k steps
+    let best = 0, bs = Infinity;
+    for (let i = 0; i < n; i++) {
+      const ang = wrap((i - mid) * step + sgn * k * step, 360);
+      const sc = Math.abs(ang) + (ang * sgn > 0 ? 1e-6 : 0); // a tie goes to the plane still arriving
+      if (sc < bs - 1e-9) { bs = sc; best = i; }
+    }
+    return assetOf(best);
+  };
+  const bgTrack = (b) => {
+    const kBig = Math.max(1, bgScale / 100);
+    const sh = (bgDim / 100) * 0.7;
+    const vis = (u, k) => ({ u, dx: 0, dy: 0, dz: 0, k, sh, cl: 0, cr: 0, ct: 0, cb: 0 });
+    const hid = (u) => ({ u, dx: 0, dy: 0, dz: 0, k: 1, cl: 1, cr: 0, ct: 0, cb: 0 }); // clipped to nothing
+    const segs = []; // [from u, to u, starts big]
+    if (u0 > 0 && focusAsset(0) === b) segs.push([0, u0, false]); // Delay: rest on the first image
+    for (let s = 0; s < steps; s++) if (focusAsset(s + 1) === b) segs.push([tS(s), tS(s + 1), true]); // switches as the step starts
+    if (!segs.length) return [hid(0), hid(1)];
+    const out = [];
+    const Q = 12;
+    let end = -1;
+    segs.forEach(([a, z, big]) => {
+      if (a > end + 1e-9) { // gap: hidden until here
+        if (end >= 0) out.push(hid(end));
+        else if (a > 1e-9) out.push(hid(0));
+        out.push(hid(a));
+      }
+      out.push(vis(a, big ? kBig : 1)); // same u as the key before = hard cut
+      const settle = big ? clamp(bgSettle / 10, 0, 1) * (z - a) : 0;
+      if (settle > 0) {
+        for (let q = 1; q <= Q; q++) out.push(vis(a + (settle * q) / Q, lerp(kBig, 1, 1 - Math.pow(1 - q / Q, 3)))); // ease-out settle
+      }
+      out.push(vis(z, 1));
+      end = z;
+    });
+    if (end < 1 - 1e-9) out.push(hid(end), hid(1));
+    return out;
+  };
+
+  const rig = { tx: 0, ty: 0, tz: 0, persp: 50, hide: false, curve: null }; // flat rig: only here so the thumbs sort above the background
+  const thumbs = Array.from({ length: n }, (_, i) => ({
+    x: 0, y: 0, r: RATIO, h, radius: corner, fade, fadeAxis: "x", blurs, fx,
+    asset: assetOf(i),
+    ...(bgOn ? { rig } : {}),
+  }));
+  const bgPlanes = bgOn
+    ? Array.from({ length: A }, (_, b) => ({ x: 0, y: 0, r: ctx.aspect ?? 1, h: 1, radius: 0, fade: 0, fadeAxis: "x", blurs: [], fx: [], rig, noHit: true, asset: b }))
+    : [];
+  return {
+    duration,
+    poster: +(duration * 0.1).toFixed(2),
+    layout: [...thumbs, ...bgPlanes],
+    shots: [{
+      name: "Wheel", start: 0, len: duration, keys: [],
+      stagger: { track: bgOn ? (i) => (i < n ? track(i).map((k) => ({ ...k, dz: 0.01 })) : bgTrack(i - n)) : track },
+    }],
   };
 };
 
@@ -543,7 +711,7 @@ const gridColsParams = (d) => [
   { key: "count", label: "Count", type: "slider", min: 3, max: 60, default: d.count, group: "Frame" }, // total planes, shared across the columns
   { key: "size", label: "Plane Size", type: "slider", min: 10, max: 90, default: d.size, group: "Frame" },
   { key: "gap", label: "Gap", type: "slider", min: 0, max: 100, default: d.gap, group: "Frame" },
-  { key: "corner", label: "Corner Radius", type: "slider", min: 0, max: 50, default: d.corner ?? 6, group: "Frame" },
+  { key: "corner", label: "Corner Radius", type: "slider", min: 0, max: 50, default: d.corner ?? 0, group: "Frame" },
   ...(d.tilt !== undefined ? [{ key: "tilt", label: "Tilt", type: "slider", min: -90, max: 90, default: d.tilt, group: "Frame" }] : []),
   ...(d.zoom ? [{ key: "zoom", label: "Zoom", type: "segmented", options: ["Off", "On"], default: d.zoom, group: "Camera" }] : []),
   { ...FX_PARAM, default: d.fxList ?? [] },
@@ -693,16 +861,24 @@ const gridRowsParams = (d) => [
   { key: "count", label: "Count", type: "slider", min: 3, max: 60, default: d.count, group: "Frame" }, // total planes, shared across the rows
   { key: "size", label: "Plane Size", type: "slider", min: 10, max: 90, default: d.size, group: "Frame" },
   { key: "gap", label: "Gap", type: "slider", min: 0, max: 100, default: d.gap, group: "Frame" },
-  { key: "corner", label: "Corner Radius", type: "slider", min: 0, max: 50, default: d.corner ?? 6, group: "Frame" },
+  { key: "corner", label: "Corner Radius", type: "slider", min: 0, max: 50, default: d.corner ?? 0, group: "Frame" },
   { key: "tiltX", label: "X - Rotation", type: "slider", min: -80, max: 80, default: d.tiltX ?? 0, group: "Frame" },
+  ...(d.tilt !== undefined ? [{ key: "tilt", label: "Tilt", type: "slider", min: -90, max: 90, default: d.tilt, group: "Frame" }] : []),
   { key: "perspective", label: "Perspective", type: "slider", min: 0, max: 100, default: d.perspective ?? 0, group: "Camera" },
+  ...(d.drift !== undefined
+    ? [
+        { key: "drift", label: "Drift (rows)", type: "slider", min: 0, max: 12, default: d.drift, section: "motion" },
+        { key: "skip", label: "Rows skipped", type: "slider", min: 0, max: 6, default: d.skip ?? 0, section: "motion" },
+        { key: "driftDir", label: "Drift Direction", type: "segmented", options: ["Up", "Down"], default: d.driftDir ?? "Down", section: "motion" },
+      ]
+    : []),
   { ...FX_PARAM, default: d.fxList ?? [] },
   { key: "cycles", label: "Cycles", type: "slider", min: 1, max: 4, default: 1, group: "Timing" },
   { key: "duration", label: "Duration (s)", type: "slider", min: 1, max: 20, hardMax: 600, default: d.duration, group: "Timing" },
   easeParam(d.ease),
 ];
 
-const gridRowsBuild = ({ direction, alternate, rows, count, size, gap, corner, tiltX = 0, perspective = 0, fxList, cycles, duration, ease }, ctx) => {
+const gridRowsBuild = ({ direction, alternate, rows, count, size, gap, corner, tiltX = 0, tilt = 0, perspective = 0, drift = 0, skip = 0, driftDir = "Down", fxList, cycles, duration, ease }, ctx) => {
   const aspect = ctx.aspect ?? 1;
   const { kx, ky } = axes(aspect);
   const { fade: fadeAmt, blurs, fx } = fxLayout(fxList);
@@ -716,9 +892,9 @@ const gridRowsBuild = ({ direction, alternate, rows, count, size, gap, corner, t
     const byHeight = ky / Math.max(0.35, Math.cos(rad)) / (g * rows);
     const byWidth = (kx + 0.02) / (RATIO * (g * colsN - 1)); // so a row of this many planes spans the canvas
     const grown = Math.min(Math.max(byHeight, byWidth), ky);
-    if (grown > Hs) { Hs = grown; Ws = RATIO * Hs; h = Hs / ky; }
+    if (grown > Hs && !drift) { Hs = grown; Ws = RATIO * Hs; h = Hs / ky; }
   }
-  const Rt = RX(tiltX);
+  const Rt = tilt ? mulMat(RX(tiltX), RZ(tilt)) : RX(tiltX); // tilt turns the grid in the canvas plane first, then X rotation tips it
   const P = lerp(40, 1.4, perspective / 100); // camera distance: 0 = nearly flat, 100 = close
   const rowsExtent = (rows * Hs * g) / 2 + Hs; // how far the rows reach from the center, vertically
   const minScale = P / (P + rowsExtent * Math.abs(Math.sin(rad))); // the far rows shrink toward the center by this much
@@ -726,8 +902,18 @@ const gridRowsBuild = ({ direction, alternate, rows, count, size, gap, corner, t
   const pitchX = Ws * g; // distance between neighbours in a row
   const pitchY = Hs * g; // distance between rows
   // planes per row: Count split across the rows, never fewer than it takes to wrap while fully off canvas
-  const cols = Math.max(1, Math.ceil(count / rows)); // Count is the exact total
+  const tsn = Math.sin((tilt * Math.PI) / 180), tcs = Math.cos((tilt * Math.PI) / 180);
+  const ex = Math.abs(kx * tcs) + Math.abs(ky * tsn), ey = Math.abs(kx * tsn) + Math.abs(ky * tcs); // canvas extent along the tilted grid's own axes
+  const cols = Math.max(1, Math.ceil(count / rows), drift ? Math.ceil((ex + Ws + 0.02) / pitchX) : 0); // Count is the exact total. Drifting also needs enough columns to wrap off canvas
+  // drifting: enough rows to wrap off canvas, rounded up to a multiple of Drift so every plane lands on a cell with the image it started on (seamless loop). Alternating also needs an even count
+  const skipN = drift ? Math.round(skip) : 0; // rows per jump, 0 = continuous drift
+  const vSteps = skipN ? Math.max(1, Math.round(drift / skipN)) : 0; // jumps per cycle
+  const rowsPerCycle = skipN ? vSteps * skipN : drift; // whole rows per cycle, so the loop stays seamless
+  const rowStep = drift ? (alternate === "On" && rowsPerCycle % 2 ? rowsPerCycle * 2 : rowsPerCycle) : 1;
+  const rowsN = drift ? Math.ceil(Math.max(rows, Math.ceil((ey + Hs + 0.02) / pitchY)) / rowStep) * rowStep : rows;
   const loop = cols * pitchX; // length of one lap
+  const loopY = rowsN * pitchY; // length of one vertical lap
+  const driftTravel = (driftDir === "Up" ? -1 : 1) * rowsPerCycle * cycles * pitchY; // whole rows, so the loop is seamless
   const base = direction === "Right" ? 1 : -1;
   const steps = cycles * cols; // one plane advance per step, whole laps = seamless loop
   const easeFn = vidEaseFn(ease ?? vidEaseSpec("linear"));
@@ -745,16 +931,27 @@ const gridRowsBuild = ({ direction, alternate, rows, count, size, gap, corner, t
     else hi = tHalf;
   }
   const info = (i) => {
-    const r = i % rows, j = Math.floor(i / rows);
+    const r = i % rowsN, j = Math.floor(i / rowsN);
     const sg = alternate === "On" && r % 2 ? -base : base;
-    return { sg, s0: (j - (cols - 1) / 2) * pitchX, Y: (r - (rows - 1) / 2) * pitchY };
+    return { sg, s0: (j - (cols - 1) / 2) * pitchX, Y: (r - (rowsN - 1) / 2) * pitchY };
+  };
+  const ev = cycleEase(easeFn, cycles);
+  const vTotal = vSteps * cycles; // jumps over the whole timeline
+  const vAt = (u) => {
+    if (!skipN) return driftTravel * ev(u); // continuous drift
+    const s = u * steps; // same step grid as the horizontal spin, so both move together
+    const j = Math.min(steps - 1, Math.floor(s + 1e-9));
+    const done = Math.floor((j * vTotal) / steps + 1e-9); // jumps finished before this step
+    const next = Math.floor(((j + 1) * vTotal) / steps + 1e-9); // jumps finished after it
+    return (driftTravel / vTotal) * (done + (next - done) * easeFn(clamp(s - j, 0, 1))); // the jump eases with the step
   };
 
   const track = (i) => {
     const { sg, s0, Y } = info(i);
-    const key = (u, a, order) => {
+    const yw = (u) => (drift ? wrap(Y + vAt(u), loopY) : Y); // wrapped vertical position
+    const key = (u, a, order, y) => {
       // positions are absolute and rotated here, like the 3D ring (the layout rests at the center)
-      const local = [a, Y, 0];
+      const local = [a, y, 0];
       const pt = [0, 1, 2].map((r) => Rt[r][0] * local[0] + Rt[r][1] * local[1] + Rt[r][2] * local[2]);
       const behind = pt[2] > 0.9 * P; // at or past the camera: hide
       return { u, order, dx: pt[0], dy: pt[1], dz: pt[2], ...(behind ? { k: 0.001 } : {}) };
@@ -764,23 +961,49 @@ const gridRowsBuild = ({ direction, alternate, rows, count, size, gap, corner, t
       const r = (s0 + sg * (n + 0.5) * pitchX - loop / 2) / loop; // a step's midpoint sits on the wrap point
       if (Math.abs(r - Math.round(r)) < 1e-6) wraps.push((n + tHalf) / steps);
     }
+    // vertical wraps: the times where Y + travel crosses the seam. Found by bisection, since the easing can be anything
+    const vwraps = [];
+    if (drift) {
+      const y1 = Y + driftTravel;
+      const lo = Math.min(Y, y1), hi = Math.max(Y, y1);
+      for (let m = Math.ceil((lo - loopY / 2) / loopY); ; m++) {
+        const T = loopY / 2 + m * loopY;
+        if (T >= hi - 1e-9) break;
+        if (T <= lo + 1e-9) continue;
+        let a0 = 0, b0 = 1;
+        for (let it = 0; it < 40; it++) {
+          const mid = (a0 + b0) / 2;
+          if ((Y + vAt(mid) < T) === (y1 > Y)) a0 = mid;
+          else b0 = mid;
+        }
+        vwraps.push((a0 + b0) / 2);
+      }
+    }
+    const cuts = [...wraps, ...vwraps];
     const pts = [];
     wraps.forEach((u) => {
-      pts.push(key(u, (sg * loop) / 2, 0)); // last position before the wrap
-      pts.push(key(u, (-sg * loop) / 2, 1)); // first position after it (hard cut, off canvas)
+      pts.push(key(u, (sg * loop) / 2, 0, yw(u))); // last position before the wrap
+      pts.push(key(u, (-sg * loop) / 2, 1, yw(u))); // first position after it (hard cut, off canvas)
+    });
+    vwraps.forEach((u) => {
+      const a = wrap(s0 + spin(u, sg), loop);
+      const e = (driftTravel > 0 ? 1 : -1) * (loopY / 2);
+      pts.push(key(u, a, 0, e)); // last position before the vertical wrap
+      pts.push(key(u, a, 1, -e)); // first position after it (hard cut, off canvas)
     });
     const N = steps * K;
     for (let q = 0; q <= N; q++) {
       const u = q / N;
-      if (wraps.some((w) => Math.abs(w - u) < 1e-6)) continue;
-      pts.push(key(u, wrap(s0 + spin(u, sg), loop), 0));
+      if (cuts.some((w) => Math.abs(w - u) < 1e-6)) continue;
+      pts.push(key(u, wrap(s0 + spin(u, sg), loop), 0, yw(u)));
     }
     return pts.sort((p, r) => p.u - r.u || p.order - r.order).map(({ order, ...k }) => k);
   };
 
-  const rig = { tx: tiltX, ty: 0, tz: 0, persp: P, hide: false, curve: null };
-  const layout = Array.from({ length: rows * cols }, () => ({
+  const rig = { tx: tiltX, ty: 0, tz: tilt, persp: P, hide: false, curve: null };
+  const layout = Array.from({ length: rowsN * cols }, (_, i) => ({
     x: 0, y: 0, r: RATIO, h, radius: corner, fade: fadeAmt, fadeAxis: "x", blurs, fx, rig,
+    ...(drift ? { asset: (((i % rowsN) % rowsPerCycle) + rowsPerCycle * Math.floor(i / rowsN)) % count } : {}), // images repeat every rowsPerCycle rows, so the loop closes on the same picture Count, so they reuse the Count assets
   }));
   return {
     duration,
@@ -795,7 +1018,7 @@ const gridZoomParams = (d) => [
   { key: "columns", label: "Columns", type: "slider", min: 1, max: 6, default: d.columns, group: "Frame" },
   { key: "rows", label: "Rows", type: "slider", min: 1, max: 6, default: d.rows, group: "Frame" },
   { key: "gap", label: "Gap", type: "slider", min: 0, max: 30, default: d.gap ?? 4, group: "Frame" },
-  { key: "corner", label: "Corner Radius", type: "slider", min: 0, max: 50, default: d.corner ?? 6, group: "Frame" },
+  { key: "corner", label: "Corner Radius", type: "slider", min: 0, max: 50, default: d.corner ?? 0, group: "Frame" },
   { key: "padding", label: "Padding", type: "slider", min: 0, max: 40, default: d.padding ?? 12, group: "Frame" },
   { key: "order", label: "Order", type: "segmented", options: ["Random", "Sequential"], default: d.order ?? "Random", group: "Camera" },
   { key: "fill", label: "Zoom Fill", type: "slider", min: 50, max: 100, default: d.fill ?? 100, group: "Camera" },
@@ -887,7 +1110,7 @@ const gridPulseParams = (d) => [
   { key: "rows", label: "Rows", type: "slider", min: 1, max: 6, default: d.rows, group: "Frame" },
   { key: "size", label: "Size", type: "slider", min: 30, max: 95, default: d.size ?? 80, group: "Frame" },
   { key: "gap", label: "Gap", type: "slider", min: 0, max: 30, default: d.gap ?? 6, group: "Frame" },
-  { key: "corner", label: "Corner Radius", type: "slider", min: 0, max: 50, default: d.corner ?? 6, group: "Frame" },
+  { key: "corner", label: "Corner Radius", type: "slider", min: 0, max: 50, default: d.corner ?? 0, group: "Frame" },
   { key: "order", label: "Order", type: "segmented", options: ["Diagonal", "Row", "Column", "Random"], default: d.order ?? "Random" },
   { key: "shrink", label: "Shrink", type: "slider", min: 0, max: 100, default: d.shrink ?? 95 },
   { key: "grow", label: "Grow", type: "slider", min: 0, max: 60, default: d.grow ?? 20 },
@@ -1038,6 +1261,1097 @@ const ringBuild = ({ direction, alternate, facing, count, rings = 1, depth = 0, 
   };
 };
 
+// ---------- Flip: cards turn over to show the next asset on their back (loops) ----------
+const flipParams = (d) => [
+  { key: "axis", label: "Axis", type: "segmented", options: ["Horizontal", "Vertical"], default: d.axis ?? "Horizontal" },
+  { key: "direction", label: "Direction", type: "segmented", options: ["Forward", "Reverse"], default: d.direction ?? "Forward" },
+  { key: "cols", label: "Columns", type: "slider", min: 1, max: 6, default: d.cols ?? 1, group: "Frame" },
+  { key: "rows", label: "Rows", type: "slider", min: 1, max: 6, default: d.rows ?? 1, group: "Frame" },
+  { key: "size", label: "Size", type: "slider", min: 20, max: 95, default: d.size ?? 70, group: "Frame" },
+  { key: "gap", label: "Gap", type: "slider", min: 0, max: 40, default: d.gap ?? 8, group: "Frame" },
+  { key: "corner", label: "Corner Radius", type: "slider", min: 0, max: 50, default: d.corner ?? 0, group: "Frame" },
+  { key: "order", label: "Order", type: "segmented", options: ["Diagonal", "Row", "Column", "Random"], default: d.order ?? "Diagonal" },
+  { key: "perspective", label: "Perspective", type: "slider", min: 0, max: 100, default: d.perspective ?? 60, group: "Camera" },
+  { key: "shade", label: "Shade", type: "slider", min: 0, max: 100, default: d.shade ?? 30, group: "Camera" },
+  FX_PARAM,
+  { key: "flipLen", label: "Flip length (%)", type: "slider", min: 5, max: 45, default: d.flipLen ?? 25, section: "motion" },
+  { key: "stagger", label: "Stagger", type: "slider", min: 0, max: 100, default: d.stagger ?? 80, section: "motion" },
+  { key: "cycles", label: "Cycles", type: "slider", min: 1, max: 4, default: 1, group: "Timing" },
+  { key: "duration", label: "Duration (s)", type: "slider", min: 2, max: 30, hardMax: 600, default: d.duration, group: "Timing" },
+  easeParam(d.ease ?? "expo-out"),
+];
+
+const flipBuild = ({ axis, direction, cols, rows, size, gap, corner, order, perspective, shade, fxList, flipLen, stagger, cycles, duration, ease }, ctx) => {
+  const aspect = ctx.aspect ?? 1;
+  const { fade, blurs, fx } = fxLayout(fxList);
+  const g = gap / 100;
+  // the grid has to fit both ways: by height, and by width
+  const hH = size / 100 / (rows + (rows - 1) * g);
+  const hW = ((size / 100) * aspect) / (RATIO * (cols + (cols - 1) * g));
+  const h = Math.min(hH, hW);
+  const w = (RATIO * h) / aspect;
+  const px = w * (1 + g), py = h * (1 + g);
+  const n = cols * rows;
+  const A = Math.max(2, n); // assets in use: card c shows asset c on its front and c + 1 on its back
+  const horiz = axis === "Horizontal";
+  const sgn = direction === "Reverse" ? -1 : 1;
+  const P = lerp(10, 1.4, perspective / 100); // camera distance: 0 = nearly flat, 100 = strong depth
+  const easeFn = vidEaseFn(ease ?? vidEaseSpec("expo-out"));
+  const f = clamp(flipLen / 100, 0.05, 0.45); // share of a cycle one flip takes
+  const rankOf = (i) => {
+    const r = Math.floor(i / cols), c = i % cols;
+    if (order === "Row") return n > 1 ? i / (n - 1) : 0;
+    if (order === "Column") return n > 1 ? (c * rows + r) / (n - 1) : 0;
+    if (order === "Random") { const v = Math.sin((i + 1) * 12.9898) * 43758.5453; return v - Math.floor(v); }
+    return rows + cols > 2 ? (r + c) / (rows + cols - 2) : 0; // Diagonal
+  };
+  // one cycle = flip to the back, rest, flip to the front, rest. 0 -> 360 degrees
+  const phaseAngle = (ph) =>
+    ph < f ? 180 * easeFn(ph / f)
+    : ph < 0.5 ? 180
+    : ph < 0.5 + f ? 180 + 180 * easeFn((ph - 0.5) / f)
+    : 360;
+  const N = cycles * 96; // samples: the easing is baked in
+
+  const track = (i) => {
+    const c = i % n, back = i >= n;
+    const off = rankOf(c) * (stagger / 100) * (0.5 - f); // keeps every card at rest at u = 0 and u = 1
+    return Array.from({ length: N + 1 }, (_, j) => {
+      const u = j / N;
+      const s = u * cycles - off;
+      const m = Math.floor(s + 1e-9);
+      const a = 360 * m + phaseAngle(Math.max(0, s - m)); // cumulative, so the angle never wraps back
+      const key = { u, [horiz ? "ry" : "rx"]: sgn * (back ? a + 180 : a) };
+      const sh = (shade / 100) * Math.abs(Math.sin((a * Math.PI) / 180));
+      if (sh > 0.001) key.sh = sh;
+      return key;
+    });
+  };
+
+  const rig = { tx: 0, ty: 0, tz: 0, persp: P, hide: true, curve: null }; // hide = the side facing away disappears
+  const layout = Array.from({ length: n * 2 }, (_, i) => {
+    const c = i % n;
+    return {
+      x: ((c % cols) - (cols - 1) / 2) * px,
+      y: (Math.floor(c / cols) - (rows - 1) / 2) * py,
+      r: RATIO, h, radius: corner, fade, fadeAxis: "x", blurs, fx, rig,
+      asset: i < n ? c : (c + 1) % A,
+      tint: "bg",
+    };
+  });
+  return {
+    duration,
+    poster: +(duration * 0.12).toFixed(2),
+    layout,
+    shots: [{ name: "Flip", start: 0, len: duration, keys: [], stagger: { track } }],
+  };
+};
+
+// ---------- Flip strip: a strip of planes steps along a direction. The plane leaving folds away on its far edge, the next one unfolds in from the other end (loops) ----------
+const flipStripParams = (d) => [
+  { key: "stack", label: "Stack", type: "segmented", options: ["Horizontal", "Vertical"], default: d.stack ?? "Vertical" },
+  dirParam({ ...d, stack: d.stack ?? "Vertical" }),
+  { key: "visible", label: "Visible", type: "slider", min: 1, max: 6, default: d.visible ?? 3, group: "Frame" },
+  { key: "count", label: "Count", type: "slider", min: 4, max: 12, default: d.count ?? 6, group: "Frame" },
+  { key: "size", label: "Size", type: "slider", min: 20, max: 100, default: d.size ?? 100, group: "Frame" },
+  { key: "gap", label: "Gap", type: "slider", min: 0, max: 30, default: d.gap ?? 0, group: "Frame" },
+  { key: "corner", label: "Corner Radius", type: "slider", min: 0, max: 50, default: d.corner ?? 0, group: "Frame" },
+  { key: "perspective", label: "Perspective", type: "slider", min: 0, max: 100, default: d.perspective ?? 100, group: "Camera" },
+  FX_PARAM,
+  { key: "speed", label: "Speed (%)", type: "slider", min: 25, max: 400, default: d.speed ?? 100, section: "motion" },
+  { key: "cycles", label: "Cycles", type: "slider", min: 1, max: 4, default: 1, group: "Timing" },
+  { key: "duration", label: "Duration (s)", type: "slider", min: 2, max: 60, hardMax: 600, default: d.duration ?? 12, group: "Timing" },
+];
+
+const flipStripBuild = ({ stack = "Vertical", direction, visible, count, size, gap, corner, perspective, fxList, speed, cycles, duration }, ctx) => {
+  const aspect = ctx.aspect ?? 1;
+  const { kx, ky } = axes(aspect);
+  const { fade, blurs, fx } = fxLayout(fxList);
+  const DIR = { Up: [0, -1], Down: [0, 1], Left: [-1, 0], Right: [1, 0] }; // the way the strip travels (screen x right, y down)
+  const horiz = stack === "Horizontal";
+  // Stack decides the axis. A direction from the other axis falls back to its default (Left / Up)
+  const d = DIR[horiz ? (direction === "Right" ? "Right" : "Left") : (direction === "Down" ? "Down" : "Up")];
+  const sg = horiz ? d[0] : -d[1]; // fold direction: the leading edge goes away from the camera
+  const V = Math.max(1, Math.round(visible)); // planes on screen at rest
+  const n = Math.max(V + 1, count); // planes in the loop (one is always waiting to come in)
+  const g = gap / 100;
+  // L = plane length along the travel. The V visible planes fill `size` % of the canvas along it
+  let L = ((size / 100) * (horiz ? kx : ky)) / (V + (V - 1) * g);
+  const crossExt = horiz ? ky : kx;
+  const cross = horiz ? L / RATIO : L * RATIO;
+  if (cross > crossExt * 0.98) L *= (crossExt * 0.98) / cross; // never wider than the canvas
+  const Hs = horiz ? L / RATIO : L; // plane height
+  const pitch = L * (1 + g);
+  const P = L * lerp(6, 1.8, perspective / 100); // camera distance, relative to the plane so it looks the same at any size
+
+  const steps = cycles * n; // one plane per step, whole laps = seamless loop
+  const T = duration / steps; // seconds per step
+  const f = clamp((0.5 * (100 / speed)) / T, 0.02, 1); // share of a step spent flipping: 0.5s at 100% speed, in seconds so Duration doesn't change it
+  const hd = 1 - f; // the rest is the hold
+  // CSS "ease": cubic-bezier(0.25, 0.1, 0.25, 1)
+  const easeFn = (x) => {
+    const bez = (t, a, b) => 3 * (1 - t) * (1 - t) * t * a + 3 * (1 - t) * t * t * b + t * t * t;
+    let lo = 0, hi = 1;
+    for (let it = 0; it < 30; it++) {
+      const mid = (lo + hi) / 2;
+      if (bez(mid, 0.25, 0.25) < x) lo = mid;
+      else hi = mid;
+    }
+    return bez((lo + hi) / 2, 0.1, 1);
+  };
+  const K = clamp(Math.floor(480 / steps), 8, 24); // samples per flip: the fold is a curve, so keys must be dense
+  const smoothstep = (x) => {
+    const t = clamp(x, 0, 1);
+    return t * t * (3 - 2 * t);
+  };
+
+  // Plane in slot m at belt progress s (0-1). Slot 0 = the plane leaving, V = the plane about to enter
+  const poseAt = (m, s) => {
+    const along = ((V - 1) / 2 - m + s) * pitch; // flat center along the travel
+    let a = along, z = 0, rot = 0, hide = false;
+    if (m === 0) {
+      // hinged on its trailing edge: folds first half, leading edge swings away
+      const th = 90 * smoothstep(s / 0.5);
+      const r = (th * Math.PI) / 180;
+      a = along - L / 2 + (L / 2) * Math.cos(r);
+      z = -(L / 2) * Math.sin(r);
+      rot = sg * th;
+      hide = th > 89.9;
+    } else if (m === V) {
+      // hinged on its leading edge: unfolds second half, trailing edge swings in
+      const th = 90 * (1 - smoothstep((s - 0.5) / 0.5));
+      const r = (th * Math.PI) / 180;
+      a = along + L / 2 - (L / 2) * Math.cos(r);
+      z = -(L / 2) * Math.sin(r);
+      rot = -sg * th;
+      hide = th > 89.9;
+    }
+    return { dx: d[0] * a, dy: d[1] * a, dz: z, [horiz ? "ry" : "rx"]: rot, ...(hide ? { k: 0.001 } : {}) }; // edge-on = hidden
+  };
+
+  const xs = [0];
+  if (hd > 0) xs.push(hd);
+  for (let q = 1; q <= K; q++) xs.push(hd + (f * q) / K);
+
+  const track = (i) => {
+    const out = [];
+    for (let j = 0; j < steps; j++) {
+      const m = (((i - j) % n) + n) % n;
+      xs.forEach((x) => {
+        const s = x <= hd ? 0 : easeFn(clamp((x - hd) / f, 0, 1));
+        out.push({ u: Math.min(1, (j + x) / steps), ...poseAt(m, s) });
+      });
+    }
+    return out; // the plane that just left jumps to the back of the strip while edge-on (same u twice = hard cut)
+  };
+
+  const rig = { tx: 0, ty: 0, tz: 0, persp: P, hide: false, curve: null };
+  const layout = Array.from({ length: n }, (_, i) => ({
+    x: 0, y: 0, r: RATIO, h: Hs / ky, radius: corner, fade, fadeAxis: horiz ? "x" : "y", blurs, fx, rig, tint: "bg", asset: i,
+  }));
+  return {
+    duration,
+    poster: +(T * (hd + f * 0.5)).toFixed(2),
+    layout,
+    shots: [{ name: "Flip", start: 0, len: duration, keys: [], stagger: { track } }],
+  };
+};
+
+// ---------- Wipe: the next plane covers (or opens over) the current one, one after another (loops) ----------
+const wipeParams = (d) => [
+  { key: "style", label: "Style", type: "segmented", options: ["Cover", "Open"], default: d.style ?? "Cover" },
+  { key: "direction", label: "Direction", type: "segmented", options: ["Left", "Right", "Up", "Down"], default: d.direction ?? "Left" },
+  { key: "count", label: "Count", type: "slider", min: 2, max: 12, default: d.count ?? 5, group: "Frame" },
+  { key: "size", label: "Plane Size", type: "slider", min: 15, max: 100, default: d.size ?? 70, group: "Frame" },
+  { key: "corner", label: "Corner Radius", type: "slider", min: 0, max: 50, default: d.corner ?? 0, group: "Frame" },
+  { key: "dim", label: "Dim", type: "slider", min: 0, max: 100, default: d.dim ?? 40, group: "Frame" },
+  ...(d.zoom !== undefined ? [{ key: "zoom", label: "Zoom", type: "slider", min: 0, max: 50, default: d.zoom, group: "Frame" }] : []),
+  ...(d.feather !== undefined ? [{ key: "feather", label: "Feather", type: "slider", min: 0, max: 100, default: d.feather, group: "Frame" }] : []),
+  FX_PARAM,
+  { key: "hold", label: "Hold (%)", type: "slider", min: 0, max: 80, default: d.hold ?? 35, section: "motion" },
+  { key: "cycles", label: "Cycles", type: "slider", min: 1, max: 4, default: 1, group: "Timing" },
+  { key: "duration", label: "Duration (s)", type: "slider", min: 2, max: 40, hardMax: 600, default: d.duration, group: "Timing" },
+  easeParam(d.ease ?? "expo-out"),
+];
+
+const wipeBuild = ({ style, direction, count, size, corner, dim, zoom = 0, feather = 0, fxList, hold, cycles, duration, ease }, ctx) => {
+  const aspect = ctx.aspect ?? 1;
+  const { kx, ky } = axes(aspect);
+  const { fade, blurs, fx } = fxLayout(fxList);
+  const h = size / 100;
+  const Hs = h * ky, Ws = RATIO * Hs; // plane size in short-side units
+  const horiz = direction === "Left" || direction === "Right";
+  const sd = direction === "Left" || direction === "Up" ? 1 : -1; // Left = the next plane arrives from the right
+  const Z = zoom / 100;
+  const kz = (t) => 1 + Z * t; // t = 1: fully zoomed, t = 0: original
+  const away = ((horiz ? kx / 2 + Ws / 2 : ky / 2 + Hs / 2) + 0.02) * (1 + Z); // zoomed planes are bigger, so they wait further out
+  const Dx = horiz ? sd * away : 0, Dy = horiz ? 0 : sd * away;
+  const open = style === "Open";
+  const soft = open && feather > 0; // feathered Open reveals with a mask instead of scaling
+  const steps = cycles * count; // one plane change per step, whole laps = seamless loop
+  const hd = clamp(hold / 100, 0, 0.8);
+  const easeFn = vidEaseFn(ease ?? vidEaseSpec("expo-out"));
+  const K = clamp(Math.floor(480 / steps), 6, 24); // samples per move: the easing is baked in
+  const TINY = 0.001;
+
+  // [position inside a step, pre]. pre = the key just before the move starts, so the move begins with a hard cut
+  const xs = [];
+  if (hd > 0) xs.push([0, false], [hd, true]);
+  xs.push([hd, false]);
+  for (let q = 1; q <= K; q++) xs.push([hd + ((1 - hd) * q) / K, false]);
+
+  const state = (i, j, x, pre) => {
+    const cur = j % count, nxt = (j + 1) % count;
+    const p = pre ? 0 : easeFn(clamp((x - hd) / (1 - hd), 0, 1));
+    if (i === cur) return { dx: 0, dy: 0, dz: 0.01, sh: (dim / 100) * 0.7 * p, k: kz(1 - p) }; // darkens and zooms back to 1 as it gets covered
+    if (i === nxt) {
+      if (open) {
+        if (soft) return { dx: 0, dy: 0, dz: 0.02, k: kz(1), cq: 1 - p }; // soft reveal: the mask sweeps, the plane stays full size
+        if (pre || x < hd) return { dx: 0, dy: 0, dz: 0.02, kw: TINY, kh: TINY, k: kz(1) };
+        return horiz
+          ? { dx: 0, dy: 0, dz: 0.02, kw: Math.max(TINY, p), kh: 1, k: kz(1) }
+          : { dx: 0, dy: 0, dz: 0.02, kw: 1, kh: Math.max(TINY, p), k: kz(1) };
+      }
+      return { dx: Dx * (1 - p), dy: Dy * (1 - p), dz: 0.02, k: kz(1) }; // arrives already zoomed
+    }
+    if (open && soft) return { dx: 0, dy: 0, dz: 0, k: kz(1), cq: 1 }; // waiting: fully masked out
+    return open ? { dx: 0, dy: 0, dz: 0, kw: TINY, kh: TINY, k: kz(1) } : { dx: Dx, dy: Dy, dz: 0, k: kz(1) }; // waiting
+  };
+
+  const track = (i) => {
+    const out = [];
+    for (let j = 0; j < steps; j++) {
+      xs.forEach(([x, pre]) => {
+        const s = state(i, j, x, pre);
+        const kc = s.k ?? 1;
+        const cc = kc > 1 ? (1 - 1 / kc) / 2 : 0; // crop that brings the zoomed plane back to the original window
+        out.push({
+          u: Math.min(1, (j + x) / steps),
+          dx: s.dx, dy: s.dy, dz: s.dz,
+          ...(s.kw !== undefined ? { kw: s.kw, kh: s.kh } : {}),
+          ...(s.sh ? { sh: s.sh } : {}),
+          ...(s.cq !== undefined ? (horiz ? { cl: s.cq, cr: s.cq } : { ct: s.cq, cb: s.cq }) : {}),
+          ...(Z > 0 ? { k: kc, cl: cc, ct: cc, cr: cc, cb: cc } : {}),
+        });
+      });
+    }
+    return out; // same u twice = a hard cut, which only ever happens while the plane is covered
+  };
+
+  const rig = { tx: 0, ty: 0, tz: 0, persp: 50, hide: false, curve: null }; // flat rig: only here so the incoming plane sorts above
+  const layout = Array.from({ length: count }, () => ({
+    x: 0, y: 0, r: RATIO, h, radius: corner, feather: feather / 100, featherSym: soft ? (horiz ? "x" : "y") : undefined, fade, fadeAxis: "x", blurs, fx, rig, tint: "bg",
+  }));
+  return {
+    duration,
+    poster: +((duration / steps) * (hd + (1 - hd) * 0.5)).toFixed(2),
+    layout,
+    shots: [{ name: "Wipe", start: 0, len: duration, keys: [], stagger: { track } }],
+  };
+};
+
+// ---------- Wipe slide: each plane is a window. The next image slides in from one side, clipped to the plane, over the one showing (loops) ----------
+const wipeSlideParams = (d) => [
+  { key: "direction", label: "Direction", type: "segmented", options: ["Left", "Right", "Up", "Down"], default: d.direction ?? "Right" },
+  { key: "alternate", label: "Alternating", type: "segmented", options: ["Off", "On"], default: d.alternate ?? "On" },
+  { key: "planes", label: "Planes", type: "slider", min: 1, max: 4, default: d.planes ?? 2, group: "Frame" },
+  { key: "count", label: "Count", type: "slider", min: 4, max: 12, default: d.count ?? 4, group: "Frame" },
+  { key: "size", label: "Plane Size", type: "slider", min: 15, max: 100, default: d.size ?? 90, group: "Frame" },
+  { key: "gap", label: "Gap", type: "slider", min: 0, max: 30, default: d.gap ?? 4, group: "Frame" },
+  { key: "corner", label: "Corner Radius", type: "slider", min: 0, max: 50, default: d.corner ?? 0, group: "Frame" },
+  { key: "feather", label: "Feather", type: "slider", min: 0, max: 100, default: d.feather ?? 0, group: "Frame" },
+  { key: "split", label: "Split", type: "slider", min: 10, max: 90, default: d.split ?? 45, group: "Frame" },
+  { key: "dim", label: "Dim", type: "slider", min: 0, max: 100, default: d.dim ?? 0, group: "Frame" },
+  FX_PARAM,
+  { key: "stagger", label: "Stagger", type: "slider", min: 0, max: 100, default: d.stagger ?? 20, section: "motion" },
+  { key: "hold", label: "Hold (%)", type: "slider", min: 0, max: 80, default: d.hold ?? 55, section: "motion" },
+  { key: "cycles", label: "Cycles", type: "slider", min: 1, max: 4, default: 1, group: "Timing" },
+  { key: "duration", label: "Duration (s)", type: "slider", min: 2, max: 40, hardMax: 600, default: d.duration ?? 8, group: "Timing" },
+  easeParam(d.ease ?? "smooth"),
+];
+
+const wipeSlideBuild = ({ direction, alternate, planes, count, size, gap, corner, feather, split, dim, fxList, stagger, hold, cycles, duration, ease }, ctx) => {
+  const aspect = ctx.aspect ?? 1;
+  const { ky } = axes(aspect);
+  const { fade, blurs, fx } = fxLayout(fxList);
+  const g = gap / 100;
+  // the row has to fit the canvas both ways: by height, and by width
+  const h = Math.min(size / 100, (0.94 * aspect) / (RATIO * (planes + (planes - 1) * g)));
+  const wAvg = (RATIO * h) / aspect; // average plane width, canvas fraction
+  const Hs = h * ky; // plane height in short-side units
+  // Split: even planes take split%, odd planes the rest. 50 = every plane the same width
+  const weight = (c) => (c % 2 ? 100 - split : split);
+  const wsum = Array.from({ length: planes }, (_, c) => weight(c)).reduce((a, b) => a + b, 0);
+  const wc = Array.from({ length: planes }, (_, c) => (planes * wAvg * weight(c)) / wsum); // each plane's width, canvas fraction
+  const rc = wc.map((v) => (v * aspect) / h); // and its w / h
+  let at = -(wc.reduce((a, b) => a + b, 0) + (planes - 1) * g * wAvg) / 2;
+  const cx = wc.map((v) => {
+    const x = at + v / 2;
+    at += v + g * wAvg;
+    return x;
+  });
+  const n = Math.max(2, Math.ceil(count / planes)); // images each plane cycles through
+  const horiz = direction === "Left" || direction === "Right";
+  const sd = direction === "Left" || direction === "Up" ? 1 : -1; // Left = the next image arrives from the right
+  const steps = cycles * n; // one image change per step, whole laps = seamless loop
+  const hd = clamp(hold / 100, 0, 0.8);
+  const s = stagger / 100; // each plane starts this share of a move after the one before it
+  const ml = (1 - hd) / (1 + (planes - 1) * s); // length of one plane's move, share of a step
+  const easeFn = vidEaseFn(ease ?? vidEaseSpec("smooth"));
+  const K = clamp(Math.floor(480 / steps), 6, 24);
+
+  // q = how far the incoming image still has to travel (1 = fully outside, 0 = in place).
+  // The plane is shifted by q of its size, and the same share is cut off its own box, so only the part inside the window shows.
+  const soft = feather > 0; // feathered wipes reveal in place instead of sliding
+  const slide = (sdc, q, Wc) => ({
+    dx: horiz && !soft ? sdc * Wc * q : 0,
+    dy: horiz || soft ? 0 : sdc * Hs * q,
+    ...(horiz ? (sdc > 0 ? { cr: q } : { cl: q }) : sdc > 0 ? { cb: q } : { ct: q }),
+  });
+
+  const track = (i) => {
+    const c = i % planes, img = Math.floor(i / planes);
+    const Wc = rc[c] * Hs;
+    const sdc = alternate === "On" && c % 2 ? -sd : sd;
+    const m0 = hd + c * s * ml;
+    const xs = [...new Set([0, m0, ...Array.from({ length: K }, (_, q) => m0 + (ml * (q + 1)) / K), 1].map((v) => +v.toFixed(6)))];
+    const out = [];
+    for (let j = 0; j < steps; j++) {
+      const cur = j % n, nxt = (j + 1) % n;
+      xs.forEach((x) => {
+        const p = easeFn(clamp((x - m0) / ml, 0, 1));
+        const o =
+          img === cur ? { dx: 0, dy: 0, dz: 0.01, ...(dim ? { sh: (dim / 100) * 0.7 * p } : {}) }
+          : img === nxt ? { ...slide(sdc, 1 - p, Wc), dz: 0.02 }
+          : { ...slide(sdc, 1, Wc), dz: 0 }; // waiting: fully outside the window
+        out.push({ u: Math.min(1, (j + x) / steps), ...o });
+      });
+    }
+    return out; // same u twice = a hard cut, which only happens while the plane is covered or hidden
+  };
+
+  const rig = { tx: 0, ty: 0, tz: 0, persp: 50, hide: false, curve: null }; // flat rig: only here so the incoming plane sorts above
+  const layout = Array.from({ length: planes * n }, (_, i) => ({
+    x: cx[i % planes], y: 0,
+    r: rc[i % planes], h, radius: corner, feather: feather / 100, fade, fadeAxis: "x", blurs, fx, rig, tint: "bg",
+    asset: i % count, // spare slots reuse images from the start
+  }));
+  return {
+    duration,
+    poster: +((duration / steps) * (hd + ml * 0.6)).toFixed(2),
+    layout,
+    shots: [{ name: "Wipe", start: 0, len: duration, keys: [], stagger: { track } }],
+  };
+};
+
+const hash01 = (i, s) => {
+  const v = Math.sin((i + 1) * 12.9898 + s * 78.233) * 43758.5453;
+  return v - Math.floor(v);
+};
+
+// ---------- Wipe stripes: the next image slides into its column, strip by strip (loops) ----------
+const wipeStripesParams = (d) => [
+  { key: "direction", label: "Direction", type: "segmented", options: ["Up", "Down"], default: d.direction ?? "Up" },
+  { key: "alternate", label: "Alternating", type: "segmented", options: ["Off", "On"], default: d.alternate ?? "On" },
+  { key: "order", label: "Order", type: "segmented", options: ["Sequential", "Random"], default: d.order ?? "Random" },
+  { key: "strips", label: "Strips", type: "slider", min: 2, max: 24, default: d.strips ?? 8, group: "Frame" },
+  { key: "count", label: "Count", type: "slider", min: 2, max: 12, default: d.count ?? 4, group: "Frame" },
+  { key: "size", label: "Plane Size", type: "slider", min: 15, max: 100, default: d.size ?? 80, group: "Frame" },
+  { key: "corner", label: "Corner Radius", type: "slider", min: 0, max: 50, default: d.corner ?? 0, group: "Frame" },
+  FX_PARAM,
+  { key: "stagger", label: "Stagger", type: "slider", min: 0, max: 100, default: d.stagger ?? 60, section: "motion" },
+  { key: "hold", label: "Hold (%)", type: "slider", min: 0, max: 80, default: d.hold ?? 35, section: "motion" },
+  { key: "cycles", label: "Cycles", type: "slider", min: 1, max: 4, default: 1, group: "Timing" },
+  { key: "duration", label: "Duration (s)", type: "slider", min: 2, max: 40, hardMax: 600, default: d.duration ?? 8, group: "Timing" },
+  easeParam(d.ease ?? "smooth"),
+];
+
+const wipeStripesBuild = ({ direction, alternate, order, strips: S, count, size, corner, fxList, stagger, hold, cycles, duration, ease }, ctx) => {
+  const { ky } = axes(ctx.aspect ?? 1);
+  const { fade, blurs, fx } = fxLayout(fxList);
+  const h = size / 100;
+  const Hs = h * ky; // plane height in short-side units
+  const n = Math.max(2, count); // images
+  const sd = direction === "Up" ? 1 : -1;
+  const steps = cycles * n; // one image change per step, whole laps = seamless loop
+  const hd = clamp(hold / 100, 0, 0.8);
+  const sg = stagger / 100;
+  const ml = (1 - hd) / (1 + sg); // length of one strip's move, share of a step
+  const easeFn = vidEaseFn(ease ?? vidEaseSpec("smooth"));
+  const K = clamp(Math.floor(480 / steps), 6, 20);
+  const E = 0.0012; // strips overlap by this much, so no hairline shows between them
+  const rankOf = (s) => (order === "Random" ? hash01(s, 3) : S > 1 ? s / (S - 1) : 0);
+  const colClip = (s) => ({ cl: Math.max(0, s / S - E), cr: Math.max(0, 1 - (s + 1) / S - E) });
+
+  const track = (i) => {
+    const s = i % S, img = Math.floor(i / S);
+    const sdc = alternate === "On" && s % 2 ? -sd : sd;
+    const m0 = hd + rankOf(s) * sg * ml; // when this strip starts moving
+    const cc = colClip(s);
+    // q = how far the strip still has to travel (1 = hidden, 0 = in place). Same idea as Wipe 01.
+    const slide = (q) => ({ dy: sdc * Hs * q, ...cc, ...(sdc > 0 ? { cb: q } : { ct: q }) });
+    const dense = [...new Set([0, m0, ...Array.from({ length: K }, (_, q) => m0 + (ml * (q + 1)) / K), 1].map((v) => +v.toFixed(6)))];
+    const out = [];
+    for (let j = 0; j < steps; j++) {
+      const cur = j % n, nxt = (j + 1) % n;
+      const xs = img === nxt ? dense : [0, 1]; // only the arriving strip needs dense keys
+      xs.forEach((x) => {
+        const o =
+          img === cur ? { dy: 0, dz: 0.01, ...cc }
+          : img === nxt ? { ...slide(1 - easeFn(clamp((x - m0) / ml, 0, 1))), dz: 0.02 }
+          : { ...slide(1), dz: 0 }; // waiting: fully clipped away
+        out.push({ u: Math.min(1, (j + x) / steps), ...o });
+      });
+    }
+    return out; // same u twice = a hard cut, which only happens while the strip is covered or hidden
+  };
+
+  const rig = { tx: 0, ty: 0, tz: 0, persp: 50, hide: false, curve: null }; // flat rig: only here so the incoming strips sort above
+  const layout = Array.from({ length: n * S }, (_, i) => ({
+    x: 0, y: 0, r: RATIO, h, radius: corner, fade, fadeAxis: "x", blurs, fx, rig, tint: "bg", asset: Math.floor(i / S),
+  }));
+  return {
+    duration,
+    poster: +((duration / steps) * (hd + ml * 0.6)).toFixed(2),
+    layout,
+    shots: [{ name: "Stripes", start: 0, len: duration, keys: [], stagger: { track } }],
+  };
+};
+
+// ---------- Wipe mosaic: the current image breaks into tiles that shrink away and reveal the next one (loops) ----------
+const wipeMosaicParams = (d) => [
+  { key: "stagger", label: "Stagger", type: "segmented", options: ["Diagonal", "Row", "Column", "Random"], default: d.stagger ?? "Diagonal" },
+  { key: "columns", label: "Columns", type: "slider", min: 1, max: 12, default: d.columns ?? 6, group: "Frame" },
+  { key: "rows", label: "Rows", type: "slider", min: 1, max: 12, default: d.rows ?? 4, group: "Frame" },
+  { key: "count", label: "Count", type: "slider", min: 2, max: 12, default: d.count ?? 4, group: "Frame" },
+  { key: "size", label: "Plane Size", type: "slider", min: 15, max: 100, default: d.size ?? 80, group: "Frame" },
+  { key: "corner", label: "Corner Radius", type: "slider", min: 0, max: 50, default: d.corner ?? 0, group: "Frame" },
+  FX_PARAM,
+  { key: "spread", label: "Spread", type: "slider", min: 0, max: 100, default: d.spread ?? 70, section: "motion" },
+  { key: "hold", label: "Hold (%)", type: "slider", min: 0, max: 80, default: d.hold ?? 30, section: "motion" },
+  { key: "cycles", label: "Cycles", type: "slider", min: 1, max: 4, default: 1, group: "Timing" },
+  { key: "duration", label: "Duration (s)", type: "slider", min: 2, max: 40, hardMax: 600, default: d.duration ?? 10, group: "Timing" },
+  easeParam(d.ease ?? "smooth"),
+];
+
+const wipeMosaicBuild = ({ stagger: order, columns: C, rows: R, count, size, corner, fxList, spread, hold, cycles, duration, ease }, ctx) => {
+  const { ky } = axes(ctx.aspect ?? 1);
+  const { fade, blurs, fx } = fxLayout(fxList);
+  const h = size / 100;
+  const Hs = h * ky, Ws = RATIO * Hs; // plane size in short-side units
+  const n = Math.max(2, count); // images
+  const cells = C * R;
+  const steps = cycles * n;
+  const hd = clamp(hold / 100, 0, 0.8);
+  const sg = spread / 100;
+  const ml = (1 - hd) / (1 + sg);
+  const easeFn = vidEaseFn(ease ?? vidEaseSpec("smooth"));
+  const K = clamp(Math.floor(480 / steps), 4, 12);
+  const E = 0.0012; // tiles overlap by this much, so no hairline shows between them
+  const TINY = 0.001;
+  const HID = { cl: 1, cr: 0, ct: 0, cb: 0 }; // clipped down to nothing
+  const rankOf = (c) => {
+    const r = Math.floor(c / C), col = c % C;
+    if (order === "Row") return cells > 1 ? c / (cells - 1) : 0;
+    if (order === "Column") return cells > 1 ? (col * R + r) / (cells - 1) : 0;
+    if (order === "Random") return hash01(c, 5);
+    return R + C > 2 ? (r + col) / (R + C - 2) : 0; // Diagonal
+  };
+  const win = (c) => {
+    const r = Math.floor(c / C), col = c % C;
+    return {
+      cl: Math.max(0, col / C - E), cr: Math.max(0, 1 - (col + 1) / C - E),
+      ct: Math.max(0, r / R - E), cb: Math.max(0, 1 - (r + 1) / R - E),
+    };
+  };
+
+  const track = (i) => {
+    const c = i % cells, img = Math.floor(i / cells);
+    const r = Math.floor(c / C), col = c % C;
+    const ox = ((col + 0.5) / C - 0.5) * Ws, oy = ((r + 0.5) / R - 0.5) * Hs; // tile center, relative to the plane center
+    const m0 = hd + rankOf(c) * sg * ml;
+    const dense = [...new Set([0, m0, ...Array.from({ length: K }, (_, q) => m0 + (ml * (q + 1)) / K), 1].map((v) => +v.toFixed(6)))];
+    const out = [];
+    for (let j = 0; j < steps; j++) {
+      const cur = j % n, nxt = (j + 1) % n;
+      const xs = img === cur ? dense : [0, 1];
+      xs.forEach((x) => {
+        let o;
+        if (img === cur) {
+          const p = easeFn(clamp((x - m0) / ml, 0, 1));
+          const k = lerp(1, TINY, p); // the tile shrinks around its own center: scale the plane, then move it back
+          o = { dx: (1 - k) * ox, dy: (1 - k) * oy, dz: 0.01, k, ...win(c) };
+        } else if (img === nxt && c === 0) {
+          o = { dx: 0, dy: 0, dz: 0.005, k: 1 }; // one unclipped plane sits underneath, so there are no seams behind the tiles
+        } else {
+          o = { dx: 0, dy: 0, dz: 0, k: 1, ...HID };
+        }
+        out.push({ u: Math.min(1, (j + x) / steps), ...o });
+      });
+    }
+    return out;
+  };
+
+  const rig = { tx: 0, ty: 0, tz: 0, persp: 50, hide: false, curve: null };
+  const layout = Array.from({ length: n * cells }, (_, i) => ({
+    x: 0, y: 0, r: RATIO, h, radius: corner, fade, fadeAxis: "x", blurs, fx, rig, tint: "bg", asset: Math.floor(i / cells),
+  }));
+  return {
+    duration,
+    poster: +((duration / steps) * (hd + ml * 0.5)).toFixed(2),
+    layout,
+    shots: [{ name: "Mosaic", start: 0, len: duration, keys: [], stagger: { track } }],
+  };
+};
+
+// ---------- Stack: a deck of planes. The top one is thrown off, goes to the back, the deck moves up (loops) ----------
+const stackParams = (d) => [
+  { key: "toss", label: "Toss", type: "segmented", options: ["Left", "Right", "Up", "Down"], default: d.toss ?? "Right" },
+  { key: "spread", label: "Spread", type: "segmented", options: ["Left", "Right", "Up", "Down"], default: d.spread ?? "Up" },
+  { key: "count", label: "Count", type: "slider", min: 3, max: 10, default: d.count ?? 5, group: "Frame" },
+  { key: "size", label: "Plane Size", type: "slider", min: 15, max: 90, default: d.size ?? 60, group: "Frame" },
+  { key: "step", label: "Offset (%)", type: "slider", min: 0, max: 40, default: d.step ?? 8, group: "Frame" },
+  { key: "shrink", label: "Shrink (%)", type: "slider", min: 0, max: 20, default: d.shrink ?? 5, group: "Frame" },
+  { key: "tilt", label: "Tilt", type: "slider", min: -20, max: 20, default: d.tilt ?? 0, group: "Frame" },
+  { key: "corner", label: "Corner Radius", type: "slider", min: 0, max: 50, default: d.corner ?? 0, group: "Frame" },
+  { key: "dim", label: "Dim", type: "slider", min: 0, max: 100, default: d.dim ?? 30, group: "Frame" },
+  FX_PARAM,
+  { key: "spin", label: "Toss spin", type: "slider", min: 0, max: 45, default: d.spin ?? 10, section: "motion" },
+  { key: "hold", label: "Hold (%)", type: "slider", min: 0, max: 80, default: d.hold ?? 30, section: "motion" },
+  { key: "cycles", label: "Cycles", type: "slider", min: 1, max: 4, default: 1, group: "Timing" },
+  { key: "duration", label: "Duration (s)", type: "slider", min: 2, max: 60, hardMax: 600, default: d.duration ?? 10, group: "Timing" },
+  easeParam(d.ease ?? "expo-out"),
+];
+
+const stackBuild = ({ toss, spread, count: n, size, step, shrink, tilt, corner, dim, fxList, spin, hold, cycles, duration, ease }, ctx) => {
+  const { ky } = axes(ctx.aspect ?? 1);
+  const { fade, blurs, fx } = fxLayout(fxList);
+  const h = size / 100;
+  const Hs = h * ky, Ws = RATIO * Hs; // plane size in short-side units
+  const DIR = { Left: [-1, 0], Right: [1, 0], Up: [0, -1], Down: [0, 1] }; // frame y grows downward
+  const sv = DIR[spread], tv = DIR[toss];
+  const ext = (v) => (v[0] ? Ws : Hs);
+  const stepLen = (step / 100) * ext(sv);
+  const sameWay = sv[0] === tv[0] && sv[1] === tv[1];
+  const clear = ext(tv) * 1.08 + (sameWay ? (n - 1) * stepLen : 0); // the thrown plane has to leave the whole deck behind
+  const steps = cycles * n; // one plane thrown per step, whole laps = seamless loop
+  const hd = clamp(hold / 100, 0, 0.8);
+  const easeFn = vidEaseFn(ease ?? vidEaseSpec("expo-out"));
+  const K = clamp(2 * Math.floor(240 / steps), 8, 24); // even, so the halfway point is a sample
+  const spinSign = tv[0] + tv[1] > 0 ? 1 : -1;
+  const rest = (r) => ({
+    x: sv[0] * stepLen * r, y: sv[1] * stepLen * r,
+    k: Math.max(0.3, 1 - (shrink / 100) * r), dr: tilt * r, z: -0.01 * r,
+    sh: n > 1 ? (dim / 100) * 0.8 * (r / (n - 1)) : 0,
+  });
+  const mix = (a, b, t) => ({
+    x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t), k: lerp(a.k, b.k, t),
+    dr: lerp(a.dr, b.dr, t), z: lerp(a.z, b.z, t), sh: lerp(a.sh, b.sh, t),
+  });
+  // plane i in step j at t (0-1): the top plane is thrown out, then goes to the back. The others move up once it is clear
+  const pose = (i, j, t, second) => {
+    const r0 = (((i - j) % n) + n) % n;
+    if (r0 === 0) {
+      const top = rest(0), back = rest(n - 1);
+      const away = { ...top, x: top.x + tv[0] * clear, y: top.y + tv[1] * clear, dr: top.dr + spinSign * spin };
+      return second
+        ? mix({ ...away, z: back.z }, back, easeFn(clamp((t - 0.5) / 0.5, 0, 1))) // depth switches while it is clear of the deck
+        : mix(top, away, easeFn(clamp(t / 0.5, 0, 1)));
+    }
+    return mix(rest(r0), rest(r0 - 1), easeFn(clamp((t - 0.3) / 0.7, 0, 1)));
+  };
+
+  const track = (i) => {
+    const out = [];
+    for (let j = 0; j < steps; j++) {
+      const put = (x, p) => out.push({ u: Math.min(1, (j + x) / steps), dx: p.x, dy: p.y, dz: p.z, k: p.k, dr: p.dr, sh: p.sh });
+      const isTop = (((i - j) % n) + n) % n === 0;
+      if (j === 0) put(0, pose(i, j, 0, false));
+      if (hd > 0) put(hd, pose(i, j, 0, false));
+      for (let q = 1; q <= K; q++) {
+        const t = q / K, x = hd + (1 - hd) * t;
+        put(x, pose(i, j, t, t > 0.5));
+        if (isTop && q === K / 2) put(x, pose(i, j, t, true)); // same u twice = the depth switch
+      }
+    }
+    return out;
+  };
+
+  const rig = { tx: 0, ty: 0, tz: 0, persp: 50, hide: false, curve: null }; // flat rig: only here so the planes sort by depth
+  const layout = Array.from({ length: n }, (_, i) => ({
+    x: 0, y: 0, r: RATIO, h, radius: corner, fade, fadeAxis: "x", blurs, fx, rig, tint: "bg", asset: i,
+  }));
+  return {
+    duration,
+    poster: +((duration / steps) * (hd + (1 - hd) * 0.25)).toFixed(2),
+    layout,
+    shots: [{ name: "Stack", start: 0, len: duration, keys: [], stagger: { track } }],
+  };
+};
+
+// ---------- Float: planes scattered at different depths, each drifting on its own closed loop (parallax) ----------
+const floatParams = (d) => [
+  { key: "count", label: "Count", type: "slider", min: 3, max: 20, default: d.count ?? 8, group: "Frame" },
+  { key: "size", label: "Plane Size", type: "slider", min: 8, max: 70, default: d.size ?? 30, group: "Frame" },
+  { key: "spread", label: "Spread (%)", type: "slider", min: 20, max: 100, default: d.spread ?? 80, group: "Frame" },
+  { key: "corner", label: "Corner Radius", type: "slider", min: 0, max: 50, default: d.corner ?? 0, group: "Frame" },
+  { key: "dim", label: "Dim", type: "slider", min: 0, max: 100, default: d.dim ?? 20, group: "Frame" },
+  { key: "depth", label: "Depth", type: "slider", min: 0, max: 100, default: d.depth ?? 60, group: "Camera" },
+  { key: "perspective", label: "Perspective", type: "slider", min: 0, max: 100, default: d.perspective ?? 50, group: "Camera" },
+  FX_PARAM,
+  { key: "drift", label: "Drift", type: "slider", min: 0, max: 100, default: d.drift ?? 40, section: "motion" },
+  { key: "tilt", label: "Tilt", type: "slider", min: 0, max: 30, default: d.tilt ?? 4, section: "motion" },
+  { key: "speed", label: "Speed", type: "slider", min: 1, max: 4, default: d.speed ?? 1, section: "motion" },
+  { key: "duration", label: "Duration (s)", type: "slider", min: 2, max: 60, hardMax: 600, default: d.duration ?? 12, group: "Timing" },
+];
+
+const floatBuild = ({ count: n, size, spread, corner, dim, depth, perspective, fxList, drift, tilt, speed, duration }, ctx) => {
+  const { fade, blurs, fx } = fxLayout(fxList);
+  const P = lerp(8, 2.5, perspective / 100); // camera distance
+  const zr = (depth / 100) * Math.min(1.2, P * 0.4);
+  const N = Math.min(240, 48 * speed); // samples. Whole oscillations per loop, so it repeats exactly
+  const items = Array.from({ length: n }, (_, i) => {
+    const z = -zr + 1.6 * zr * hash01(i, 4);
+    return {
+      x: (hash01(i, 1) - 0.5) * (spread / 100),
+      y: (hash01(i, 2) - 0.5) * (spread / 100),
+      h: (size / 100) * (0.7 + 0.6 * hash01(i, 3)),
+      z,
+      near: zr > 0 ? (z + zr) / (1.6 * zr) : 1, // 0 = far, 1 = near
+      ax: (drift / 100) * 0.15 * (0.6 + 0.8 * hash01(i, 5)),
+      ay: (drift / 100) * 0.15 * (0.6 + 0.8 * hash01(i, 6)),
+      cx: speed * (1 + Math.floor(hash01(i, 7) * 2)),
+      cy: speed * (1 + Math.floor(hash01(i, 8) * 2)),
+      p1: hash01(i, 9), p2: hash01(i, 10), p3: hash01(i, 11),
+    };
+  });
+  const track = (i) => {
+    const it = items[i];
+    const sh = (dim / 100) * 0.6 * (1 - it.near);
+    return Array.from({ length: N + 1 }, (_, j) => {
+      const u = j / N;
+      return {
+        u,
+        dx: it.ax * Math.sin(2 * Math.PI * (it.cx * u + it.p1)),
+        dy: it.ay * Math.sin(2 * Math.PI * (it.cy * u + it.p2)),
+        dz: it.z,
+        dr: tilt * Math.sin(2 * Math.PI * (it.cx * u + it.p3)),
+        ...(sh ? { sh } : {}),
+      };
+    });
+  };
+  const rig = { tx: 0, ty: 0, tz: 0, persp: P, hide: false, curve: null };
+  const layout = items.map((it, i) => ({
+    x: it.x, y: it.y, r: RATIO, h: it.h, radius: corner, fade, fadeAxis: "x", blurs, fx, rig, tint: "bg", asset: i,
+  }));
+  return {
+    duration,
+    poster: +(duration * 0.1).toFixed(2),
+    layout,
+    shots: [{ name: "Float", start: 0, len: duration, keys: [], stagger: { track } }],
+  };
+};
+
+// ---------- Helix: planes on a spiral, the whole helix spins (loops) ----------
+const helixParams = (d) => [
+  { key: "axis", label: "Axis", type: "segmented", options: ["Vertical", "Horizontal"], default: d.axis ?? "Vertical" },
+  { key: "direction", label: "Direction", type: "segmented", options: ["Left", "Right"], default: d.direction ?? "Right" },
+  { key: "facing", label: "Facing", type: "segmented", options: ["Outward", "Camera"], default: d.facing ?? "Outward" },
+  { key: "backface", label: "Backface", type: "segmented", options: ["Show", "Hide"], default: d.backface ?? "Hide" },
+  { key: "count", label: "Count", type: "slider", min: 4, max: 40, default: d.count ?? 14, group: "Frame" },
+  { key: "size", label: "Plane Size", type: "slider", min: 5, max: 60, default: d.size ?? 16, group: "Frame" },
+  { key: "corner", label: "Corner Radius", type: "slider", min: 0, max: 50, default: d.corner ?? 0, group: "Frame" },
+  { key: "radius", label: "Radius", type: "slider", min: 5, max: 100, default: d.radius ?? 30, group: "Frame" },
+  { key: "pitch", label: "Pitch", type: "slider", min: 0, max: 60, default: d.pitch ?? 8, group: "Frame" },
+  { key: "stepAngle", label: "Step angle", type: "slider", min: 5, max: 180, default: d.stepAngle ?? 50, group: "Frame" },
+  { key: "dim", label: "Dim", type: "slider", min: 0, max: 100, default: d.dim ?? 30, group: "Frame" },
+  { key: "tiltX", label: "X - Rotation", type: "slider", min: -180, max: 180, default: d.tiltX ?? 0, group: "Rotation" },
+  { key: "tiltY", label: "Y - Rotation", type: "slider", min: -180, max: 180, default: d.tiltY ?? 0, group: "Rotation" },
+  { key: "tiltZ", label: "Z - Rotation", type: "slider", min: -180, max: 180, default: d.tiltZ ?? 0, group: "Rotation" },
+  { key: "perspective", label: "Perspective", type: "slider", min: 0, max: 100, default: d.perspective ?? 60, group: "Camera" },
+  { key: "offsetX", label: "Offset X", type: "slider", min: -50, max: 50, default: 0, group: "Camera" },
+  { key: "offsetY", label: "Offset Y", type: "slider", min: -50, max: 50, default: 0, group: "Camera" },
+  FX_PARAM,
+  { key: "cycles", label: "Cycles", type: "slider", min: 1, max: 4, default: 1, group: "Timing" },
+  { key: "duration", label: "Duration (s)", type: "slider", min: 2, max: 60, hardMax: 600, default: d.duration ?? 10, group: "Timing" },
+  easeParam(d.ease ?? "linear"),
+];
+
+const helixBuild = ({ axis, direction, facing, backface, count: n, size, corner, radius, pitch, stepAngle, dim, tiltX, tiltY, tiltZ, perspective, offsetX, offsetY, fxList, cycles, duration, ease }, ctx) => {
+  const { kx, ky } = axes(ctx.aspect ?? 1);
+  const { fade, blurs, fx } = fxLayout(fxList);
+  const vert = axis === "Vertical";
+  const out = facing === "Outward";
+  const h = size / 100;
+  const R = radius / 100, pp = pitch / 100;
+  const P = R * lerp(12, 2.2, perspective / 100);
+  const Rt = mulMat(mulMat(RX(tiltX), RY(tiltY)), RZ(tiltZ));
+  const sgn = direction === "Left" ? -1 : 1;
+  const eu = cycleEase(vidEaseFn(ease ?? vidEaseSpec("linear")), cycles);
+  const N = cycles * 72;
+
+  const track = (i) => {
+    const a = (i - (n - 1) / 2) * pp; // position along the axis
+    return Array.from({ length: N + 1 }, (_, j) => {
+      const u = j / N;
+      const th = i * stepAngle + sgn * 360 * cycles * eu(u); // degrees, keeps growing so it never wraps
+      const t = (th * Math.PI) / 180, sn = Math.sin(t), cs = Math.cos(t);
+      const local = vert ? [R * sn, a, R * cs] : [a, -R * sn, R * cs];
+      const pt = [0, 1, 2].map((r) => Rt[r][0] * local[0] + Rt[r][1] * local[1] + Rt[r][2] * local[2]);
+      const back = clamp(0.5 - pt[2] / (2 * R), 0, 1); // 0 = front of the helix, 1 = back
+      const sh = 0.7 * (dim / 100) * back;
+      return {
+        u,
+        dx: pt[0] + (offsetX / 100) * kx,
+        dy: pt[1] + (offsetY / 100) * ky,
+        dz: pt[2],
+        ...(out ? (vert ? { ry: th } : { rx: th }) : {}),
+        ...(sh ? { sh } : {}),
+        ...(pt[2] > 0.9 * P ? { k: 0.001 } : {}), // at or past the camera
+      };
+    });
+  };
+
+  const rig = { tx: out ? tiltX : 0, ty: out ? tiltY : 0, tz: out ? tiltZ : 0, persp: P, hide: out && backface === "Hide", curve: null };
+  const layout = Array.from({ length: n }, (_, i) => ({
+    x: 0, y: 0, r: RATIO, h, radius: corner, fade, fadeAxis: vert ? "y" : "x", blurs, fx, rig, tint: "bg", asset: i,
+  }));
+  return {
+    duration,
+    poster: +(duration * 0.1).toFixed(2),
+    layout,
+    shots: [{ name: "Helix", start: 0, len: duration, keys: [], stagger: { track } }],
+  };
+};
+
+// ---------- Fan: planes fanned from a pivot, like a hand of cards. Opens and closes, or sweeps (loops) ----------
+const fanParams = (d) => [
+  { key: "motion", label: "Motion", type: "segmented", options: ["Open", "Sweep"], default: d.motion ?? "Open" },
+  { key: "pivot", label: "Pivot", type: "segmented", options: ["Bottom", "Top"], default: d.pivot ?? "Bottom" },
+  { key: "count", label: "Count", type: "slider", min: 3, max: 16, default: d.count ?? 7, group: "Frame" },
+  { key: "size", label: "Plane Size", type: "slider", min: 15, max: 80, default: d.size ?? 45, group: "Frame" },
+  { key: "corner", label: "Corner Radius", type: "slider", min: 0, max: 50, default: d.corner ?? 0, group: "Frame" },
+  { key: "angle", label: "Fan angle", type: "slider", min: 10, max: 360, default: d.angle ?? 70, group: "Frame" },
+  { key: "reach", label: "Pivot distance", type: "slider", min: 20, max: 300, default: d.reach ?? 110, group: "Frame" },
+  { key: "dim", label: "Dim", type: "slider", min: 0, max: 100, default: d.dim ?? 0, group: "Frame" },
+  { key: "offsetY", label: "Offset Y", type: "slider", min: -50, max: 50, default: d.offsetY ?? 0, group: "Camera" },
+  FX_PARAM,
+  { key: "sweep", label: "Sweep angle", type: "slider", min: 0, max: 90, default: d.sweep ?? 20, section: "motion" },
+  { key: "stagger", label: "Stagger", type: "slider", min: 0, max: 100, default: d.stagger ?? 40, section: "motion" },
+  { key: "cycles", label: "Cycles", type: "slider", min: 1, max: 6, default: 1, group: "Timing" },
+  { key: "duration", label: "Duration (s)", type: "slider", min: 2, max: 60, hardMax: 600, default: d.duration ?? 8, group: "Timing" },
+  easeParam(d.ease ?? "expo-out"),
+];
+
+const fanBuild = ({ motion, pivot, count: n, size, corner, angle, reach, dim, offsetY, fxList, sweep, stagger, cycles, duration, ease }, ctx) => {
+  const { ky } = axes(ctx.aspect ?? 1);
+  const { fade, blurs, fx } = fxLayout(fxList);
+  const h = size / 100;
+  const L = (reach / 100) * h * ky; // distance from a plane's center to the pivot
+  const d = pivot === "Top" ? -1 : 1; // Bottom = the pivot is below the planes, they fan upward
+  const easeFn = vidEaseFn(ease ?? vidEaseSpec("expo-out"));
+  const base = (i) => (n > 1 ? (i / (n - 1) - 0.5) * angle : 0); // each plane's angle when fully open
+  // open amount at cycle time t: open, hold, close, rest. o delays the planes one after another
+  const open = (t, o) =>
+    t < o ? 0 : t < o + 0.3 ? easeFn((t - o) / 0.3) : t < 0.55 + o ? 1 : t < 0.85 + o ? 1 - easeFn((t - 0.55 - o) / 0.3) : 0;
+  const N = cycles * 96;
+
+  const track = (i) => {
+    const o = n > 1 ? (i / (n - 1)) * (stagger / 100) * 0.15 : 0;
+    const sh = n > 1 ? (dim / 100) * 0.6 * (1 - i / (n - 1)) : 0;
+    return Array.from({ length: N + 1 }, (_, j) => {
+      const u = j / N;
+      const a = motion === "Sweep" ? base(i) + sweep * Math.sin(2 * Math.PI * cycles * u) : base(i) * open((u * cycles) % 1, o);
+      const r = (a * Math.PI) / 180;
+      // rotating about the pivot: the plane's center swings on a circle of radius L
+      return {
+        u,
+        dx: d * L * Math.sin(r),
+        dy: d * L * (1 - Math.cos(r)) + (offsetY / 100) * ky,
+        dr: a,
+        dz: i * 0.01, // later planes sit on top
+        ...(sh ? { sh } : {}),
+      };
+    });
+  };
+
+  const rig = { tx: 0, ty: 0, tz: 0, persp: 50, hide: false, curve: null };
+  const layout = Array.from({ length: n }, (_, i) => ({
+    x: 0, y: 0, r: RATIO, h, radius: corner, fade, fadeAxis: "x", blurs, fx, rig, tint: "bg", asset: i,
+  }));
+  return {
+    duration,
+    poster: motion === "Sweep" ? 0 : +((duration / cycles) * 0.2).toFixed(2),
+    layout,
+    shots: [{ name: "Fan", start: 0, len: duration, keys: [], stagger: { track } }],
+  };
+};
+
+// ---------- Selector: a fixed strip of thumbs. An outline hops from thumb to thumb and the big image behind follows (loops) ----------
+// Sizes are px on an 800px canvas, so a value looks the same at any canvas size.
+const SEL_GAP = 0.11; // space between thumbs, share of the thumb's long side
+const SEL_PAD = 0.07; // padding inside the container, same unit
+const selectorParams = (d) => [
+  { key: "stack", label: "Stack", type: "segmented", options: ["Horizontal", "Vertical"], default: d.stack ?? "Horizontal" },
+  { key: "direction", label: "Direction", type: "segmented", options: ["Forward", "Reverse"], default: d.direction ?? "Forward" },
+  { key: "aspect", label: "Thumb Aspect", type: "segmented", options: ["1:1", "3:4", "4:3"], default: d.aspect ?? "4:3" },
+  { key: "count", label: "Count", type: "slider", min: 2, max: 16, default: d.count ?? 8, group: "Frame" },
+  { key: "bgScale", label: "Scale", type: "slider", min: 100, max: 200, default: d.bgScale ?? 115, group: "Frame" },
+  { key: "bgDrift", label: "Drift", type: "slider", min: 0, max: 100, default: d.bgDrift ?? 40, group: "Frame" },
+  { key: "corner", label: "Corner Radius", type: "slider", min: 0, max: 30, default: d.corner ?? 6, group: "Frame" },
+  { key: "thumb", label: "Thumb Size", type: "slider", min: 20, max: 300, default: d.thumb ?? 85, group: "Frame" },
+  { key: "boxOpacity", label: "Container Opacity", type: "slider", min: 0, max: 100, default: d.boxOpacity ?? 40, group: "Frame" },
+  { key: "boxBlur", label: "Container Blur", type: "slider", min: 0, max: 100, default: d.boxBlur ?? 60, group: "Frame" },
+  { key: "pad", label: "Selector Pad", type: "slider", min: 0, max: 20, default: d.pad ?? 5, group: "Frame" },
+  { key: "stroke", label: "Selector Stroke", type: "slider", min: 0, max: 10, default: d.stroke ?? 2, group: "Frame" },
+  { key: "dim", label: "Dim", type: "slider", min: 0, max: 100, default: d.dim ?? 20, group: "Frame" },
+  { key: "offsetX", label: "Offset X", type: "slider", min: -400, max: 400, default: d.offsetX ?? 0, group: "Frame" },
+  { key: "offsetY", label: "Offset Y", type: "slider", min: -400, max: 400, default: d.offsetY ?? 0, group: "Frame" },
+  { ...FX_PARAM, default: d.fxList ?? [] },
+  { key: "hold", label: "Hold (%)", type: "slider", min: 0, max: 90, default: d.hold ?? 70, section: "motion" },
+  { key: "cycles", label: "Cycles", type: "slider", min: 1, max: 4, default: 1, group: "Timing" },
+  { key: "duration", label: "Duration (s)", type: "slider", min: 2, max: 60, hardMax: 600, default: d.duration ?? 10, group: "Timing" },
+  easeParam(d.ease ?? "smooth"),
+];
+
+const selectorBuild = ({ stack, direction, aspect: ar, count: n, bgScale, bgDrift, corner, thumb, boxOpacity, boxBlur, pad, stroke, dim, offsetX, offsetY, fxList, hold, cycles, duration, ease }, ctx) => {
+  const aspect = ctx.aspect ?? 1;
+  const { kx, ky } = axes(aspect);
+  const { fade, blurs, fx } = fxLayout(fxList);
+  const U = 1 / 800; // one px on an 800px canvas, in short-side units
+  const horiz = stack !== "Vertical";
+  const sgn = direction === "Reverse" || direction === "Left" || direction === "Up" ? -1 : 1; // Forward = right / down. Left / Up = projects saved before the rename
+  const ratio = ar === "1:1" ? 1 : ar === "3:4" ? 0.75 : 4 / 3; // thumb w / h
+  const Ls = thumb * U; // thumb long side
+  const tw = ratio >= 1 ? Ls : Ls * ratio, th = ratio >= 1 ? Ls / ratio : Ls;
+  const along = horiz ? tw : th, across = horiz ? th : tw;
+  const gapU = SEL_GAP * Ls, padC = SEL_PAD * Ls;
+  const pitch = along + gapU;
+  const boxLen = n * pitch - gapU + 2 * padC; // container length along the strip
+  const boxAcross = across + 2 * padC;
+  const pu = pad * U;
+  const E = along + 2 * pu; // outline length along the strip
+  const ox = offsetX * U, oy = offsetY * U;
+  const rad = (px) => px / 8; // px on an 800px canvas -> % of the short side
+  const place = (cx, cy, w, h) => ({ x: (cx + ox) / kx, y: (cy + oy) / ky, r: w / h, h: h / ky });
+  const slotPos = (q) => (q - (n - 1) / 2) * pitch; // slot q along the strip. -1 and n sit just off either end
+  const qEnd = sgn > 0 ? n : -1, qIn = sgn > 0 ? -1 : n; // where the outline leaves, and where the next one comes in
+  const qOf = (t) => (t >= n ? qEnd : sgn > 0 ? t : n - 1 - t);
+
+  const steps = cycles * n; // one hop per step, whole laps = seamless loop
+  const hd = clamp(hold / 100, 0, 0.9);
+  const mv = 1 - hd; // share of a step spent moving. The move comes first, then the hold
+  const easeFn = vidEaseFn(ease ?? vidEaseSpec("smooth"));
+  const K = clamp(Math.floor(480 / steps), 6, 16);
+  const HID = { cl: 1, cr: 0, ct: 0, cb: 0 }; // clipped down to nothing
+
+  // Outline: clipped to the container, so it slides out of one end while the next slides in from the other
+  const half = boxLen / 2;
+  const offEnd = half + E / 2 + U; // centre of an outline just past either end: fully clipped away
+  const cAt = (t) => (t >= n ? sgn * offEnd : slotPos(sgn > 0 ? t : n - 1 - t)); // centre for step t. t = n is off the far end
+  const cIn = -sgn * offEnd; // waiting off the near end
+  // The clip comes from the centre alone, so a sliding outline is clipped on the same side the whole way.
+  // A separate "hidden" clip made the keys blend into each other and flashed a cut-off outline.
+  const selKey = (u, c) => {
+    const lo = clamp((-half - (c - E / 2)) / E, 0, 1); // share hanging off the start
+    const hi = clamp((c + E / 2 - half) / E, 0, 1); // share hanging off the end
+    return { u, dx: horiz ? c : 0, dy: horiz ? 0 : c, ...(horiz ? { cl: lo, cr: hi, ct: 0, cb: 0 } : { cl: 0, cr: 0, ct: lo, cb: hi }) };
+  };
+  const hop = (out, u0, u1, a, b) => {
+    out.push(selKey(u0, a));
+    for (let m = 1; m <= K; m++) out.push(selKey(u0 + ((u1 - u0) * m) / K, lerp(a, b, easeFn(m / K))));
+  };
+  // Two identical outlines take turns: one per lap leaves, the other enters on the lap's last hop
+  const selTrack = (k) => {
+    const out = [];
+    for (let j = 0; j < steps; j++) {
+      const lap = Math.floor(j / n), t = j % n;
+      const u0 = j / steps, u1 = (j + mv) / steps, u2 = (j + 1) / steps;
+      if (lap % 2 === k) {
+        hop(out, u0, u1, cAt(t), cAt(t + 1));
+        if (u2 - u1 > 1e-9) out.push(selKey(u2, cAt(t + 1)));
+      } else if (t === n - 1) {
+        hop(out, u0, u1, cIn, cAt(0));
+        if (u2 - u1 > 1e-9) out.push(selKey(u2, cAt(0)));
+      } else {
+        out.push(selKey(u0, cIn), selKey(u2, cIn)); // waiting off the near end, clipped away
+      }
+    }
+    return out;
+  };
+
+  // Background: one full-canvas plane per image. The new one cuts in as the outline starts to move,
+  // starts at Scale and shifted against the travel direction, then settles
+  const bgTrack = (b) => {
+    const kBig = Math.max(1, bgScale / 100);
+    const sh = (dim / 100) * 0.7;
+    const dr = (bgDrift / 1000) * (horiz ? kx : ky);
+    const pose = (u, e) => {
+      const off = -sgn * dr * (1 - e);
+      return { u, dx: horiz ? off : 0, dy: horiz ? 0 : off, k: lerp(kBig, 1, e), sh, cl: 0, cr: 0, ct: 0, cb: 0 };
+    };
+    const hid = (u) => ({ u, dx: 0, dy: 0, k: 1, sh: 0, ...HID });
+    const segs = [];
+    for (let j = 0; j < steps; j++) if (qOf(((j % n) + 1) % n) === b) segs.push([j / steps, (j + 1) / steps]);
+    if (!segs.length) return [hid(0), hid(1)];
+    const out = [];
+    const Q = 12;
+    let end = -1;
+    segs.forEach(([a, z]) => {
+      if (a > end + 1e-9) { // gap: hidden until here
+        if (end >= 0) out.push(hid(end));
+        else if (a > 1e-9) out.push(hid(0));
+        out.push(hid(a));
+      }
+      for (let q = 0; q <= Q; q++) out.push(pose(a + ((z - a) * q) / Q, 1 - Math.pow(1 - q / Q, 3))); // ease-out settle, same u as the key before = hard cut
+      end = z;
+    });
+    if (end < 1 - 1e-9) out.push(hid(end), hid(1));
+    return out;
+  };
+
+  // Paint order = layout order: backgrounds, container, thumbs, outlines
+  const still = [{ u: 0, dx: 0, dy: 0 }, { u: 1, dx: 0, dy: 0 }];
+  const bgPlanes = Array.from({ length: n }, (_, b) => ({
+    x: 0, y: 0, r: aspect, h: 1, radius: 0, fade: 0, fadeAxis: "x", blurs: [], fx: [], asset: b, noHit: true,
+  }));
+  const container = {
+    ...place(0, 0, horiz ? boxLen : boxAcross, horiz ? boxAcross : boxLen),
+    radius: rad(corner + SEL_PAD * thumb), fade: 0, fadeAxis: "x", blurs: [], fx: [], asset: 0,
+    fill: `rgba(32,32,32,${(boxOpacity / 100).toFixed(3)})`, backdrop: boxBlur, noHit: true,
+  };
+  const thumbs = Array.from({ length: n }, (_, k) => ({
+    ...place(horiz ? slotPos(k) : 0, horiz ? 0 : slotPos(k), tw, th),
+    radius: rad(corner), fade, fadeAxis: horiz ? "x" : "y", blurs, fx, asset: k,
+  }));
+  const outlines = [0, 1].map(() => ({
+    ...place(0, 0, tw + 2 * pu, th + 2 * pu),
+    radius: rad(corner + pad), fade: 0, fadeAxis: "x", blurs: [], fx: [], asset: 0,
+    fill: "rgba(0,0,0,0)", ring: { width: stroke, hex: "FFFFFF", opacity: 100 }, noHit: true,
+  }));
+  const track = (i) => (i < n ? bgTrack(i) : i <= 2 * n ? still : selTrack(i - (2 * n + 1)));
+  return {
+    duration,
+    poster: +((duration / steps) * (mv + hd * 0.5)).toFixed(2),
+    layout: [...bgPlanes, container, ...thumbs, ...outlines],
+    shots: [{ name: "Selector", start: 0, len: duration, keys: [], stagger: { track } }],
+  };
+};
+
+// ---------- Deck: a stream of two-sided cards. Each card flips over as it travels through the center slot (loops) ----------
+const deckParams = (d) => [
+  { key: "direction", label: "Direction", type: "segmented", options: ["Up", "Down", "Left", "Right"], default: d.direction ?? "Up" },
+  { key: "flip", label: "Flip Axis", type: "segmented", options: ["Vertical", "Horizontal"], default: d.flip ?? "Vertical" },
+  { key: "twoSided", label: "Two Sided", type: "segmented", options: ["Off", "On"], default: d.twoSided ?? "On" },
+  { key: "solo", label: "Solo", type: "segmented", options: ["Off", "On"], default: d.solo ?? "Off" },
+  { key: "count", label: "Count", type: "slider", min: 3, max: 16, default: d.count ?? 6, group: "Frame" },
+  { key: "size", label: "Plane Size", type: "slider", min: 15, max: 90, default: d.size ?? 38, group: "Frame" },
+  { key: "corner", label: "Corner Radius", type: "slider", min: 0, max: 50, default: d.corner ?? 2, group: "Frame" },
+  { key: "gap", label: "Gap", type: "slider", min: 0, max: 100, default: d.gap ?? 29, group: "Frame" },
+  { key: "maxScale", label: "Max Scale", type: "slider", min: 100, max: 200, default: d.maxScale ?? 115, group: "Frame" },
+  { key: "tilt", label: "Tilt", type: "slider", min: -45, max: 45, default: d.tilt ?? 5, group: "Frame" },
+  { key: "distance", label: "Distance", type: "slider", min: 0, max: 100, default: d.distance ?? 25, group: "Camera" },
+  { key: "perspective", label: "Perspective", type: "slider", min: 0, max: 100, default: d.perspective ?? 100, group: "Camera" },
+  { ...FX_PARAM, default: d.fxList ?? [] },
+  { key: "hold", label: "Hold (%)", type: "slider", min: 0, max: 80, default: d.hold ?? 20, section: "motion" },
+  { key: "cycles", label: "Cycles", type: "slider", min: 1, max: 4, default: 1, group: "Timing" },
+  { key: "duration", label: "Duration (s)", type: "slider", min: 2, max: 60, hardMax: 600, default: d.duration ?? 12, group: "Timing" },
+  easeParam(d.ease ?? "smooth"),
+];
+
+const deckBuild = ({ direction, flip, twoSided, solo, count, size, corner, gap, maxScale, tilt, distance, perspective, fxList, hold, cycles, duration, ease }, ctx) => {
+  const aspect = ctx.aspect ?? 1;
+  const { kx, ky } = axes(aspect);
+  const { fade: fadeAmt, blurs, fx } = fxLayout(fxList);
+  const horiz = direction === "Left" || direction === "Right";
+  const flipX = flip === "Vertical"; // Vertical flip turns around the horizontal axis (rx)
+  const tv = direction === "Down" || direction === "Right" ? 1 : -1; // screen direction of travel (y grows downward)
+  const h = size / 100;
+  const Hs = h * ky, Ws = RATIO * Hs;
+  const L = horiz ? Ws : Hs; // plane length along the travel
+  const half = (horiz ? kx : ky) / 2;
+  const pitch = Math.max(0.01, solo === "On" ? 2 * half + L + 0.02 : L * (1 + gap / 100)); // Solo: a neighbour is fully off canvas
+  let n = Math.max(count, Math.ceil((2 * half + 1.6 * L + 0.02) / pitch) + 1); // enough cards that the wrap happens off canvas
+  if (n % 2 === 0) n += 1; // odd, so one card rests in the center and none sits on the wrap seam
+  const loop = n * pitch;
+  const steps = cycles * n; // one card advance per step, whole laps = seamless loop
+  const hd = clamp(hold / 100, 0, 0.8);
+  const easeFn = vidEaseFn(ease ?? vidEaseSpec("smooth"));
+  const K = clamp(Math.floor(480 / steps), 4, 16);
+  const P = L * lerp(8, 2.2, perspective / 100); // camera distance, relative to the plane
+  const sm = (x) => x * x * (3 - 2 * x);
+  const spin = (u) => {
+    const s = u * steps;
+    const j = Math.min(steps - 1, Math.floor(s + 1e-9));
+    return tv * (j + easeFn(clamp((s - j - hd) / (1 - hd), 0, 1))) * pitch; // hold first, then the move
+  };
+
+  const us = new Map();
+  const add = (u) => us.set(Math.round(u * 1e9), clamp(u, 0, 1));
+  for (let j = 0; j < steps; j++) {
+    add(j / steps);
+    if (hd > 0) add((j + hd) / steps);
+    for (let q = 1; q <= K; q++) add((j + hd + ((1 - hd) * q) / K) / steps);
+  }
+  add(1);
+  const list = [...us.values()].sort((a, b) => a - b);
+
+  const track = (i) => {
+    const s0 = (i - (n - 1) / 2) * pitch; // one card rests in the center slot
+    const key = (u, a, order) => {
+      const s = clamp(a / pitch, -1, 1); // slot offset from the center, clamped to one slot either side
+      const t = Math.abs(s);
+      return {
+        u, order,
+        dx: horiz ? a : 0,
+        dy: horiz ? 0 : a,
+        [flipX ? "rx" : "ry"]: (flipX ? -180 : 180) * s, // upright in the center, face down one slot away
+        dz: -(distance / 100) * 0.5 * L * sm(t), // neighbours sit behind the center card
+        k: 1 + (maxScale / 100 - 1) * sm(1 - t),
+        ...(tilt ? { dr: tilt } : {}),
+      };
+    };
+    // times where the card crosses the seam at +-loop / 2 and wraps to the other end (hard cut, off canvas)
+    const y0 = s0, y1 = s0 + spin(1);
+    const lo = Math.min(y0, y1), hi = Math.max(y0, y1);
+    const cuts = [];
+    for (let m = Math.ceil((lo - loop / 2) / loop); ; m++) {
+      const T = loop / 2 + m * loop;
+      if (T >= hi - 1e-9) break;
+      if (T <= lo + 1e-9) continue;
+      let a = 0, b = 1;
+      for (let it = 0; it < 40; it++) {
+        const mid = (a + b) / 2;
+        if ((y0 + spin(mid) < T) === (y1 > y0)) a = mid;
+        else b = mid;
+      }
+      cuts.push((a + b) / 2);
+    }
+    const pts = [];
+    cuts.forEach((u) => {
+      pts.push(key(u, (tv * loop) / 2, 0)); // last position before the wrap
+      pts.push(key(u, (-tv * loop) / 2, 1)); // first position after it
+    });
+    list.forEach((u) => {
+      if (cuts.some((c) => Math.abs(c - u) < 1e-6)) return;
+      pts.push(key(u, wrap(s0 + spin(u), loop), 0));
+    });
+    return pts.sort((p, r) => p.u - r.u || p.order - r.order).map(({ order, ...k }) => k);
+  };
+
+  // hide = the side facing away disappears, so Two Sided Off shows only the card that is facing you
+  const rig = { tx: 0, ty: 0, tz: 0, persp: P, hide: twoSided !== "On", curve: null };
+  const layout = Array.from({ length: n }, (_, i) => ({
+    x: 0, y: 0, r: RATIO, h, radius: corner, fade: fadeAmt, fadeAxis: horiz ? "x" : "y", blurs, fx, rig, asset: i % count,
+  }));
+  return {
+    duration,
+    poster: +((duration / steps) * hd * 0.5).toFixed(2),
+    layout,
+    shots: [{ name: "Deck", start: 0, len: duration, keys: [], stagger: { track } }],
+  };
+};
+
 // ---------- Animation tab (planes on the Frame canvas) ----------
 export const PARAM_FRAME_TEMPLATES = [
   make({
@@ -1171,7 +2485,7 @@ export const PARAM_FRAME_TEMPLATES = [
       { key: "rows", label: "Rows", type: "slider", min: 1, max: 6, default: 2 },
       { key: "size", label: "Size", type: "slider", min: 30, max: 95, default: 80 },
       { key: "gap", label: "Gap", type: "slider", min: 0, max: 30, default: 6 },
-      { key: "corner", label: "Corner Radius", type: "slider", min: 0, max: 50, default: 6 },
+      { key: "corner", label: "Corner Radius", type: "slider", min: 0, max: 50, default: 0 },
       { key: "style", label: "Style", type: "segmented", options: ["Pop", "Rise", "Slide"], default: "Pop" },
       { key: "order", label: "Order", type: "segmented", options: ["Diagonal", "Row", "Column", "Random"], default: "Diagonal" },
       FX_PARAM,
@@ -1305,7 +2619,7 @@ export const PARAM_FRAME_TEMPLATES = [
     category: "Ring",
     noAspectFit: true,
     tags: "ring tunnel rings depth concentric orbit carousel loop perspective",
-    params: ringParams({ rings: 3, count: 12, size: 14, radius: 43, depth: 45, tiltX: 0, tiltY: 0, tiltZ: 0, perspective: 100, duration: 12 }),
+    params: ringParams({ rings: 3, count: 12, size: 14, radius: 43, depth: 45, tiltX: 0, tiltY: 0, tiltZ: 0, perspective: 100, duration: 12, fxList: [] }),
     build: ringBuild,
   }),
     make({
@@ -1314,7 +2628,7 @@ export const PARAM_FRAME_TEMPLATES = [
     category: "Ring",
     noAspectFit: true,
     tags: "ring tunnel rings depth concentric orbit facing center radial roll loop perspective",
-    params: ringParams({ rings: 3, count: 12, size: 14, radius: 43, depth: 45, facing: "Center", tiltX: 0, tiltY: 0, tiltZ: 0, perspective: 100, duration: 12 }),
+    params: ringParams({ rings: 3, count: 12, size: 14, radius: 43, depth: 45, facing: "Center", tiltX: 0, tiltY: 0, tiltZ: 0, perspective: 100, duration: 12, fxList: [] }),
     build: ringBuild,
   }),
     make({
@@ -1364,7 +2678,7 @@ export const PARAM_FRAME_TEMPLATES = [
     noAspectFit: true,
     tags: "ring wheel circle orbit flat facing center rotate roll loop",
     params: ringParams({
-      count: 8, size: 30, corner: 4, radius: 35, radiusLabel: "Wheel Radius", radiusMin: 20, radiusMax: 300,
+      count: 8, size: 30, corner: 0, radius: 35, radiusLabel: "Wheel Radius", radiusMin: 20, radiusMax: 300,
       facing: "Center", tiltX: 0, tiltY: 0, tiltZ: 0, perspective: 0, duration: 10, ease: "linear",
       fxList: [],
     }),
@@ -1377,7 +2691,7 @@ export const PARAM_FRAME_TEMPLATES = [
     noAspectFit: true,
     tags: "ring wheel circle orbit flat facing center rotate roll loop",
     params: ringParams({
-      count: 8, size: 30, corner: 4, radius: 25, radiusLabel: "Wheel Radius", radiusMin: 20, radiusMax: 300,
+      count: 8, size: 30, corner: 0, radius: 25, radiusLabel: "Wheel Radius", radiusMin: 20, radiusMax: 300,
       facing: "Center", tiltX: 0, tiltY: 0, tiltZ: 0, perspective: 0, duration: 13, ease: "linear",
       fxList: [],
     }),
@@ -1509,27 +2823,19 @@ export const PARAM_FRAME_TEMPLATES = [
     build: carouselBuild,
   }),
   make({
-    id: "p-carousel-02",
-    label: "02",
-    category: "Carousel",
-    tags: "carousel wheel fan arc ferris rotate loop",
-    params: wheelParams({ count: 12, size: 60, radius: 100, duration: 12, ease: "linear" }),
-    build: wheelBuild,
-  }),
-  make({
     id: "p-carousel-03",
-    label: "03",
+    label: "02",
     category: "Carousel",
     tags: "carousel flat straight vertical glide strip loop slide",
     params: carouselParams({
-      direction: "Right", stack: "Vertical", surface: "Flat", count: 9,
+      direction: "Up", stack: "Vertical", surface: "Flat", count: 9,
       size: 44, gap: 8, curve: 0, perspective: 0, duration: 10, ease: "glide",
     }),
     build: carouselBuild,
   }),
   make({
     id: "p-carousel-04",
-    label: "04",
+    label: "03",
     category: "Carousel",
     tags: "carousel inward concave bowed strip glass loop slide",
     params: carouselParams({
@@ -1540,7 +2846,7 @@ export const PARAM_FRAME_TEMPLATES = [
   }),
   make({
     id: "p-carousel-05",
-    label: "05",
+    label: "04",
     category: "Carousel",
     tags: "carousel large planes step slide expo glass loop",
     params: carouselParams({
@@ -1551,11 +2857,11 @@ export const PARAM_FRAME_TEMPLATES = [
   }),
   make({
     id: "p-carousel-06",
-    label: "06",
+    label: "05",
     category: "Carousel",
     tags: "carousel flat straight vertical glide scale center focus loop slide",
     params: carouselParams({
-      direction: "Right", stack: "Vertical", surface: "Flat", count: 5,
+      direction: "Up", stack: "Vertical", surface: "Flat", count: 5,
       size: 44, gap: 16, curve: 0, perspective: 0, duration: 12, ease: "glide",
       scaleCenter: "On", scaleFocus: "Center", scaleAmount: 10,
     }),
@@ -1563,7 +2869,7 @@ export const PARAM_FRAME_TEMPLATES = [
   }),
   make({
     id: "p-carousel-07",
-    label: "07",
+    label: "06",
     category: "Carousel",
     tags: "carousel flat straight horizontal linear marquee loop slide",
     params: carouselParams({
@@ -1574,7 +2880,7 @@ export const PARAM_FRAME_TEMPLATES = [
   }),
   make({
     id: "p-carousel-08",
-    label: "08",
+    label: "07",
     category: "Carousel",
     tags: "carousel large planes straight flat step slide expo loop",
     params: carouselParams({
@@ -1585,7 +2891,7 @@ export const PARAM_FRAME_TEMPLATES = [
   }),
   make({
     id: "p-carousel-09",
-    label: "09",
+    label: "08",
     category: "Carousel",
     tags: "carousel large planes diagonal angle tilt flat step slide expo loop",
     params: carouselParams({
@@ -1597,7 +2903,7 @@ export const PARAM_FRAME_TEMPLATES = [
   }),
   make({
     id: "p-carousel-10",
-    label: "10",
+    label: "09",
     category: "Carousel",
     tags: "carousel large planes straight flat solo one at a time step slide expo loop",
     params: carouselParams({
@@ -1608,7 +2914,7 @@ export const PARAM_FRAME_TEMPLATES = [
   }),
   make({
     id: "p-carousel-11",
-    label: "11",
+    label: "10",
     category: "Carousel",
     tags: "carousel large planes straight flat solo one at a time scale center focus step slide expo loop",
     params: carouselParams({
@@ -1620,7 +2926,7 @@ export const PARAM_FRAME_TEMPLATES = [
   }),
   make({
     id: "p-carousel-12",
-    label: "12",
+    label: "11",
     category: "Carousel",
     tags: "carousel large planes diagonal angle flipped flat step slide expo loop",
     params: carouselParams({
@@ -1632,7 +2938,7 @@ export const PARAM_FRAME_TEMPLATES = [
   }),
   make({
     id: "p-carousel-13",
-    label: "13",
+    label: "12",
     category: "Carousel",
     tags: "carousel large planes angle tilt rotation flat level step slide expo loop",
     params: carouselParams({
@@ -1644,15 +2950,98 @@ export const PARAM_FRAME_TEMPLATES = [
   }),
   make({
     id: "p-carousel-14",
-    label: "14",
+    label: "13",
     category: "Carousel",
     tags: "carousel flat straight horizontal glide scale end focus loop slide",
     params: carouselParams({
-      direction: "Right", stack: "Vertical", surface: "Flat", count: 9,
+      direction: "Up", stack: "Vertical", surface: "Flat", count: 9,
       size: 44, gap: 25, curve: 0, perspective: 0, duration: 12, ease: "glide",
       scaleCenter: "On", scaleFocus: "End", scaleAmount: 20,
     }),
     build: carouselBuild,
+  }),
+  make({
+    id: "p-wheel-01",
+    label: "01",
+    category: "Wheel",
+    tags: "wheel carousel fan arc ferris rotate loop",
+    params: wheelParams({ count: 12, size: 60, radius: 100, duration: 12, ease: "linear" }),
+    build: wheelBuild,
+  }),
+  make({
+    id: "p-wheel-02",
+    label: "02",
+    category: "Wheel",
+    tags: "wheel arc ring thumbs rotate spin loop",
+    params: wheelRingParams({}),
+    build: wheelRingBuild,
+  }),
+  make({
+    id: "p-wheel-03",
+    label: "03",
+    category: "Wheel",
+    tags: "wheel arc ring thumbs upright reverse loop",
+    params: wheelRingParams({ direction: "Reverse", spinThumbs: "Off", count: 8, size: 24, radius: 80, duration: 12 }),
+    build: wheelRingBuild,
+  }),
+  make({
+    id: "p-wheel-04",
+    label: "04",
+    category: "Wheel",
+    tags: "wheel full circle ring thumbs rotate spin loop",
+    params: wheelRingParams({ spinThumbs: "Off", count: 12, size: 16, radius: 45, offsetY: -45, cycleDeg: 360, duration: 16 }),
+    build: wheelRingBuild,
+  }),
+  make({
+    id: "p-wheel-05",
+    label: "05",
+    category: "Wheel",
+    tags: "wheel full circle ring thumbs repeat rotate spin loop",
+    params: wheelRingParams({ count: 22, size: 10, radius: 41, offsetY: -41, cycleDeg: 360, duration: 16 }),
+    build: wheelRingBuild,
+  }),
+  make({
+    id: "p-wheel-06",
+    label: "06",
+    category: "Wheel",
+    tags: "wheel arc dense small thumbs linear loop",
+    params: wheelRingParams({ count: 16, size: 14, radius: 75, cycleDeg: 200, duration: 14, ease: "linear" }),
+    build: wheelRingBuild,
+  }),
+  make({
+    id: "p-wheel-07",
+    label: "07",
+    category: "Wheel",
+    tags: "wheel arc wide shallow flat thumbs glide loop",
+    params: wheelRingParams({ count: 7, size: 24, radius: 150, offsetY: -20, cycleDeg: 100, duration: 12, ease: "glide" }),
+    build: wheelRingBuild,
+  }),
+  make({
+    id: "p-wheel-08",
+    label: "08",
+    category: "Wheel",
+    noAspectFit: true,
+    tags: "wheel full circle ring large thumbs spin rotate loop",
+    params: wheelRingParams({ count: 8, size: 40, radius: 40, offsetY: -40, cycleDeg: 360, duration: 16 }),
+    build: wheelRingBuild,
+  }),
+  make({
+    id: "p-wheel-09",
+    label: "09",
+    category: "Wheel",
+    noAspectFit: true,
+    tags: "wheel arc ring thumbs background image big settle dim spin loop",
+    params: wheelRingParams({ bg: "On", count: 10, size: 23, radius: 65, offsetY: -22, cycleDeg: 180, duration: 15, ease: "smooth" }),
+    build: wheelRingBuild,
+  }),
+  make({
+    id: "p-wheel-10",
+    label: "10",
+    category: "Wheel",
+    noAspectFit: true,
+    tags: "wheel arc ring thumbs upright background image scale settle dim wide linear loop",
+    params: wheelRingParams({ bg: "On", bgScale: 160, spinThumbs: "Off", count: 10, size: 15, radius: 65, offsetY: -22, cycleDeg: 290, duration: 15, ease: "linear" }),
+    build: wheelRingBuild,
   }),
   make({
     id: "p-grid-tour-01",
@@ -1725,6 +3114,297 @@ export const PARAM_FRAME_TEMPLATES = [
     params: gridPulseParams({ cols: 3, rows: 2, size: 80, gap: 6, order: "Random", duration: 6, ease: "smooth" }),
     build: gridPulseBuild,
   }),
+
+  make({
+    id: "p-grid-rows-10",
+    label: "10",
+    category: "Grid",
+    noAspectFit: true,
+    tags: "grid rows horizontal marquee alternating drift diagonal vertical scroll loop",
+    params: gridRowsParams({ direction: "Left", alternate: "On", rows: 4, count: 10, size: 50, gap: 20, drift: 4, driftDir: "Down", duration: 12, ease: "linear" }),
+    build: gridRowsBuild,
+  }),
+
+  make({
+    id: "p-grid-rows-11",
+    label: "11",
+    category: "Grid",
+    noAspectFit: true,
+    tags: "grid rows horizontal marquee alternating drift diagonal vertical tilt rotated scroll loop",
+    params: gridRowsParams({ direction: "Left", alternate: "On", rows: 4, count: 10, size: 50, gap: 5, tilt: -15, drift: 3, driftDir: "Down", duration: 12, ease: "linear" }),
+    build: gridRowsBuild,
+  }),
+
+  make({
+    id: "p-grid-rows-12",
+    label: "12",
+    category: "Grid",
+    noAspectFit: true,
+    tags: "grid rows horizontal marquee alternating drift skip jump step vertical scroll loop",
+    params: gridRowsParams({ direction: "Left", alternate: "On", rows: 4, count: 10, size: 50, gap: 0, drift: 8, skip: 2, driftDir: "Down", duration: 20, ease: "steep" }),
+    build: gridRowsBuild,
+  }),
+
+  // ---- Flip ----
+  make({
+    id: "p-flip-01", label: "01", category: "Flip", noAspectFit: true,
+    tags: "flip card turn single rotate reveal back loop",
+    params: flipParams({ cols: 1, rows: 1, size: 60, duration: 6 }),
+    build: flipBuild,
+  }),
+  make({
+    id: "p-flip-02", label: "02", category: "Flip", noAspectFit: true,
+    tags: "flip row cards turn stagger loop",
+    params: flipParams({ cols: 4, rows: 1, size: 45, gap: 10, order: "Row", stagger: 100, duration: 8 }),
+    build: flipBuild,
+  }),
+  make({
+    id: "p-flip-03", label: "03", category: "Flip", noAspectFit: true,
+    tags: "flip grid cards diagonal turn stagger loop",
+    params: flipParams({ cols: 3, rows: 2, size: 80, gap: 6, order: "Diagonal", duration: 8 }),
+    build: flipBuild,
+  }),
+  make({
+    id: "p-flip-04", label: "04", category: "Flip", noAspectFit: true,
+    tags: "flip vertical grid cards turn stagger loop",
+    params: flipParams({ axis: "Vertical", cols: 3, rows: 2, size: 80, gap: 6, order: "Row", duration: 8 }),
+    build: flipBuild,
+  }),
+  make({
+    id: "p-flip-05", label: "05", category: "Flip", noAspectFit: true,
+    tags: "flip grid random cards quick turn loop",
+    params: flipParams({ cols: 4, rows: 3, size: 85, gap: 5, order: "Random", flipLen: 15, ease: "smooth", duration: 10 }),
+    build: flipBuild,
+  }),
+  make({
+    id: "p-flip-06", label: "06", category: "Flip", noAspectFit: true,
+    tags: "flip single card vertical deep perspective shade loop",
+    params: flipParams({ axis: "Vertical", direction: "Reverse", cols: 1, rows: 1, size: 65, perspective: 90, shade: 50, flipLen: 30, duration: 7 }),
+    build: flipBuild,
+  }),
+  make({
+    id: "p-flip-07", label: "07", category: "Flip", noAspectFit: true,
+    tags: "flip strip fold hinge step stack belt vertical horizontal loop",
+    params: flipStripParams({ stack: "Vertical", direction: "Up", visible: 3, count: 6, size: 100, duration: 12 }),
+    build: flipStripBuild,
+  }),
+    make({
+    id: "p-flip-08", label: "08", category: "Flip", noAspectFit: true,
+    tags: "flip strip fold hinge step stack belt horizontal left loop",
+    params: flipStripParams({ stack: "Horizontal", direction: "Left", visible: 4, count: 6, size: 100, duration: 12 }),
+    build: flipStripBuild,
+  }),
+
+  // ---- Wipe ----
+  make({
+    id: "p-wipe-01", label: "01", category: "Wipe", noAspectFit: true,
+    tags: "wipe window slide cover clip panels mirrored stagger transition loop",
+    params: wipeSlideParams({ duration: 8 }),
+    build: wipeSlideBuild,
+  }),
+  make({
+    id: "p-wipe-02", label: "02", category: "Wipe", noAspectFit: true,
+    tags: "wipe window slide clip single plane stagger transition loop",
+    params: wipeSlideParams({ direction: "Up", count: 5, size: 70, duration: 6, ease: "linear" }).filter((p) => p.key !== "planes"),
+    build: (p, ctx) => wipeSlideBuild({ ...p, planes: 1 }, ctx),
+  }),
+  make({
+    id: "p-wipe-03", label: "03", category: "Wipe", noAspectFit: true,
+    tags: "wipe cover slide over down dim depth zoom transition loop",
+    params: wipeParams({ style: "Cover", direction: "Down", count: 6, size: 75, dim: 70, zoom: 10, duration: 10 }),
+    build: wipeBuild,
+  }),
+  make({
+    id: "p-wipe-04", label: "04", category: "Wipe", noAspectFit: true,
+    tags: "wipe window slide clip panels feather three planes stagger transition loop",
+    params: wipeSlideParams({ planes: 3, count: 9, feather: 10, duration: 8 }),
+    build: wipeSlideBuild,
+  }),
+  make({
+    id: "p-wipe-05", label: "05", category: "Wipe", noAspectFit: true,
+    tags: "wipe open horizontal grow center barn door reveal transition loop",
+    params: wipeParams({ style: "Open", direction: "Left", count: 5, size: 75, feather: 20, duration: 14 }),
+    build: wipeBuild,
+  }),
+  make({
+    id: "p-wipe-06", label: "06", category: "Wipe", noAspectFit: true,
+    tags: "wipe open vertical grow center shutter reveal transition loop",
+    params: wipeParams({ style: "Open", direction: "Up", count: 5, size: 75, duration: 14 }),
+    build: wipeBuild,
+  }),
+
+  make({
+    id: "p-wipe-07", label: "07", category: "Wipe", noAspectFit: true,
+    tags: "wipe stripes strips slats blinds vertical slide stagger transition loop",
+    params: wipeStripesParams({ strips: 8, count: 4, size: 80, duration: 8 }),
+    build: wipeStripesBuild,
+  }),
+  make({
+    id: "p-wipe-08", label: "08", category: "Wipe", noAspectFit: true,
+    tags: "wipe mosaic tiles grid squares shrink stagger transition loop",
+    params: wipeMosaicParams({ columns: 6, rows: 4, count: 4, size: 80, duration: 10 }),
+    build: wipeMosaicBuild,
+  }),
+
+  // ---- Stack ----
+  make({
+    id: "p-stack-01", label: "01", category: "Stack", noAspectFit: true,
+    tags: "stack deck cards throw toss shuffle loop",
+    params: stackParams({ toss: "Right", spread: "Up", count: 5, size: 60, step: 8, shrink: 5, duration: 10 }),
+    build: stackBuild,
+  }),
+  make({
+    id: "p-stack-02", label: "02", category: "Stack", noAspectFit: true,
+    tags: "stack deck cards throw up peek dim loop",
+    params: stackParams({ toss: "Up", spread: "Down", count: 6, size: 55, step: 10, shrink: 6, dim: 40, duration: 12 }),
+    build: stackBuild,
+  }),
+  make({
+    id: "p-stack-03", label: "03", category: "Stack", noAspectFit: true,
+    tags: "stack deck cards fanned tilt throw left loop",
+    params: stackParams({ toss: "Left", spread: "Right", count: 5, size: 55, step: 12, shrink: 0, tilt: 4, spin: 14, duration: 10 }),
+    build: stackBuild,
+  }),
+  make({
+    id: "p-stack-04", label: "04", category: "Stack", noAspectFit: true,
+    tags: "stack deck large cards slow throw smooth loop",
+    params: stackParams({ toss: "Right", spread: "Left", count: 4, size: 78, step: 6, shrink: 4, hold: 40, duration: 10, ease: "smooth" }),
+    build: stackBuild,
+  }),
+
+  // ---- Float ----
+  make({
+    id: "p-float-01", label: "01", category: "Float", noAspectFit: true,
+    tags: "float drift scatter parallax depth bob loop",
+    params: floatParams({ count: 8, size: 30, duration: 12 }),
+    build: floatBuild,
+  }),
+  make({
+    id: "p-float-02", label: "02", category: "Float", noAspectFit: true,
+    tags: "float drift dense small planes parallax loop",
+    params: floatParams({ count: 14, size: 20, spread: 90, depth: 80, drift: 60, tilt: 8, speed: 2, duration: 12 }),
+    build: floatBuild,
+  }),
+  make({
+    id: "p-float-03", label: "03", category: "Float", noAspectFit: true,
+    tags: "float drift few large planes calm loop",
+    params: floatParams({ count: 5, size: 50, spread: 60, depth: 40, drift: 30, tilt: 3, duration: 14 }),
+    build: floatBuild,
+  }),
+  make({
+    id: "p-float-04", label: "04", category: "Float", noAspectFit: true,
+    tags: "float drift deep perspective dim parallax loop",
+    params: floatParams({ count: 10, size: 26, depth: 100, perspective: 80, drift: 50, dim: 40, duration: 16 }),
+    build: floatBuild,
+  }),
+
+  // ---- Helix ----
+  make({
+    id: "p-helix-01", label: "01", category: "Helix", noAspectFit: true,
+    tags: "helix spiral vertical spin staircase loop",
+    params: helixParams({ count: 14, size: 16, radius: 30, pitch: 8, stepAngle: 50, duration: 10 }),
+    build: helixBuild,
+  }),
+  make({
+    id: "p-helix-02", label: "02", category: "Helix", noAspectFit: true,
+    tags: "helix spiral horizontal spin loop",
+    params: helixParams({ axis: "Horizontal", count: 14, size: 18, radius: 28, pitch: 9, stepAngle: 50, duration: 10 }),
+    build: helixBuild,
+  }),
+  make({
+    id: "p-helix-03", label: "03", category: "Helix", noAspectFit: true,
+    tags: "helix spiral tilted diagonal spin loop",
+    params: helixParams({ count: 18, size: 12, radius: 26, pitch: 6, stepAngle: 40, tiltZ: 20, duration: 12 }),
+    build: helixBuild,
+  }),
+  make({
+    id: "p-helix-04", label: "04", category: "Helix", noAspectFit: true,
+    tags: "helix spiral tight tall camera facing loop",
+    params: helixParams({ facing: "Camera", count: 20, size: 11, radius: 22, pitch: 5, stepAngle: 36, duration: 12 }),
+    build: helixBuild,
+  }),
+
+  // ---- Fan ----
+  make({
+    id: "p-fan-01", label: "01", category: "Fan", noAspectFit: true,
+    tags: "fan hand cards open close pivot loop",
+    params: fanParams({ motion: "Open", count: 7, size: 45, angle: 70, reach: 110, duration: 8 }),
+    build: fanBuild,
+  }),
+  make({
+    id: "p-fan-02", label: "02", category: "Fan", noAspectFit: true,
+    tags: "fan hand cards sweep swing pivot loop",
+    params: fanParams({ motion: "Sweep", count: 7, size: 45, angle: 50, reach: 110, sweep: 20, duration: 8 }),
+    build: fanBuild,
+  }),
+  make({
+    id: "p-fan-03", label: "03", category: "Fan", noAspectFit: true,
+    tags: "fan hang down top pivot open close loop",
+    params: fanParams({ pivot: "Top", count: 9, size: 38, angle: 100, reach: 150, duration: 9 }),
+    build: fanBuild,
+  }),
+  make({
+    id: "p-fan-04", label: "04", category: "Fan", noAspectFit: true,
+    tags: "fan rosette circle burst open close loop",
+    params: fanParams({ count: 12, size: 30, angle: 330, reach: 90, duration: 10 }),
+    build: fanBuild,
+  }),
+
+  // ---- Selector ----
+  make({
+    id: "p-selector-01", label: "01", category: "Selector",
+    tags: "selector strip thumbnails outline background image scale drift blur bar vertical loop",
+    params: selectorParams({ stack: "Vertical", direction: "Forward" }),
+    build: selectorBuild,
+  }),
+  make({
+    id: "p-selector-02", label: "02", category: "Selector",
+    tags: "selector strip thumbnails outline background image scale drift blur bar horizontal loop",
+    params: selectorParams({ stack: "Horizontal", direction: "Forward" }),
+    build: selectorBuild,
+  }),
+
+  // ---- Deck ----
+  make({
+    id: "p-deck-01", label: "01", category: "Deck",
+    tags: "deck cards flip vertical roll stream scroll two sided loop",
+    params: deckParams({}),
+    build: deckBuild,
+  }),
+  make({
+    id: "p-deck-02", label: "02", category: "Deck",
+    tags: "deck cards flip horizontal sideways roll stream two sided loop",
+    params: deckParams({
+      direction: "Left", flip: "Horizontal", count: 6, size: 39, corner: 2, gap: 40,
+      maxScale: 121, tilt: -8, distance: 36, perspective: 100,
+      fxList: [{ id: 1, type: "fade", on: true, fade: 30 }],
+    }),
+    build: deckBuild,
+  }),
+  make({
+    id: "p-deck-03", label: "03", category: "Deck",
+    tags: "deck cards flip solo one at a time single side loop",
+    params: deckParams({ solo: "On", twoSided: "Off", size: 60, gap: 0, hold: 30, duration: 14, ease: "expo-out" }),
+    build: deckBuild,
+  }),
+  make({
+    id: "p-deck-04", label: "04", category: "Deck",
+    tags: "deck cards flip horizontal solo one at a time single side revolving loop",
+    params: deckParams({
+      direction: "Up", flip: "Horizontal", twoSided: "Off", solo: "On", count: 6, size: 59, corner: 2,
+      gap: 50, maxScale: 115, tilt: 0, distance: 27, perspective: 100, fxList: [],
+    }),
+    build: deckBuild,
+  }),
+  make({
+    id: "p-deck-05", label: "05", category: "Deck",
+    tags: "deck cards flip vertical sideways left stream two sided loop",
+    params: deckParams({
+      direction: "Left", flip: "Vertical", twoSided: "On", solo: "Off", count: 6, size: 38, corner: 2,
+      gap: 43, maxScale: 115, tilt: 0, distance: 22, perspective: 100, fxList: [],
+    }),
+    build: deckBuild,
+  }),
 ];
 
 // ---------- Camera-only (parked: not in the Animation list) ----------
@@ -1783,4 +3463,7 @@ export const PARAM_CAMERA_TEMPLATES = [
 ];
 
 export const PARAM_ALL = [...PARAM_FRAME_TEMPLATES]; // what the Animation tab lists
-export const PARAM_CATEGORIES = ["All", ...new Set(PARAM_ALL.map((t) => t.category))];
+export const PARAM_CATEGORIES = [
+  "All",
+  ...[...new Set(PARAM_ALL.map((t) => t.category))].sort((a, b) => a.localeCompare(b)),
+];

@@ -233,7 +233,7 @@ const FK = (t, o = {}, ease, fo) => ({ ...VK(t, o, ease), ...(fo ? { fo } : {}) 
 //   cam0/cam1  : optional camera drift across the shot
 const STG = (o) => ({ step: 0.25, dur: 1.1, ease: "expo-out", order: "start", ...o });
 // Layout from FRAME_LAYOUTS with a corner radius and no effects, so no drop shadows come along.
-const FL_ = (key, radius = 5) => FRAME_LAYOUTS[key].map((s) => ({ ...s, radius, fx: [], blurs: [] }));
+const FL_ = (key) => FRAME_LAYOUTS[key].map((s) => ({ ...s, radius: 0, fx: [], blurs: [] }));
 // Slow camera move across the whole template (tilt / perspective drift).
 const CAMSHOT = (len, a, b) => VSHOT("Camera", 0, len, [VK(0, a, "sine-in-out"), VK(len, b)]);
 

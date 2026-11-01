@@ -61,7 +61,7 @@ import {
 import {
   FRAME_DEFAULT_SIZE, makeFrame, cornersOf, frameRect, cloneFrame,
 } from "./lib/frameModel.js";
-import { framePoseMap, sampleShotFrames, changedCamProps } from "./lib/frameKeys.js";
+import { framePoseMap, sampleShotFrames, changedCamProps, clipOf, CLIP_KEYS, isClipped, featherOf } from "./lib/frameKeys.js";
 import { frameDim } from "./lib/frameFade.js";
 import { planeBackFacing, sortByDepth, projectPlane, drawPlane3D, planeGrid } from "./lib/plane3d.js";
 import { mixHex, txtRanks, txtUnitStates, sampleTextAnim } from "./lib/textAnim.js";
@@ -794,14 +794,14 @@ frameUploadRef.current = addFrameImage;
     // Frame mode: rows are shown front-to-back, so the top row is the frame on top
   const moveFrameRow = (fromId, toId, pos) =>
     setFrames((prev) => {
-      const disp = [...prev].reverse();
+      const disp = [...prev];
       const from = disp.findIndex((f) => f.id === fromId);
       if (from < 0 || fromId === toId) return prev;
       const [m] = disp.splice(from, 1);
       const to = disp.findIndex((f) => f.id === toId);
       if (to < 0) return prev;
       disp.splice(pos === "before" ? to : to + 1, 0, m);
-      return disp.reverse();
+      return disp;
     });
   const endFrameDrag = () => {
     dragIdRef.current = null;
@@ -809,7 +809,7 @@ frameUploadRef.current = addFrameImage;
     setFrameDrop(null);
   };
   const renderFrameAssets = () => {
-    const rows = [...frames].reverse();
+    const rows = [...frames];
     const n = frames.length;
     return (
       <div className="flex flex-col gap-1">
@@ -830,7 +830,7 @@ frameUploadRef.current = addFrameImage;
         <div className="flex flex-col">
           {rows.map((f, i) => {
             const selected = selectedIds.includes(f.id);
-            const thumb = f.img ? (f.img.cropUrl ?? f.img.url) : null;
+            const thumb = f.img ? (f.img.cropUrl ?? f.img.url) : `${import.meta.env.BASE_URL}mockup-defaults/frame.png`;
             const select = (shift) => {
               setSelectedTextId(null);
               setSelectedIds((ids) => (shift ? (ids.includes(f.id) ? ids.filter((x) => x !== f.id) : [...ids, f.id]) : [f.id]));
@@ -903,7 +903,7 @@ frameUploadRef.current = addFrameImage;
                     selected ? "text-[#3A3A3A] dark:text-[#FAF9FA]" : "text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
                   } ${f.hidden ? "opacity-50" : ""}`}
                 >
-                  {f.img?.label ?? "Empty frame"}{f.locked ? " (locked)" : ""}
+                  {f.img?.label ?? `Default ${i + 1}`}{f.locked ? " (locked)" : ""}
                 </span>
                 <Tooltip label="Crop" placement="bottom" className="shrink-0">
                   <button
@@ -1547,7 +1547,7 @@ useEffect(() => {
       setAnimTab(true);
       setToolbarMode("frame");
       setImageOrVideo("video"); // animation needs the timeline
-      setAnimCategory(null);
+      setAnimCategory("All");
       setSidebarPanel("templates");
       setSidebarOpen(true);
     } else {
@@ -3223,7 +3223,7 @@ handlePositionXChange(0);
         s: (sl.h * box.h) / short / NOMINAL_H,
         x: (sl.x * box.w) / short,
         y: (sl.y * box.h) / short,
-        radius: tpl.radius,
+        radius: 0,
         fade: 0,
         corners: null,
         stroke: tpl.stroke ? { ...DEFAULT_STROKE, on: true, ...tpl.stroke } : DEFAULT_STROKE,
@@ -3529,6 +3529,13 @@ handlePositionXChange(0);
         lctx.beginPath();
         lctx.roundRect(sx, sy, sw, sh, rs);
         lctx.clip();
+        if (isClipped(fr)) {
+          const cw = sw * (1 - (fr.cl ?? 0) - (fr.cr ?? 0)), ch = sh * (1 - (fr.ct ?? 0) - (fr.cb ?? 0));
+          const uniform = fr.cl === fr.ct && fr.ct === fr.cr && fr.cr === fr.cb; // zoom crop: round it. A one-sided slide cut stays square
+          lctx.beginPath();
+          lctx.roundRect(sx + sw * (fr.cl ?? 0), sy + sh * (fr.ct ?? 0), cw, ch, uniform ? rs.map((v) => Math.min(v, cw / 2, ch / 2)) : 0);
+          lctx.clip();
+        }
         if (backFacing) {
           lctx.save();
           lctx.translate(2 * sx + sw, 0);
@@ -3559,18 +3566,12 @@ handlePositionXChange(0);
             paintChromatic(lctx, padL, padT, sx, sy, sw, sh, Math.cos(rad) * ca.amount * k, Math.sin(rad) * ca.amount * k);
           }
         } else {
-          const g = lctx.createLinearGradient(0, sy, 0, sy + sh);
-          g.addColorStop(0, "#FFFFFF");
-          g.addColorStop(1, "#FF47BC");
-          lctx.fillStyle = g;
-          lctx.fillRect(sx, sy, sw, sh);
-          const fs = Math.max(11 * k, sw * 0.05);
-          lctx.fillStyle = "#FAF9FA";
-          lctx.font = `600 ${fs}px Inter, sans-serif`;
-          lctx.textAlign = "center";
-          lctx.textBaseline = "middle";
-          lctx.fillText("Drop your", sx + sw / 2, sy + sh / 2 - fs * 0.65);
-          lctx.fillText("image here", sx + sw / 2, sy + sh / 2 + fs * 0.65);
+          const ph = await loadImg(`${import.meta.env.BASE_URL}mockup-defaults/frame.png`).catch(() => null);
+          if (ph) drawCover(ph, sx, sy, sw, sh, lctx);
+          else {
+            lctx.fillStyle = "#808080";
+            lctx.fillRect(sx, sy, sw, sh);
+          }
         }
         if (fr.social?.on && !backFacing) {
           const sops = socialOps({ ...fr.social, media: srcUrl }, sw, sh);
@@ -3619,6 +3620,16 @@ if (!backFacing && (fr.statusBar || fr.homeIndicator || fr.browser?.on)) {
           lctx.stroke();
         }
 
+        const fe = featherOf(fr);
+        if (fe) {
+          const gr = lctx.createLinearGradient(sx + sw * fe.p0[0], sy + sh * fe.p0[1], sx + sw * fe.p1[0], sy + sh * fe.p1[1]);
+          (fe.stops ?? [[0, 1], [1, 0]]).forEach(([p, a]) => gr.addColorStop(p, `rgba(0,0,0,${a})`));
+          lctx.save();
+          lctx.globalCompositeOperation = "destination-in";
+          lctx.fillStyle = gr;
+          lctx.fillRect(-padL, -padT, compW, compH);
+          lctx.restore();
+        }
         const rot = ((fr.r ?? 0) * Math.PI) / 180;
         const rcos = Math.cos(rot), rsin = Math.sin(rot);
         const rcx = sx + sw / 2, rcy = sy + sh / 2;
@@ -4426,10 +4437,11 @@ const applyFramePosesAt = (t) => {
   const next = framesLatestRef.current.map((f) => {
     const p = poses[f.id];
     if (!p) return f;
-    const n = { x: p.x, y: p.y, w: Math.round(p.w), h: Math.round(p.h), s: p.s, r: p.r ?? 0, rx: p.rx ?? 0, ry: p.ry ?? 0, z: p.z ?? 0, sh: p.sh ?? 0 };
+    const n = { x: p.x, y: p.y, w: Math.round(p.w), h: Math.round(p.h), s: p.s, r: p.r ?? 0, rx: p.rx ?? 0, ry: p.ry ?? 0, z: p.z ?? 0, sh: p.sh ?? 0, ...clipOf(p) };
     if (
       f.x === n.x && f.y === n.y && f.w === n.w && f.h === n.h && f.s === n.s && (f.r ?? 0) === n.r &&
-      (f.rx ?? 0) === n.rx && (f.ry ?? 0) === n.ry && (f.z ?? 0) === n.z && (f.sh ?? 0) === n.sh
+      (f.rx ?? 0) === n.rx && (f.ry ?? 0) === n.ry && (f.z ?? 0) === n.z && (f.sh ?? 0) === n.sh &&
+      CLIP_KEYS.every((k) => (f[k] ?? 0) === n[k])
     ) return f;
     diff = true;
     return { ...f, ...n };
@@ -5618,7 +5630,7 @@ const vidToggle = () => {
         frames: {
           [f.id]: {
             x: r.x + (o.dx ?? 0), y: r.y + (o.dy ?? 0), w: r.w * (o.kw ?? 1), h: r.h * (o.kh ?? 1), s: r.s * (o.k ?? 1), r: (r.r ?? 0) + (o.dr ?? 0),
-            rx: o.rx ?? 0, ry: o.ry ?? 0, z: o.dz ?? 0, sh: o.sh ?? 0, // 3D fields are absolute, not offsets
+            rx: o.rx ?? 0, ry: o.ry ?? 0, z: o.dz ?? 0, sh: o.sh ?? 0, ...clipOf(o), // 3D fields and window clip are absolute, not offsets
           },
         },
       }));
@@ -5707,9 +5719,15 @@ const vidToggle = () => {
       return {
         ...src, img,
         r: 0, // a layout starts unrotated, even if the frame was left mid-animation
-        rx: 0, ry: 0, z: 0, sh: 0,
+        rx: 0, ry: 0, z: 0, sh: 0, cl: 0, ct: 0, cr: 0, cb: 0,
         asset: sl.asset, // set by templates that reuse assets across planes, undefined otherwise
         tint: sl.tint, // "bg" = the depth shade blends toward the background
+        feather: sl.feather ?? 0, // soft leading edge for sliding planes
+        featherSym: sl.featherSym, // "x" / "y": soft edges open from the center
+        fill: sl.fill ?? null, // a solid css color instead of an image (Selector container + outline)
+        backdrop: sl.backdrop ?? 0, // blur behind the frame, px on an 800px canvas
+        ring: sl.ring ?? null, // { width, hex, opacity }: outline inside the frame, px on an 800px canvas
+        noHit: sl.noHit ?? false, // true = clicks pass through (full-canvas backgrounds, the container, the outline)
         rig: sl.rig ?? null, // 3D templates set this, every other layout clears it
         fade: sl.fade ?? 0,
         fadeAxis: sl.fadeAxis ?? "x",
@@ -5788,7 +5806,7 @@ const vidToggle = () => {
     const poses = sampleShotFrames(shots, t);
     const fr = (laid ?? framesLatestRef.current).map((f) => {
       const p = poses?.[f.id];
-      return p ? { ...f, x: p.x, y: p.y, w: Math.round(p.w), h: Math.round(p.h), s: p.s, r: p.r ?? 0, rx: p.rx ?? 0, ry: p.ry ?? 0, z: p.z ?? 0, sh: p.sh ?? 0 } : f;
+      return p ? { ...f, x: p.x, y: p.y, w: Math.round(p.w), h: Math.round(p.h), s: p.s, r: p.r ?? 0, rx: p.rx ?? 0, ry: p.ry ?? 0, z: p.z ?? 0, sh: p.sh ?? 0, ...clipOf(p) } : f;
     });
     // use the template's own background at time t, so the card matches what gets applied
     const bgClip = tpl.bgs ? [...tpl.bgs].sort((a, b) => a.at - b.at).reverse().find((b) => b.at <= t) ?? tpl.bgs[0] : null;
@@ -5996,7 +6014,11 @@ const vidToggle = () => {
       setTimeout(() => applyVideoTemplate(tpl, params, keepTime, true), 150);
       return;
     }
-    if (!tpl.build) return handleApplyVideoTemplate(tpl);
+    if (!tpl.build) {
+      handleApplyVideoTemplate(tpl);
+      if (!keepTime) setVidPlaying(true); // picking a card starts playback from 0
+      return;
+    }
     const p = params ?? { ...defaultParams(tpl.params), ...tplParams[tpl.id] };
     const box = frameSizeRef.current;
     const t0 = vidTimeRef.current, wasPlaying = vidLive.current.playing;
@@ -6004,6 +6026,8 @@ const vidToggle = () => {
     if (keepTime) {
       vidSeek(Math.min(t0, vidLive.current.duration));
       if (wasPlaying) setVidPlaying(true);
+    } else {
+      setVidPlaying(true); // picking a card starts playback from 0
     }
   };
   const tplSmoothTimerRef = useRef(null);
@@ -6072,13 +6096,13 @@ const vidToggle = () => {
     let tries = 0, timer;
     const run = () => {
       if (animTplRef.current) return; // a template is already active
-      if (!frameSizeRef.current && tries++ < 10) {
-        timer = setTimeout(run, 100); // canvas not measured yet
+      if (!frameSizeRef.current && tries++ < 30) {
+        timer = setTimeout(run, 100); // canvas not measured yet, keep waiting (up to ~3s)
         return;
       }
-      setAnimCategory(first.category);
       restoreUntilRef.current = Date.now() + 500; // the initial template isn't an undoable step
       applyVideoTemplate(first);
+      timer = setTimeout(() => setVidPlaying(true), 60); // start after the apply has settled
     };
     timer = setTimeout(run, 150);
     return () => clearTimeout(timer);
@@ -7912,7 +7936,7 @@ const chrome = {
 
               {animTab && !animCategory && !templateSearch ? (
                 <div className="w-full pr-4">
-                  <AnimCategoryList categories={PARAM_CATEGORIES} templates={PARAM_ALL} onPick={setAnimCategory} />
+                  <AnimCategoryList categories={PARAM_CATEGORIES} templates={PARAM_ALL} onPick={setAnimCategory} selected={animCategory && animCategory !== "All" ? animCategory : activeParamTpl?.category ?? "All"} />
                 </div>
               ) : filteredTemplates.length === 0 ? (
                 <div className="flex flex-col items-center justify-center gap-3 w-full flex-1 py-8">
@@ -7928,7 +7952,7 @@ const chrome = {
                       key={tpl.id}
                       tpl={tpl}
                       index={i}
-                      label={tpl.label}
+                      label={animTab && (animCategory === "All" || templateSearch) ? `${tpl.category} ${tpl.label}` : tpl.label}
                       active={vidTplId === tpl.id}
                       renderKey={`${animTab ? assetPoolRef.current.map((a) => a?.url ?? "").join("|") : frames.map((f) => `${f.id}:${f.img?.cropUrl ?? f.img?.url ?? ""}`).join("|")}|${canvasSize}|${customWidth}x${customHeight}`}
                       renderStill={renderParamStill}
@@ -8569,7 +8593,7 @@ const chrome = {
             <>
               {activeParamTpl.planeKey && (
                 <div className="flex flex-col gap-2 mb-1">
-                  <label className="text-[13px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]">Size</label>
+                  <label className="text-[13px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]">Ratio</label>
                   <SizeLockRow
                     width={planeVals.planeW}
                     height={planeVals.planeH}

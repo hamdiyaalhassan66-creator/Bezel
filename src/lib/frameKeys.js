@@ -1,5 +1,44 @@
 import { CAM_KEYS, VID_EASES, smoothstep, vidEaseFn, sampleShots } from "./videoMath.js";
 import { frameRect } from "./frameModel.js";
+// Window clip: share of a plane's own box cut off each side. Lets a plane slide inside a fixed window.
+export const CLIP_KEYS = ["cl", "ct", "cr", "cb"];
+export const clipOf = (p) => ({ cl: p.cl ?? 0, ct: p.ct ?? 0, cr: p.cr ?? 0, cb: p.cb ?? 0 });
+export const isClipped = (f) => !(f.feather > 0) && CLIP_KEYS.some((k) => (f[k] ?? 0) > 1e-4); // feathered planes are masked, not clipped
+// radii = [tl, tr, br, bl] in px. Only a uniform (zoom) crop is rounded; a one-sided slide cut stays square.
+export const clipCss = (f, radii = null) => {
+  const uniform = f.cl === f.ct && f.ct === f.cr && f.cr === f.cb;
+  const round = uniform && radii && radii.some((v) => v > 0) ? ` round ${radii.map((v) => `${v}px`).join(" ")}` : "";
+  return `inset(${(f.ct ?? 0) * 100}% ${(f.cr ?? 0) * 100}% ${(f.cb ?? 0) * 100}% ${(f.cl ?? 0) * 100}%${round})`;
+};
+// Soft leading edge of a sliding plane (feather = share of the plane). The band slides out past the box edge as the plane lands, so a plane at rest is never faded.
+export const featherOf = (f) => {
+  const fw = f.feather ?? 0;
+  const L = f.cl ?? 0, T = f.ct ?? 0, R = f.cr ?? 0, B = f.cb ?? 0;
+  const q = Math.max(L, T, R, B);
+  if (!(fw > 0) || q < 1e-4) return null;
+    if (f.featherSym) {
+    const o = 1 - Math.min(1, q); // 0 = closed, 1 = open
+    const outer = o * (0.5 + fw), inner = Math.max(0, outer - fw); // soft edges travel out from the center
+    const stops = o <= 0
+      ? [[0, 0], [1, 0]]
+      : [[0.5 - outer, 0], [0.5 - inner, 1], [0.5 + inner, 1], [0.5 + outer, 0]].map(([p, a]) => [Math.min(1, Math.max(0, p)), a]);
+    return f.featherSym === "x"
+      ? { dir: "to right", stops, p0: [0, 0.5], p1: [1, 0.5] }
+      : { dir: "to bottom", stops, p0: [0.5, 0], p1: [0.5, 1] };
+  }
+  const a = 1 - q * (1 + fw); // soft edge sweeps from beyond the plane to beyond the other side
+  const b = a + fw;
+  if (L === q) return { dir: "to right", a, b, p0: [a, 0], p1: [b, 0] };
+  if (R === q) return { dir: "to left", a, b, p0: [1 - a, 0], p1: [1 - b, 0] };
+  if (T === q) return { dir: "to bottom", a, b, p0: [0, a], p1: [0, b] };
+  return { dir: "to top", a, b, p0: [0, 1 - a], p1: [0, 1 - b] };
+};
+export const featherCss = (f) => {
+  const e = featherOf(f);
+  if (!e) return undefined;
+  if (e.stops) return `linear-gradient(${e.dir}, ${e.stops.map(([p, a]) => `rgba(0,0,0,${a}) ${p * 100}%`).join(", ")})`;
+  return `linear-gradient(${e.dir}, #000 ${e.a * 100}%, transparent ${e.b * 100}%)`;
+};
 
 // "none" = playhead isn't inside any shot, "on" = it sits on a keyframe, "add" = inside a shot with no keyframe here.
 // Uses the same shot pick and 1/60 tolerance as vidAddKey.
@@ -48,7 +87,7 @@ function sampleFrameKeys(keys, t, ease = smoothstep) {
         const f = a.ease ? vidEaseFn(a.ease, ease) : ease;
         const u = f((t - a.t) / Math.max(1e-6, b.t - a.t));
         const o = {};
-        ["x", "y", "w", "h", "s", "r", "rx", "ry", "z", "sh"].forEach((p) => {
+        ["x", "y", "w", "h", "s", "r", "rx", "ry", "z", "sh", ...CLIP_KEYS].forEach((p) => {
           const va = a.frames[id][p] ?? 0, vb = b.frames[id][p] ?? 0;
           o[p] = va + (vb - va) * u;
         });

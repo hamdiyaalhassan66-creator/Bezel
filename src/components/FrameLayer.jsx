@@ -9,6 +9,8 @@ import { PB_BANDS, pbBandBlur, pbMask, pbParams, pbPts } from "../lib/progressiv
 import { PbHandles } from "./PbHandles.jsx";
 import { planeCss, planePoly, rigPerspective } from "../lib/plane3d.js";
 import { CurvedPlane } from "./CurvedPlane.jsx";
+import { isClipped, clipCss, featherCss } from "../lib/frameKeys.js";
+import { cornersOf } from "../lib/frameModel.js";
 
 // Chromium only: SVG url() filters inside backdrop-filter (refraction + dispersion).
 const URL_BACKDROP =
@@ -698,8 +700,14 @@ const bandMaps = useMemo(
                   height: r.height,
                   transform: planeCss(f, Math.min(box.w, box.h)),
                   zIndex: depthRank?.get(f.id),
+                  clipPath: isClipped(f)
+                    ? clipCss(f, cornersOf(f).map((p) => (Math.min(box.w, box.h) * p) / 100))
+                    : undefined,
+                  maskImage: featherCss(f),
+                  WebkitMaskImage: featherCss(f),
                   backfaceVisibility: f.rig?.hide ? "hidden" : undefined,
                   cursor: editable ? "default" : undefined,
+                  pointerEvents: f.noHit ? "none" : undefined,
                 }}
               >
                <div
@@ -707,12 +715,20 @@ const bandMaps = useMemo(
                 style={{
                   borderRadius,
                   boxShadow: withGlow(f, ap.boxShadow),
+                  ...(f.backdrop > 0
+                    ? (() => {
+                        const bb = `blur(${(f.backdrop * canvasShort) / 800}px)`;
+                        return { backdropFilter: bb, WebkitBackdropFilter: bb };
+                      })()
+                    : {}),
                 }}
                >
                 <div className="absolute inset-0" style={{ transform: flipCss }}>
                 {backVisible ? (
                   // scaleX(-1) undoes the mirroring you get from behind, so a gradient reads as authored
                   <div className="w-full h-full" style={{ background: backFillOf(f), opacity: backOpacityOf(f), transform: "scaleX(-1)" }} />
+                ) : f.fill != null ? (
+                  <div className="w-full h-full" style={{ background: f.fill }} />
                 ) : f.social?.on ? (
                   <div className="w-full h-full bg-black" />
                 ) : imgUrl ? (
@@ -738,16 +754,7 @@ const bandMaps = useMemo(
                     <img src={imgUrl} alt="" draggable={false} className="w-full h-full object-cover select-none pointer-events-none" />
                   )
                 ) : (
-                  <div
-                    className="keep-size w-full h-full flex items-center justify-center text-center text-[#FAF9FA] font-semibold select-none"
-                    style={{
-                      background: "linear-gradient(180deg, #FFFFFF 0%, #FF47BC 100%)",
-                      fontSize: Math.max(11, r.width * 0.05),
-                      lineHeight: 1.3,
-                    }}
-                  >
-                    <span style={{ maxWidth: "45%" }}>Drop your image here</span>
-                  </div>
+                  <img src={`${import.meta.env.BASE_URL}mockup-defaults/frame.png`} alt="" draggable={false} className="w-full h-full object-cover select-none pointer-events-none" />
                 )}
 
                 </div>
@@ -790,6 +797,12 @@ const bandMaps = useMemo(
 
                 {ap.insetStroke && (
                   <div className="absolute inset-0 pointer-events-none" style={{ borderRadius, boxShadow: ap.insetStroke }} />
+                )}
+                {f.ring && (
+                  <div
+                    className="absolute inset-0 pointer-events-none"
+                    style={{ borderRadius, boxShadow: `inset 0 0 0 ${(f.ring.width * canvasShort) / 800}px ${hexRgba(f.ring.hex, f.ring.opacity)}` }}
+                  />
                 )}
                </div>
               </div>

@@ -137,10 +137,7 @@ export function placeholderPlane() {
     ph.width = 64;
     ph.height = 86;
     const c = ph.getContext("2d");
-    const g = c.createLinearGradient(0, 0, 0, 86);
-    g.addColorStop(0, "#FFFFFF");
-    g.addColorStop(1, "#FF47BC");
-    c.fillStyle = g;
+    c.fillStyle = "#EDEDED";
     c.fillRect(0, 0, 64, 86);
   }
   return ph;

@@ -2,7 +2,7 @@ import { useRef, useState, useEffect } from "react";
 import { hexRgba } from "../lib/frameUtils.js";
 import { sampleShots, vidClamp } from "../lib/videoMath.js";
 import { sampleDeviceAnim, shotAnimPose } from "../lib/shotAnim.js";
-import { sampleShotFrames } from "../lib/frameKeys.js";
+import { sampleShotFrames, clipOf, isClipped, featherOf } from "../lib/frameKeys.js";
 import { frameRect, cornersOf } from "../lib/frameModel.js";
 import { frameFade } from "../lib/frameFade.js";
 import { planeBackFacing, sortByDepth, projectPlane, drawPlane3D, placeholderPlane, planeGrid } from "../lib/plane3d.js";
@@ -33,7 +33,7 @@ export function FrameTemplateThumb({ tpl, frames }) {
               transform: "translate(-50%, -50%)",
               borderRadius: `${tpl.radius}%`,
               boxSizing: "border-box",
-              background: url ? `center / cover url(${url})` : "linear-gradient(180deg, #FFFFFF 0%, #FF47BC 100%)",
+              background: `center / cover url(${url ?? PLACEHOLDER_SRC})`,
               border: st ? `${Math.max(1, st.width * k * 2)}px solid ${hexRgba(st.hex, st.opacity)}` : undefined,
               boxShadow: sh ? `${sh.x * k}px ${sh.y * k}px ${sh.blur * k}px ${sh.spread * k}px ${hexRgba(sh.hex, sh.opacity)}` : "none",
             }}
@@ -56,6 +56,9 @@ export function templateBackground(t) {
 // ~18 stills per second of preview, so neighbouring frames are nearly identical and the blend reads as motion
 const vtCount = (tpl) => Math.min(90, Math.max(30, Math.round(Math.min(tpl.duration, 5) * 18)));
 const VT_W = 312, VT_H = 416;
+const featherBuf = document.createElement("canvas"); // scratch layer for a plane with a soft edge
+featherBuf.width = VT_W;
+featherBuf.height = VT_H;
 const HOLD_FADE = 200; // ms the end of the loop eases back into the start
 const reduceMotion = () => !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 // p (0-1) -> [index of the frame, blend toward the next one]
@@ -71,6 +74,8 @@ const vtLoad = (src) =>
     im.onerror = () => res(null);
     im.src = src;
   });
+
+const PLACEHOLDER_SRC = `${import.meta.env.BASE_URL}mockup-defaults/frame.png`;
 
 // Card: a still of the device at rest, and on hover a loop of real renders along the template's camera path.
 export function VideoTemplateCard({ tpl, index, label, active, renderKey, renderStills, onApply }) {
@@ -222,7 +227,7 @@ export function VideoTemplateCard({ tpl, index, label, active, renderKey, render
 // Draws the real frames at time t straight onto the card canvas (cover-fit, same maths as renderFrameCanvas).
 // Not drawn live: drop shadows, blur, noise, status bar and social UI.
 function drawLiveScene(ctx, live, t) {
-  const { box, frames, shots, bg, imgs } = live;
+  const { box, frames, shots, bg, imgs, ph } = live;
   ctx.clearRect(0, 0, VT_W, VT_H);
   const k = Math.max(VT_W / box.w, VT_H / box.h);
   ctx.save();
@@ -232,7 +237,7 @@ function drawLiveScene(ctx, live, t) {
   const poses = sampleShotFrames(shots, t) ?? {};
   const posed = frames.map((f) => {
     const p = poses[f.id];
-    return p ? { ...f, x: p.x, y: p.y, w: Math.round(p.w), h: Math.round(p.h), s: p.s, r: p.r ?? 0, rx: p.rx ?? 0, ry: p.ry ?? 0, z: p.z ?? 0, sh: p.sh ?? 0 } : f;
+    return p ? { ...f, x: p.x, y: p.y, w: Math.round(p.w), h: Math.round(p.h), s: p.s, r: p.r ?? 0, rx: p.rx ?? 0, ry: p.ry ?? 0, z: p.z ?? 0, sh: p.sh ?? 0, ...clipOf(p) } : f;
   });
   sortByDepth(posed).forEach((fr) => {
     const f = fr;
@@ -252,24 +257,54 @@ function drawLiveScene(ctx, live, t) {
       if (rr.width < 2 || rr.height < 2) return; // hidden plane (shrunk to almost nothing). Canvas has no camera clipping, so it would project to a stray rectangle
       if ((fr.z ?? 0) >= fr.rig.persp * 0.95) return; // at or past the camera
       const proj = (u, v) => projectPlane(fr, rr, box, u, v);
-      const im = imgs.get(f.id);
+      const im = imgs.get(f.id) ?? ph;
       ctx.save();
       ctx.globalAlpha = vidClamp(a, 0, 1);
       ctx.translate(ax * box.w, -ay * box.h);
+      if (isClipped(fr)) {
+        const l = fr.cl ?? 0, t = fr.ct ?? 0, r = 1 - (fr.cr ?? 0), b = 1 - (fr.cb ?? 0);
+        ctx.beginPath();
+        [[l, t], [r, t], [r, b], [l, b]].forEach(([u, v], n) => {
+          const [px, py] = proj(u, v);
+          if (n) ctx.lineTo(px, py);
+          else ctx.moveTo(px, py);
+        });
+        ctx.closePath();
+        ctx.clip();
+      }
+      const fe = featherOf(fr);
+      let g = ctx; // a plane with a soft edge is drawn on the scratch layer first
+      if (fe) {
+        g = featherBuf.getContext("2d");
+        g.setTransform(1, 0, 0, 1, 0, 0);
+        g.clearRect(0, 0, featherBuf.width, featherBuf.height);
+        g.setTransform(ctx.getTransform());
+      }
       if (im) {
         const sc = Math.max(rr.width / im.naturalWidth, rr.height / im.naturalHeight);
         const vw = rr.width / sc, vh = rr.height / sc;
-        drawPlane3D(ctx, im, { x: (im.naturalWidth - vw) / 2, y: (im.naturalHeight - vh) / 2, w: vw, h: vh }, proj, ...planeGrid(fr));
+        drawPlane3D(g, im, { x: (im.naturalWidth - vw) / 2, y: (im.naturalHeight - vh) / 2, w: vw, h: vh }, proj, ...planeGrid(fr));
       } else {
-        drawPlane3D(ctx, placeholderPlane(), { x: 0, y: 0, w: 64, h: 86 }, proj, ...planeGrid(fr));
+        drawPlane3D(g, placeholderPlane(), { x: 0, y: 0, w: 64, h: 86 }, proj, ...planeGrid(fr));
       }
       if (fr.sh > 0) {
         const q = [proj(0, 0), proj(1, 0), proj(1, 1), proj(0, 1)];
-        ctx.fillStyle = `rgba(0,0,0,${fr.sh})`;
-        ctx.beginPath();
-        q.forEach(([px, py], n) => (n ? ctx.lineTo(px, py) : ctx.moveTo(px, py)));
-        ctx.closePath();
-        ctx.fill();
+        g.fillStyle = `rgba(0,0,0,${fr.sh})`;
+        g.beginPath();
+        q.forEach(([px, py], n) => (n ? g.lineTo(px, py) : g.moveTo(px, py)));
+        g.closePath();
+        g.fill();
+      }
+      if (fe) {
+        const [x0, y0] = proj(...fe.p0), [x1, y1] = proj(...fe.p1);
+        const gr = g.createLinearGradient(x0, y0, x1, y1);
+        (fe.stops ?? [[0, 1], [1, 0]]).forEach(([p, a]) => gr.addColorStop(p, `rgba(0,0,0,${a})`));
+        g.globalCompositeOperation = "destination-in";
+        g.fillStyle = gr;
+        g.fillRect(-box.w, -box.h, box.w * 3, box.h * 3);
+        g.globalCompositeOperation = "source-over";
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.drawImage(featherBuf, 0, 0);
       }
       ctx.restore();
       return;
@@ -293,11 +328,11 @@ function drawLiveScene(ctx, live, t) {
       const dw = im.naturalWidth * s, dh = im.naturalHeight * s;
       ctx.drawImage(im, r.left + (r.width - dw) / 2, r.top + (r.height - dh) / 2, dw, dh);
     } else {
-      const g = ctx.createLinearGradient(0, r.top, 0, r.top + r.height);
-      g.addColorStop(0, "#FFFFFF");
-      g.addColorStop(1, "#FF47BC");
-      ctx.fillStyle = g;
-      ctx.fillRect(r.left, r.top, r.width, r.height);
+      if (ph) {
+        const s = Math.max(r.width / ph.naturalWidth, r.height / ph.naturalHeight);
+        const dw = ph.naturalWidth * s, dh = ph.naturalHeight * s;
+        ctx.drawImage(ph, r.left + (r.width - dw) / 2, r.top + (r.height - dh) / 2, dw, dh);
+      }
     }
     const st = fr.stroke;
     if (st?.on && st.width > 0) {
@@ -373,8 +408,10 @@ export function FrameVideoTemplateCard({ tpl, index, label, active, renderKey, r
             if (im) imgs.set(f.id, im);
           })
         );
+        const ph = await vtLoad(PLACEHOLDER_SRC);
         if (dead) return;
         live.imgs = imgs;
+        live.ph = ph;
         c.live = live;
       }
       const T = Math.min(live.duration, 5) * 1000, HOLD = 500, t0 = performance.now();
