@@ -820,7 +820,10 @@ export function FadeScrollerY({ children, className = "", wrapClassName = "", fa
     setEdge((p) => (p.top === top && p.bottom === bottom ? p : { top, bottom }));
   }, []);
 
-  useLayoutEffect(measure);
+  useEffect(() => {
+    const id = requestAnimationFrame(measure);
+    return () => cancelAnimationFrame(id);
+  });
 
   useEffect(() => {
     const el = ref.current;

@@ -70,7 +70,8 @@ import { loadFont } from "./lib/fontCatalog.js";
 import {
   DEVICE_CATEGORIES, cropImageToDataUrl, surfaceHex, formatEditedAt, useFileDrop, seekVideo, loadVideoMeta,
 } from "./lib/appUtils.js";
-import { loadProjects, syncProjects, packProject, hydrateProject } from "./lib/projectStore.js";
+import { packProject, hydrateProject } from "./lib/projectStore.js";
+import { useProjects } from "./hooks/useProjects.js";
 import { Toaster } from "./components/Toaster.jsx";
 import { toast } from "./lib/toast.js";
 import {
@@ -91,12 +92,23 @@ import { ProjectsPage } from "./components/ProjectsPage.jsx";
 import { ProjectCard } from "./components/ProjectCard.jsx";
 import { MoveModal } from "./components/MoveModal.jsx";
 import { RenameModal } from "./components/RenameModal.jsx";
-import { useDismissable, CTX_ITEM, CTX_DANGER, CTX_DIVIDER, CtxMenu } from "./components/timelineParts.jsx";
+import { useDismissable, CTX_ITEM } from "./components/timelineParts.jsx";
 import { FrameTemplateThumb, templateBackground, VideoTemplateCard, FrameVideoTemplateCard } from "./components/TemplateCards.jsx";
 import { SocialControls } from "./components/SocialControls.jsx";
 import { FrameLayer } from "./components/FrameLayer.jsx";
 import { VideoTimeline } from "./components/VideoTimeline.jsx";
 import { AppStyles } from "./components/AppStyles.jsx";
+import { GradientFxPopup } from "./components/GradientFxPopup.jsx";
+import { ExportMenu } from "./components/ExportMenu.jsx";
+import { ProjectMenu } from "./components/ProjectMenu.jsx";
+import { EffectPopup, AnimEffectPopup } from "./components/EffectPopups.jsx";
+import { FxAddMenu } from "./components/FxAddMenu.jsx";
+import { FrameContextMenu } from "./components/FrameContextMenu.jsx";
+import { FrameAssetList } from "./components/FrameAssetList.jsx";
+import { AnimAssetList } from "./components/AnimAssetList.jsx";
+import { useFrameOps } from "./hooks/useFrameOps.js";
+import { renderFrameCanvas as renderFrameCanvasLib } from "./lib/renderFrameCanvas.js";
+import { useVideoTimeline } from "./hooks/useVideoTimeline.js";
 import {
   CUSTOM_FINISH,
   WATCH_STRAPS,
@@ -135,6 +147,7 @@ import { useBlockStrayFileDrops } from "./hooks/useBlockStrayFileDrops.js";
 import { FrameAppearance } from "./panels/FrameAppearance.jsx";
 import { FrameScreenInterface } from "./panels/FrameScreenInterface.jsx";
 import { DevicePanel } from "./panels/DevicePanel.jsx";
+import { useEditorHistory } from "./hooks/useEditorHistory.js";
 import {
   VIDEO_FORMATS, VIDEO_RESOLUTIONS, VIDEO_SPEEDS, VIDEO_FPS_OPTIONS,
   fitVideoDims, estimateVideoBytes, encodeVideoFrames,
@@ -179,60 +192,14 @@ import {
   CircleHalf,
   Drop,
   Sparkle, Grains, DotsNine, Waves, Checkerboard, Aperture, GridFour, LineSegments, ChartBar, Asterisk, SquaresFour, Diamond, Lightning, Money,
-  ArrowSquareOut,
-  LinkSimple,
-  PushPin,
-  PencilSimple,
 } from "@phosphor-icons/react";
 
-// Frame-tab effects: labels come from EFFECT_TYPE_OPTIONS, so they always match the type dropdown
-const FRAME_FX = ALL_EFFECT_OPTIONS.map((o) => ({ type: o.value, label: o.label, Icon: FX_ICON[o.value] ?? Drop }));
-const FRAME_FX_OPTIONS = FRAME_FX.map((x) => ({ value: x.type, label: x.label, Icon: x.Icon }));
-// Mockup tab: only the shared effects (shadow, blur and noise are frame-only)
-const MOCKUP_FX = FRAME_FX.filter((x) => SHARED_FX[x.type] || x.type === "layerBlur");
-const MOCKUP_FX_OPTIONS = MOCKUP_FX.map((x) => ({ value: x.type, label: x.label, Icon: x.Icon }));
-// Gradient background filters
-const GRAD_FX_ICON = {
-  grain: Grains, halftone: DotsNine, warp: Waves, dither: Checkerboard, lens: Aperture,
-  pixelate: GridFour, hatching: LineSegments, pistons: ChartBar, asciiwave: Asterisk, collapsinggrid: SquaresFour, patternrefraction: Diamond, glitch: Lightning, banknote: Money,
-};
-const GRAD_FX_LIST = GRAD_FX_TYPES.map((o) => ({ type: o.value, label: o.label, Icon: GRAD_FX_ICON[o.value] ?? Drop }));
-const GRAD_FX_OPTIONS = GRAD_FX_LIST.map((x) => ({ value: x.type, label: x.label, Icon: x.Icon }));
-// color-picker targets for gradient filter colors: [hex key, opacity key]
-const GFX_COLOR = {
-  "gfx-mono": ["monoHex"], "gfx-bg": ["bgHex", "bgOpacity"], "gfx-fg": ["fgHex", "fgOpacity"],
-  "gfx-wave": ["waveHex"], "gfx-wavebg": ["waveBgHex"],
-  "gfx-ink": ["inkHex", "inkOpacity"], "gfx-paper": ["paperHex", "paperOpacity"], "gfx-accent": ["accentHex", "accentOpacity"],
-};
-
-// Original pixel size of a frame's image (the crop if it has one), or null for empty frames
-const nativeSizeOf = (f) =>
-  f?.img ? (f.img.crop ? { w: f.img.crop.width, h: f.img.crop.height } : { w: f.img.nw, h: f.img.nh }) : null;
-
-const FRAME_BROWSER_DEFAULT = { on: false, type: "safari", theme: "light", tabs: "top", url: "bezel.app" };
-
-const NAV = (() => {
-  try { return JSON.parse(localStorage.getItem("bezel:nav")) ?? {}; } catch { return {}; }
-})();
-
-const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
-const PROJECTS_PATH = `${BASE}/projects`;
-const isProjectsPath = () => {
-  const p = window.location.pathname.replace(/\/+$/, "");
-  return p === PROJECTS_PATH || p.startsWith(`${PROJECTS_PATH}/`);
-};
-
-// Color the depth shade blends toward: a solid background exactly, otherwise white on light backgrounds and black on dark ones
-const depthTintOf = (s) => {
-  const lum = (hex) => {
-    const n = parseInt(hex || "000000", 16);
-    return (0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255;
-  };
-  if (s.bgType === "solid") return `#${s.bgHex}`;
-  if (s.bgType === "gradient" && s.gradientStops?.length)
-    return s.gradientStops.reduce((a, x) => a + lum(x.hex), 0) / s.gradientStops.length > 0.5 ? "#FFFFFF" : "#000000";
-  return "#000000";
-};
+import {
+  FRAME_FX, FRAME_FX_OPTIONS, MOCKUP_FX, MOCKUP_FX_OPTIONS,
+  GRAD_FX_ICON, GRAD_FX_LIST, GRAD_FX_OPTIONS, GFX_COLOR,
+  nativeSizeOf, FRAME_BROWSER_DEFAULT, NAV, BASE, GUIDE, yieldNow,
+  depthTintOf,
+} from "./lib/appConstants.js";
 
 export default function App() {
  const sceneRef = useRef(null);
@@ -618,6 +585,8 @@ const handleFrameScale = (pct) => {
 
 const toolbarModeRef = useRef(toolbarMode);
 toolbarModeRef.current = toolbarMode;
+const tabKeyRef = useRef(tabKey);
+tabKeyRef.current = tabKey;
 const vidUploadRef = useRef(null); // set later: uploads a file to the selected / current shot
   const pickTargetRef = useRef(null); // frame id whose image the file picker should replace, or null = add
   const frameUploadRef = useRef(null);
@@ -808,320 +777,6 @@ frameUploadRef.current = addFrameImage;
     setDraggingId(null);
     setFrameDrop(null);
   };
-  const renderFrameAssets = () => {
-    const rows = [...frames];
-    const n = frames.length;
-    return (
-      <div className="flex flex-col gap-1">
-        <div className="flex items-center justify-between h-8">
-          <span className="text-[12px] font-medium tracking-[-0.005em] text-[#737373] dark:text-[#ABABAB]">
-            {n} {n === 1 ? "Asset" : "Assets"}
-          </span>
-          <button
-            type="button"
-            disabled={!frames.some((f) => f.img) && n <= 1}
-            onClick={() => deleteFrames(frames.map((f) => f.id))}
-            className="h-6 px-1.5 rounded-md text-[12px] font-medium tracking-[-0.005em] text-[#737373] dark:text-[#ABABAB] hover:bg-[#F04438]/10 hover:text-[#F04438] transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[#737373]"
-          >
-            Clear all
-          </button>
-        </div>
-
-        <div className="flex flex-col">
-          {rows.map((f, i) => {
-            const selected = selectedIds.includes(f.id);
-            const thumb = f.img ? (f.img.cropUrl ?? f.img.url) : `${import.meta.env.BASE_URL}mockup-defaults/frame.png`;
-            const select = (shift) => {
-              setSelectedTextId(null);
-              setSelectedIds((ids) => (shift ? (ids.includes(f.id) ? ids.filter((x) => x !== f.id) : [...ids, f.id]) : [f.id]));
-            };
-            return (
-              <div
-                key={f.id}
-                role="button"
-                tabIndex={0}
-                draggable
-                data-asset-row={`framerow-${f.id}`}
-                onDragStart={(e) => {
-                  dragIdRef.current = f.id;
-                  e.dataTransfer.effectAllowed = "move";
-                  e.dataTransfer.setData("text/plain", String(f.id));
-                  setTimeout(() => setDraggingId(f.id), 0); // deferred so the drag ghost stays opaque
-                }}
-                onDragOver={(e) => {
-                  if (dragIdRef.current == null) return;
-                  e.preventDefault();
-                  e.dataTransfer.dropEffect = "move";
-                  if (dragIdRef.current === f.id) return setFrameDrop(null);
-                  const r = e.currentTarget.getBoundingClientRect();
-                  const pos = e.clientY < r.top + r.height / 2 ? "before" : "after";
-                  setFrameDrop((p) => (p && p.id === f.id && p.pos === pos ? p : { id: f.id, pos }));
-                }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  if (dragIdRef.current != null && frameDrop) moveFrameRow(dragIdRef.current, frameDrop.id, frameDrop.pos);
-                  endFrameDrag();
-                }}
-                onDragEnd={endFrameDrag}
-                onClick={(e) => select(e.shiftKey)}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  if (!selected) {
-                    setSelectedTextId(null);
-                    setSelectedIds([f.id]);
-                  }
-                  openFrameMenu({ x: e.clientX, y: e.clientY, fromPanel: true });
-                }}
-                onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && select(e.shiftKey)}
-                className={`group relative flex items-center h-11 pl-1 pr-1 gap-2 rounded-lg cursor-grab active:cursor-grabbing transition-[background-color,opacity] duration-100 ${
-                  selected ? "bg-[#FF47BC]/10" : "hover:bg-[#F2F2F2] dark:hover:bg-[#1F1F1F]"
-                } ${draggingId === f.id ? "opacity-40" : ""} ${draggingId !== null ? "[&>*]:pointer-events-none" : ""}`}
-              >
-                {frameDrop?.id === f.id && (
-                  <div
-                    aria-hidden
-                    className={`absolute left-0 right-0 h-0.5 bg-[#FF47BC] pointer-events-none z-10 ${
-                      frameDrop.pos === "before" ? "-top-px" : "-bottom-px"
-                    }`}
-                  >
-                    <span className="absolute -left-0.5 -top-[3px] w-2 h-2 rounded-full bg-[#FAF9FA] dark:bg-[#171717] border-2 border-[#FF47BC]" />
-                  </div>
-                )}
-                <span className="w-4 shrink-0 text-center text-[12px] font-medium tabular-nums text-[#737373] dark:text-[#ABABAB]">{i + 1}</span>
-                <div
-                  aria-label={f.img ? "Frame image" : "Add image"}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setSelectedIds([f.id]);
-                    if (!f.img) pickFrameFile([f.id]); // only empty frames accept an image here
-                  }}
-                  className={`w-8 h-8 rounded-md shrink-0 bg-cover bg-center bg-[#EDEDED] dark:bg-[#292929] border border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10 ${f.img ? "cursor-default" : "cursor-pointer"} ${f.hidden ? "opacity-40" : ""}`}
-                  style={thumb ? { backgroundImage: `url(${thumb})` } : undefined}
-                />
-                <span
-                  className={`flex-1 min-w-0 truncate text-[13px] font-medium tracking-[-0.005em] transition-colors ${
-                    selected ? "text-[#3A3A3A] dark:text-[#FAF9FA]" : "text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
-                  } ${f.hidden ? "opacity-50" : ""}`}
-                >
-                  {f.img?.label ?? `Default ${i + 1}`}{f.locked ? " (locked)" : ""}
-                </span>
-                <Tooltip label="Crop" placement="bottom" className="shrink-0">
-                  <button
-                    type="button"
-                    aria-label="Crop"
-                    disabled={!f.img || !!f.img.video}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setFrameCropId(f.id);
-                    }}
-                    className="group flex items-center justify-center w-5 h-5 shrink-0 rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition-[background-color,transform] duration-150 active:scale-[0.94] disabled:opacity-30 disabled:cursor-not-allowed"
-                  >
-                    <Crop size={14} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-enabled:group-hover:text-[#3A3A3A] dark:group-enabled:group-hover:text-[#FAF9FA] transition-colors" />
-                  </button>
-                </Tooltip>
-                <Tooltip label={f.hidden ? "Show" : "Hide"} placement="bottom" className="shrink-0 -ml-1">
-                  <button
-                    type="button"
-                    aria-label={f.hidden ? "Show" : "Hide"}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setFrames((prev) => prev.map((x) => (x.id === f.id ? { ...x, hidden: !x.hidden } : x)));
-                    }}
-                    className="group flex items-center justify-center w-5 h-5 shrink-0 rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition-[background-color,transform] duration-150 active:scale-[0.94]"
-                  >
-                    {f.hidden ? (
-                      <EyeSlash size={14} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
-                    ) : (
-                      <Eye size={14} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
-                    )}
-                  </button>
-                </Tooltip>
-                <Tooltip label="Delete frame" placement="bottom" className="shrink-0 -ml-1">
-                  <button
-                    type="button"
-                    aria-label="Delete frame"
-                    disabled={n === 1 && !f.img}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      deleteFrames([f.id]);
-                    }}
-                    className="group/x flex items-center justify-center w-5 h-5 shrink-0 rounded-md hover:bg-[#F04438]/10 transition-[background-color,transform] duration-150 active:scale-[0.94] disabled:opacity-30 disabled:cursor-not-allowed"
-                  >
-                    <X size={14} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover/x:text-[#F04438] transition-colors" />
-                  </button>
-                </Tooltip>
-              </div>
-            );
-          })}
-          {mediaLoading > 0 && (
-            <div className="flex items-center h-11 pl-1 pr-1 gap-2">
-              <Skeleton className="w-4 h-3 rounded" />
-              <Skeleton className="w-8 h-8 rounded-md shrink-0" />
-              <Skeleton className="flex-1 h-3 rounded" />
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  };
-  const renderAnimAssets = () => {
-    const n = animAssetCount(frames);
-    const pool = animPool().slice(0, n);
-    const filled = pool.some(Boolean);
-    const pickSlot = (i) => {
-      setAnimSel(i);
-      animSlotRef.current = i;
-      pickFrameFile(null);
-    };
-    return (
-      <div className="flex flex-col gap-1">
-        <div className="flex items-center justify-between h-8">
-          <span className="text-[12px] font-medium tracking-[-0.005em] text-[#737373] dark:text-[#ABABAB]">
-            {n} {n === 1 ? "Asset" : "Assets"}
-          </span>
-          <button
-            type="button"
-            disabled={!filled}
-            onClick={clearAnimAssets}
-            className="h-6 px-1.5 rounded-md text-[12px] font-medium tracking-[-0.005em] text-[#737373] dark:text-[#ABABAB] hover:bg-[#F04438]/10 hover:text-[#F04438] transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[#737373]"
-          >
-            Clear all
-          </button>
-        </div>
-
-        <div className="flex flex-col">
-          {pool.map((img, i) => {
-            const fr = frames[i];
-            const selected = animSel === i;
-            const hidden = !!fr?.hidden;
-            const thumb = img ? (img.cropUrl ?? img.url) : defaultAnimImage(i).url;
-            return (
-              <div
-                key={i}
-                role="button"
-                tabIndex={0}
-                draggable
-                data-asset-row={`animrow-${i}`}
-                onDragStart={(e) => {
-                  animDragRef.current = i;
-                  e.dataTransfer.effectAllowed = "move";
-                  e.dataTransfer.setData("text/plain", String(i));
-                  setTimeout(() => setAnimDragFrom(i), 0); // deferred so the drag ghost stays opaque
-                }}
-                onDragOver={(e) => {
-                  if (animDragRef.current == null) return;
-                  e.preventDefault();
-                  e.dataTransfer.dropEffect = "move";
-                  if (animDragRef.current === i) return setAnimDrop(null);
-                  const r = e.currentTarget.getBoundingClientRect();
-                  const pos = e.clientY < r.top + r.height / 2 ? "before" : "after";
-                  setAnimDrop((p) => (p && p.idx === i && p.pos === pos ? p : { idx: i, pos }));
-                }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  if (animDragRef.current != null && animDrop) moveAnimAsset(animDragRef.current, animDrop.idx, animDrop.pos);
-                  endAnimDrag();
-                }}
-                onDragEnd={endAnimDrag}
-                onClick={() => setAnimSel(i)}
-                onPointerEnter={() => setAnimHover(i)}
-                onPointerLeave={() => setAnimHover(null)}
-                onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setAnimSel(i)}
-                className={`group relative flex items-center h-11 pl-1 pr-1 gap-2 rounded-lg cursor-grab active:cursor-grabbing transition-[background-color,opacity] duration-100 ${
-                  selected
-                    ? "bg-[#FF47BC]/10"
-                    : animHover === i
-                    ? "bg-[#F2F2F2] dark:bg-[#1F1F1F]"
-                    : "hover:bg-[#F2F2F2] dark:hover:bg-[#1F1F1F]"
-                } ${animDragFrom === i ? "opacity-40" : ""} ${animDragFrom !== null ? "[&>*]:pointer-events-none" : ""}`}
-              >
-                {animDrop?.idx === i && (
-                  <div
-                    aria-hidden
-                    className={`absolute left-0 right-0 h-0.5 bg-[#FF47BC] pointer-events-none z-10 ${
-                      animDrop.pos === "before" ? "-top-px" : "-bottom-px"
-                    }`}
-                  >
-                    <span className="absolute -left-0.5 -top-[3px] w-2 h-2 rounded-full bg-[#FAF9FA] dark:bg-[#171717] border-2 border-[#FF47BC]" />
-                  </div>
-                )}
-                <span className="w-4 shrink-0 text-center text-[12px] font-medium tabular-nums text-[#737373] dark:text-[#ABABAB]">{i + 1}</span>
-                <div
-                  aria-label={img ? "Replace image" : "Add image"}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    pickSlot(i); // fills an empty slot, or replaces this slot's image
-                  }}
-                  className={`w-8 h-8 rounded-md shrink-0 bg-cover bg-center bg-[#EDEDED] dark:bg-[#292929] border border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10 cursor-pointer ${hidden ? "opacity-40" : ""}`}
-                  style={thumb ? { backgroundImage: `url(${thumb})` } : undefined}
-                />
-                <span
-                  className={`flex-1 min-w-0 truncate text-[13px] font-medium tracking-[-0.005em] transition-colors ${
-                    selected || animHover === i ? "text-[#3A3A3A] dark:text-[#FAF9FA]" : "text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA]"
-                  } ${hidden ? "opacity-50" : ""}`}
-                >
-                  {img?.label ?? defaultAnimImage(i).label}
-                </span>
-                <Tooltip label="Crop" placement="bottom" className="shrink-0">
-                  <button
-                    type="button"
-                    aria-label="Crop"
-                    disabled={!img || !!img.video || !fr}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setFrameCropId(fr.id);
-                    }}
-                    className="group flex items-center justify-center w-5 h-5 shrink-0 rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition-[background-color,transform] duration-150 active:scale-[0.94] disabled:opacity-30 disabled:cursor-not-allowed"
-                  >
-                    <Crop size={14} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-enabled:group-hover:text-[#3A3A3A] dark:group-enabled:group-hover:text-[#FAF9FA] transition-colors" />
-                  </button>
-                </Tooltip>
-                <Tooltip label={hidden ? "Show" : "Hide"} placement="bottom" className="shrink-0 -ml-1">
-                  <button
-                    type="button"
-                    aria-label={hidden ? "Show" : "Hide"}
-                    disabled={!img || !fr}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setFrames((prev) => prev.map((x, k) => ((x.asset ?? k) === i ? { ...x, hidden: !x.hidden } : x)));
-                    }}
-                    className="group flex items-center justify-center w-5 h-5 shrink-0 rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition-[background-color,transform] duration-150 active:scale-[0.94] disabled:opacity-30 disabled:cursor-not-allowed"
-                  >
-                    {hidden ? (
-                      <EyeSlash size={14} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-enabled:group-hover:text-[#3A3A3A] dark:group-enabled:group-hover:text-[#FAF9FA] transition-colors" />
-                    ) : (
-                      <Eye size={14} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-enabled:group-hover:text-[#3A3A3A] dark:group-enabled:group-hover:text-[#FAF9FA] transition-colors" />
-                    )}
-                  </button>
-                </Tooltip>
-                <Tooltip label="Remove" placement="bottom" className="shrink-0 -ml-1">
-                  <button
-                    type="button"
-                    aria-label="Remove"
-                    disabled={!img}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      removeAnimAsset(i);
-                    }}
-                    className="group/x flex items-center justify-center w-5 h-5 shrink-0 rounded-md hover:bg-[#F04438]/10 transition-[background-color,transform] duration-150 active:scale-[0.94] disabled:opacity-30 disabled:cursor-not-allowed"
-                  >
-                    <X size={14} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover/x:text-[#F04438] transition-colors" />
-                  </button>
-                </Tooltip>
-              </div>
-            );
-          })}
-          {mediaLoading > 0 && (
-            <div className="flex items-center h-11 pl-1 pr-1 gap-2">
-              <Skeleton className="w-4 h-3 rounded" />
-              <Skeleton className="w-8 h-8 rounded-md shrink-0" />
-              <Skeleton className="flex-1 h-3 rounded" />
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  };
   const clearAnimAssets = () => {
     assetPoolRef.current = [];
     const next = framesLatestRef.current.map((f) => ({ ...f, img: null }));
@@ -1130,47 +785,19 @@ frameUploadRef.current = addFrameImage;
     setTimeout(() => reapplyAnimRef.current?.(), 0);
   };
 
-    // Duplicate: copies each selected image frame, nudged down-right, on top of the stack.
-  const duplicateSelected = () => {
-    const sel = frames.filter((f) => selectedIds.includes(f.id) && f.img);
-    if (!sel.length) return;
-    const copies = sel.map((f) => ({
-      ...f,
-      id: nextFrameIdRef.current++,
-      x: f.x + 0.03,
-      y: f.y + 0.03,
-      img: { ...f.img },
-      corners: f.corners ? [...f.corners] : null,
-      stroke: { ...f.stroke },
-      social: { ...f.social },
-      browser: f.browser ? { ...f.browser } : undefined,
-      effects: f.effects.map((e) => ({ ...e })),
-      backStops: f.backStops.map((s) => ({ ...s })),
-    }));
-    const next = [...frames, ...copies];
-    framesLatestRef.current = next;
-    setFrames(next);
-    setSelectedIds(copies.map((c) => c.id));
-    toast(copies.length > 1 ? `${copies.length} frames duplicated` : "Frame duplicated");
-  };
-
-  // Adds an empty frame next to the selected one, with the same look. Its timeline row is created by the effect.
-  const addBlankFrame = () => {
-    const prev = framesLatestRef.current;
-    const base = prev.find((f) => selectedIdsRef.current.includes(f.id)) ?? prev[prev.length - 1];
-    const id = nextFrameIdRef.current++;
-    // fresh frame at the canvas center (the base's current pose can be an off-screen animation pose)
-    const blank = { ...cloneFrame(base, id), img: null, x: 0, y: 0, w: FRAME_DEFAULT_SIZE.w, h: FRAME_DEFAULT_SIZE.h, s: null, r: 0, hidden: false, locked: false, flipX: false, flipY: false };
-    const next = [...prev, blank];
-    framesLatestRef.current = next;
-    setFrames(next);
-    setSelectedIds([id]);
-  };
+  const {
+    frameClipRef,
+    duplicateSelected, addBlankFrame, copyFrames, pasteFrames, reorderSelected,
+    toggleHideSelected, toggleLockSelected, flipSelected,
+    alignSelected, isFrameAligned, distributeSelected,
+  } = useFrameOps({
+    frames, setFrames, selectedIds, setSelectedIds,
+    framesLatestRef, selectedIdsRef, frameSizeRef, nextFrameIdRef,
+    markFrameEdit: () => markFrameEdit(),
+  });
 
     // ---- Frame right-click menu, clipboard and per-frame actions ----
   const [frameMenu, setFrameMenu] = useState(null); // { left, top?, bottom?, point }
-  const frameClipRef = useRef(null);
-  const pasteNudgeRef = useRef(0);
   useDismissable(!!frameMenu, "[data-frame-menu]", () => setFrameMenu(null));
 
   const openFrameMenu = ({ x, y, fromPanel = false }) => {
@@ -1185,97 +812,6 @@ frameUploadRef.current = addFrameImage;
   // Asks the timeline to open something that lives in it (enter / exit popover, rename)
   const [tlRequest, setTlRequest] = useState(null);
   const askTimeline = (req) => setTlRequest({ ...req, n: Date.now() });
-
-  const copyFrames = () => {
-    const sel = framesLatestRef.current.filter((f) => selectedIdsRef.current.includes(f.id));
-    if (!sel.length) return;
-    frameClipRef.current = sel.map((f) => cloneFrame(f, f.id));
-    pasteNudgeRef.current = 0;
-    toast(sel.length > 1 ? `${sel.length} frames copied` : "Frame copied");
-  };
-
-  // point = canvas px (from the menu): the pasted group is centered there. No point: nudged down-right, like Duplicate.
-  const pasteFrames = (point = null) => {
-    const clip = frameClipRef.current;
-    const box = frameSizeRef.current;
-    if (!clip?.length || !box) return false;
-    const short = Math.min(box.w, box.h);
-    let dx = 0, dy = 0;
-    if (point) {
-      const rects = clip.map((f) => frameRect(f, box));
-      const gcx = (Math.min(...rects.map((r) => r.left)) + Math.max(...rects.map((r) => r.left + r.width))) / 2;
-      const gcy = (Math.min(...rects.map((r) => r.top)) + Math.max(...rects.map((r) => r.top + r.height))) / 2;
-      dx = (point.x - gcx) / short;
-      dy = (point.y - gcy) / short;
-    } else {
-      pasteNudgeRef.current += 1;
-      dx = dy = 0.03 * pasteNudgeRef.current;
-    }
-    const copies = clip.map((f) => ({
-      ...cloneFrame(f, nextFrameIdRef.current++),
-      x: f.x + dx, y: f.y + dy, hidden: false, locked: false,
-    }));
-    const next = [...framesLatestRef.current, ...copies];
-    framesLatestRef.current = next;
-    setFrames(next);
-    setSelectedIds(copies.map((c) => c.id));
-    toast(copies.length > 1 ? `${copies.length} frames pasted` : "Frame pasted");
-    return true;
-  };
-
-  // Frames render in array order, so the end of the array is the front
-  const reorderSelected = (toFront) => {
-    const ids = selectedIdsRef.current;
-    const cur = framesLatestRef.current;
-    const picked = cur.filter((f) => ids.includes(f.id));
-    if (!picked.length) return;
-    const rest = cur.filter((f) => !ids.includes(f.id));
-    const next = toFront ? [...rest, ...picked] : [...picked, ...rest];
-    if (next.every((f, i) => f === cur[i])) return;
-    framesLatestRef.current = next;
-    setFrames(next);
-  };
-
-  const toggleFrameFlag = (key) => {
-    const ids = selectedIdsRef.current;
-    const sel = framesLatestRef.current.filter((f) => ids.includes(f.id));
-    if (!sel.length) return;
-    const on = !sel.every((f) => f[key]);
-    setFrames((prev) => prev.map((f) => (ids.includes(f.id) ? { ...f, [key]: on } : f)));
-  };
-  const toggleHideSelected = () => toggleFrameFlag("hidden");
-  const toggleLockSelected = () => toggleFrameFlag("locked");
-
-  // One frame flips in place. A multi-selection also mirrors its positions around the group's center.
-  const flipSelected = (axis) => {
-    markFrameEdit();
-    const ids = selectedIdsRef.current;
-    const box = frameSizeRef.current;
-    const sel = framesLatestRef.current.filter((f) => ids.includes(f.id));
-    if (!sel.length || !box) return;
-    const short = Math.min(box.w, box.h);
-    const key = axis === "h" ? "flipX" : "flipY";
-    const pos = axis === "h" ? "x" : "y";
-    let mirror = null;
-    if (sel.length > 1) {
-      const rects = sel.map((f) => frameRect(f, box));
-      mirror = axis === "h"
-        ? (Math.min(...rects.map((r) => r.left)) + Math.max(...rects.map((r) => r.left + r.width))) / 2
-        : (Math.min(...rects.map((r) => r.top)) + Math.max(...rects.map((r) => r.top + r.height))) / 2;
-    }
-    setFrames((prev) =>
-      prev.map((f) => {
-        if (!ids.includes(f.id)) return f;
-        const n = { ...f, [key]: !f[key], r: f.r ? -f.r : f.r }; // a mirrored frame turns the other way
-        if (mirror != null) {
-          const r = frameRect(f, box);
-          const c = axis === "h" ? r.left + r.width / 2 : r.top + r.height / 2;
-          n[pos] = f[pos] + (2 * (mirror - c)) / short;
-        }
-        return n;
-      })
-    );
-  };
 
     // Z-order: frames render in array order, so later = on top. Dragging a thumbnail in the strip moves it in that array.
   const dragIdRef = useRef(null);
@@ -1299,99 +835,49 @@ frameUploadRef.current = addFrameImage;
       return next;
     });
 
-  // One frame aligns to the canvas; two or more align to the selection's bounds (like Figma).
-  const alignSelected = (kind) => {
-    markFrameEdit();
-    const box = frameSizeRef.current;
-    const sel = frames.filter((f) => selectedIds.includes(f.id));
-    if (!box || !sel.length) return;
-    const short = Math.min(box.w, box.h);
-    const rects = new Map(sel.map((f) => [f.id, frameRect(f, box)]));
-    const list = [...rects.values()];
-    const ref =
-      sel.length > 1
-        ? {
-            l: Math.min(...list.map((r) => r.left)),
-            r: Math.max(...list.map((r) => r.left + r.width)),
-            t: Math.min(...list.map((r) => r.top)),
-            b: Math.max(...list.map((r) => r.top + r.height)),
-          }
-        : { l: 0, r: box.w, t: 0, b: box.h };
-    setFrames((prev) =>
-      prev.map((f) => {
-        const r = rects.get(f.id);
-        if (!r) return f;
-        let dx = 0, dy = 0;
-        switch (kind) {
-          case "left": dx = ref.l - r.left; break;
-          case "right": dx = ref.r - (r.left + r.width); break;
-          case "hcenter": dx = (ref.l + ref.r) / 2 - (r.left + r.width / 2); break;
-          case "top": dy = ref.t - r.top; break;
-          case "bottom": dy = ref.b - (r.top + r.height); break;
-          case "vcenter": dy = (ref.t + ref.b) / 2 - (r.top + r.height / 2); break;
-        }
-        return { ...f, x: f.x + dx / short, y: f.y + dy / short };
-      })
-    );
-  };
+const [distMenu, setDistMenu] = useState(null); // { right, top }
 
-    // True when every selected frame currently sits on that alignment line
-  // (the canvas for one frame, the selection's bounds for several).
-  const isFrameAligned = (kind) => {
-    const box = frameSizeRef.current;
-    const sel = frames.filter((f) => selectedIds.includes(f.id));
-    if (!box || !sel.length) return false;
-    const rects = sel.map((f) => frameRect(f, box));
-    const ref =
-      sel.length > 1
-        ? {
-            l: Math.min(...rects.map((r) => r.left)),
-            r: Math.max(...rects.map((r) => r.left + r.width)),
-            t: Math.min(...rects.map((r) => r.top)),
-            b: Math.max(...rects.map((r) => r.top + r.height)),
-          }
-        : { l: 0, r: box.w, t: 0, b: box.h };
-    const EPS = 0.5;
-    return rects.every((r) => {
-      switch (kind) {
-        case "left": return Math.abs(r.left - ref.l) < EPS;
-        case "right": return Math.abs(r.left + r.width - ref.r) < EPS;
-        case "hcenter": return Math.abs(r.left + r.width / 2 - (ref.l + ref.r) / 2) < EPS;
-        case "top": return Math.abs(r.top - ref.t) < EPS;
-        case "bottom": return Math.abs(r.top + r.height - ref.b) < EPS;
-        case "vcenter": return Math.abs(r.top + r.height / 2 - (ref.t + ref.b) / 2) < EPS;
-        default: return false;
-      }
-    });
+// Holding Alt measures the selected frame(s) against the frame under the cursor
+const [altDown, setAltDown] = useState(false);
+const [altPoint, setAltPoint] = useState(null); // cursor in canvas px
+const altDownRef = useRef(false);
+const lastPtrRef = useRef(null);
+useEffect(() => {
+  const local = (c) => {
+    const r = canvasBoxRef.current?.getBoundingClientRect();
+    return r && c ? { x: c.x - r.left, y: c.y - r.top } : null;
   };
-
-  // Needs 3+ frames: the outer two stay put and the gaps between all of them become equal.
-  const distributeSelected = (axis) => {
-    markFrameEdit();
-    const box = frameSizeRef.current;
-    const sel = frames.filter((f) => selectedIds.includes(f.id));
-    if (!box || sel.length < 3) return;
-    const short = Math.min(box.w, box.h);
-    const horiz = axis === "h";
-    const size = (r) => (horiz ? r.width : r.height);
-    const start = (r) => (horiz ? r.left : r.top);
-    const items = sel
-      .map((f) => ({ f, r: frameRect(f, box) }))
-      .sort((a, b) => start(a.r) - start(b.r));
-    const first = start(items[0].r);
-    const lastItem = items[items.length - 1].r;
-    const gap = (start(lastItem) + size(lastItem) - first - items.reduce((sum, i) => sum + size(i.r), 0)) / (items.length - 1);
-    let cursor = first;
-    const shifts = new Map();
-    items.forEach(({ f, r }) => {
-      shifts.set(f.id, (cursor - start(r)) / short);
-      cursor += size(r) + gap;
-    });
-    const key = horiz ? "x" : "y";
-    setFrames((prev) => prev.map((f) => (shifts.has(f.id) ? { ...f, [key]: f[key] + shifts.get(f.id) } : f)));
+  const move = (e) => {
+    lastPtrRef.current = { x: e.clientX, y: e.clientY };
+    if (altDownRef.current) setAltPoint(local(lastPtrRef.current)); // state only changes while Alt is down
   };
-
-  const [distMenu, setDistMenu] = useState(null); // { right, top }
+  const down = (e) => {
+    if (e.key !== "Alt") return;
+    altDownRef.current = true;
+    setAltDown(true);
+    setAltPoint(local(lastPtrRef.current));
+  };
+  const reset = () => {
+    altDownRef.current = false;
+    setAltDown(false);
+    setAltPoint(null);
+  };
+  const up = (e) => {
+    if (e.key !== "Alt") return;
+    reset();
+    e.preventDefault(); // stops Windows / Linux from focusing the browser menu bar on release
+  };
+  window.addEventListener("pointermove", move);
+  window.addEventListener("keydown", down);
+  window.addEventListener("keyup", up);
+  window.addEventListener("blur", reset);
+  return () => {
+    window.removeEventListener("pointermove", move);
+    window.removeEventListener("keydown", down);
+    window.removeEventListener("keyup", up);
+    window.removeEventListener("blur", reset);
+  };
+}, []);
   useEffect(() => {
     if (!distMenu) return;
     const onDown = (e) => {
@@ -1564,249 +1050,26 @@ useEffect(() => {
 useEffect(() => {
   if (devicesDisabled && sidebarPanel === "create") setSidebarPanel("projects");
 }, [devicesDisabled, sidebarPanel]);
-const [savedProjects, setSavedProjects] = useState([]);
-const liveProjects = savedProjects.filter((p) => !p.deletedAt); // trashed ones only show on the Projects page
-const [projectsPageOpen, setProjectsPageOpen] = useState(isProjectsPath);
-// the URL follows the page, and back / forward buttons move the page
-useEffect(() => {
-  const onPop = () => setProjectsPageOpen(isProjectsPath());
-  window.addEventListener("popstate", onPop);
-  return () => window.removeEventListener("popstate", onPop);
-}, []);
-useEffect(() => {
-  if (isProjectsPath() === projectsPageOpen) return;
-  window.history.pushState(null, "", projectsPageOpen ? `${PROJECTS_PATH}/recent` : `${BASE}/`);
-}, [projectsPageOpen]);
-const [folders, setFolders] = useState(() => {
-  try { return JSON.parse(localStorage.getItem("bezel:folders")) ?? []; } catch { return []; }
-}); // [{ id, name }]
-useEffect(() => {
-  try { localStorage.setItem("bezel:folders", JSON.stringify(folders)); } catch {}
-}, [folders]);
-
-// ---- Projects undo / redo (separate from the editor history; saves and autosaves are never recorded) ----
-const projHistRef = useRef({ past: [], future: [] });
-const projLastRecordRef = useRef(0);
-const projCtxRef = useRef(false); // true while the last undoable action was a project / folder action (not an editor edit)
-const projTrackedIdsRef = useRef(new Set()); // ids that undo / redo may add or remove (duplicates, purged projects)
-const [, setProjHistTick] = useState(0);
-const savedProjectsRef = useRef(savedProjects);
-savedProjectsRef.current = savedProjects;
-const foldersRef = useRef(folders);
-foldersRef.current = folders;
-
-// call right before a project / folder change. Calls within 80ms merge, so bulk actions are one undo step.
-const recordProjects = () => {
-  projCtxRef.current = true;
-  const now = performance.now();
-  const merge = now - projLastRecordRef.current < 80;
-  projLastRecordRef.current = now;
-  if (merge) return;
-  const h = projHistRef.current;
-  h.past.push({ projects: savedProjectsRef.current, folders: foldersRef.current });
-  if (h.past.length > 50) h.past.shift();
-  h.future = [];
-  setProjHistTick((n) => n + 1);
-};
-// folder changes made inside the Projects page go through this
-const setFoldersTracked = (u) => {
-  recordProjects();
-  setFolders(u);
-};
-const applyProjectsSnapshot = (snap) => {
-  const cur = savedProjectsRef.current;
-  const curById = new Map(cur.map((p) => [p.id, p]));
-  const snapIds = new Set(snap.projects.map((p) => p.id));
-  // projects that exist now keep their latest saved content and only take the managed fields back
-  const restored = snap.projects.map((p) => {
-    const c = curById.get(p.id);
-    return c ? { ...c, title: p.title, pinned: p.pinned, folderId: p.folderId, deletedAt: p.deletedAt } : p;
-  });
-  // projects saved after the snapshot stay, unless undo / redo itself created or removed them
-  const kept = cur.filter((p) => !snapIds.has(p.id) && !projTrackedIdsRef.current.has(p.id));
-  const next = [...kept, ...restored];
-  setSavedProjects(next);
-  setFolders(snap.folders);
-  const open = next.find((p) => p.id === selectedProjectId);
-  if (!open || open.deletedAt) setSelectedProjectId(null);
-  else setProjectTitle(open.title);
-};
-const undoProjects = () => {
-  const h = projHistRef.current;
-  const prev = h.past.pop();
-  if (!prev) return;
-  projCtxRef.current = true;
-  h.future.push({ projects: savedProjectsRef.current, folders: foldersRef.current });
-  applyProjectsSnapshot(prev);
-  setProjHistTick((n) => n + 1);
-  toast("Undone");
-};
-const redoProjects = () => {
-  const h = projHistRef.current;
-  const next = h.future.pop();
-  if (!next) return;
-  projCtxRef.current = true;
-  h.past.push({ projects: savedProjectsRef.current, folders: foldersRef.current });
-  applyProjectsSnapshot(next);
-  setProjHistTick((n) => n + 1);
-  toast("Redone");
-};
-const canUndoProjects = projHistRef.current.past.length > 0;
-const canRedoProjects = projHistRef.current.future.length > 0;
-
-const [projectsLoaded, setProjectsLoaded] = useState(false);
-useEffect(() => {
-  let dead = false;
-  loadProjects()
-    .then((list) => {
-      if (dead) return;
-      setSavedProjects((prev) => [...prev, ...list.filter((p) => !prev.some((x) => x.id === p.id))]);
-      const open = NAV.projectId && list.find((x) => x.id === NAV.projectId);
-      if (open) {
-        openProject(open); // restores the project's own mode, camera, timeline, etc.
-        if (isProjectsPath()) setProjectsPageOpen(true); // openProject closes it, so put it back
-      }
-    })
-    .catch((err) => console.error("Loading projects failed:", err))
-    .finally(() => !dead && setProjectsLoaded(true));
-  return () => { dead = true; };
-}, []);
-// every save / rename / move / duplicate / delete goes through savedProjects, so one effect covers them all
-useEffect(() => {
-  if (projectsLoaded) syncProjects(savedProjects).catch((err) => console.error("Saving projects failed:", err));
-}, [savedProjects, projectsLoaded]);
-const [selectedProjectId, setSelectedProjectId] = useState(null);
-const [projectMenu, setProjectMenu] = useState(null); // { id, left, top?, bottom? }
-const projectMenuRef = useRef(null);
-const [moveTarget, setMoveTarget] = useState(null); // { list, done } waiting in the Move modal
-const [renamingProjectId, setRenamingProjectId] = useState(null);
-const [renameDraft, setRenameDraft] = useState("");
-const renameCancelRef = useRef(false);
+const {
+  savedProjects, setSavedProjects, liveProjects,
+  projectsPageOpen, setProjectsPageOpen, projectsLoaded,
+  selectedProjectId, setSelectedProjectId,
+  folders, setFoldersTracked,
+  projHistRef, projCtxRef, undoProjects, redoProjects, canUndoProjects, canRedoProjects,
+  projectMenu, setProjectMenu, projectMenuRef, toggleProjectMenu,
+  moveTarget, setMoveTarget,
+  renamingProjectId, setRenamingProjectId, renameDraft, setRenameDraft, renameCancelRef,
+  handleOpenProjectInNewTab, handleCopyProjectLink, handleDuplicateProject,
+  startRenameProject, commitRenameProject, handleDeleteProject, handleRestoreProject,
+  handlePurgeProject, handleTogglePin, handleMoveProject, handleCreateFolder, handleDeleteFolder,
+} = useProjects({
+  setProjectTitle: (t) => setProjectTitle(t),
+  openProject: (p) => openProject(p),
+});
 const [saveMenuOpen, setSaveMenuOpen] = useState(false);
 useDismissable(saveMenuOpen, "[data-save-menu]", () => setSaveMenuOpen(false));
 const [openTick, setOpenTick] = useState(0);
 const pendingOpenRef = useRef(null); // saved project waiting for the mode switch to settle
-
-useEffect(() => {
-  if (!projectMenu) return;
-  const close = () => setProjectMenu(null);
-  const onDown = (e) => {
-    if (projectMenuRef.current?.contains(e.target) || e.target.closest?.("[data-project-menu-trigger]")) return;
-    close();
-  };
-  const onKey = (e) => e.key === "Escape" && close();
-  window.addEventListener("pointerdown", onDown);
-  window.addEventListener("keydown", onKey);
-  window.addEventListener("scroll", close, true);
-  window.addEventListener("resize", close);
-  return () => {
-    window.removeEventListener("pointerdown", onDown);
-    window.removeEventListener("keydown", onKey);
-    window.removeEventListener("scroll", close, true);
-    window.removeEventListener("resize", close);
-  };
-}, [projectMenu]);
-
-const toggleProjectMenu = (e, id) => {
-  e.stopPropagation();
-  if (projectMenu?.id === id) {
-    setProjectMenu(null);
-    return;
-  }
-  const r = e.currentTarget.getBoundingClientRect();
-  const below = window.innerHeight - r.bottom;
-  const opensUp = below < 290 && r.top > below; // the menu is ~280px tall; flip up only if there's more room above
-  setProjectMenu({
-    id,
-    left: Math.max(8, Math.min(r.left, window.innerWidth - 188)),
-    ...(opensUp ? { bottom: window.innerHeight - r.top + 4 } : { top: r.bottom + 4 }),
-  });
-};
-
-const projectLink = (id) => `${window.location.origin}${window.location.pathname}#project-${id}`;
-const handleOpenProjectInNewTab = (p) => window.open(projectLink(p.id), "_blank", "noopener");
-const handleCopyProjectLink = async (p) => {
-  try {
-    await navigator.clipboard.writeText(projectLink(p.id));
-    toast("Link copied");
-  } catch (err) {
-    console.error("Copy link failed:", err);
-    toast("Couldn't copy the link", { type: "error" });
-  }
-};
-const handleDuplicateProject = (p) => {
-  recordProjects();
-  const id = `${Date.now()}`;
-  projTrackedIdsRef.current.add(id);
-  setSavedProjects((prev) => {
-    const i = prev.findIndex((x) => x.id === p.id);
-    const copy = { ...p, id, title: `${p.title} copy`, editedAt: new Date() };
-    const next = [...prev];
-    next.splice(i + 1, 0, copy);
-    return next;
-  });
-  toast("Project duplicated");
-};
-const startRenameProject = (p) => setRenamingProjectId(p.id);
-const commitRenameProject = (name) => {
-  const title = name.trim();
-  const id = renamingProjectId;
-  if (title) {
-    recordProjects();
-    setSavedProjects((prev) => prev.map((x) => (x.id === id ? { ...x, title, editedAt: new Date() } : x)));
-    if (id === selectedProjectId) setProjectTitle(title); // so the next manual save doesn't restore the old name
-    toast("Project renamed");
-  }
-  setRenamingProjectId(null);
-};
-const handleDeleteProject = (id) => {
-  recordProjects();
-  const name = savedProjects.find((x) => x.id === id)?.title ?? "Project";
-  setSavedProjects((prev) => prev.map((x) => (x.id === id ? { ...x, deletedAt: new Date(), pinned: false } : x)));
-  setSelectedProjectId((cur) => (cur === id ? null : cur));
-  toast(`“${name}” moved to Trash`, { action: { label: "Undo", onClick: () => undoProjects() } });
-};
-const handleRestoreProject = (id) => {
-  recordProjects();
-  setSavedProjects((prev) => prev.map((x) => (x.id === id ? { ...x, deletedAt: null } : x)));
-  toast("Project restored");
-};
-const handlePurgeProject = (id) => {
-  recordProjects();
-  projTrackedIdsRef.current.add(id);
-  setSavedProjects((prev) => prev.filter((x) => x.id !== id));
-  toast("Project deleted permanently");
-};
-const handleTogglePin = (id) => {
-  recordProjects();
-  const wasPinned = savedProjects.find((x) => x.id === id)?.pinned;
-  setSavedProjects((prev) => prev.map((x) => (x.id === id ? { ...x, pinned: !x.pinned } : x)));
-  toast(wasPinned ? "Project unpinned" : "Project pinned");
-};
-const handleMoveProject = (id, folderId) => {
-  recordProjects();
-  setSavedProjects((prev) => prev.map((x) => (x.id === id ? { ...x, folderId: folderId ?? null } : x)));
-  const folderName = folders.find((f) => f.id === folderId)?.name;
-  toast(folderName ? `Moved to “${folderName}”` : "Removed from folder");
-};
-const handleCreateFolder = (name) => {
-  recordProjects();
-  const id = `folder-${Date.now()}`;
-  setFolders((prev) => [...prev, { id, name, createdAt: Date.now(), parentId: null }]);
-  toast(`Folder “${name}” created`);
-  return id;
-};
-const handleDeleteFolder = (id) => {
-  recordProjects();
-  toast("Folder deleted");
-  setFolders((prev) => {
-    const gone = prev.find((f) => f.id === id);
-    return prev
-      .filter((f) => f.id !== id)
-      .map((f) => (f.parentId === id ? { ...f, parentId: gone?.parentId ?? null } : f));
-  });
-  setSavedProjects((prev) => prev.map((x) => (x.folderId === id ? { ...x, folderId: null } : x)));
-};
   const [projectTitle, setProjectTitle] = useState("Untitled project");
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const projectTitleInputRef = useRef(null);
@@ -1852,6 +1115,18 @@ const [reflectionMatte, setReflectionMatte] = useState(20);
   const [videoFps, setVideoFps] = useState(24);
   const [exportProgress, setExportProgress] = useState(null); // 0-1 while a video export runs
   const [exportTransparent, setExportTransparent] = useState(false);
+  // measured bytes-per-pixel per image format, learned from real exports
+  const [measuredBpp, setMeasuredBpp] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("bezel:bpp")) ?? {}; } catch { return {}; }
+  });
+  const recordExportSize = (r) => {
+    if (!r?.px || !r?.bytes) return;
+    setMeasuredBpp((p) => {
+      const n = { ...p, [exportFormat]: r.bytes / r.px };
+      try { localStorage.setItem("bezel:bpp", JSON.stringify(n)); } catch {}
+      return n;
+    });
+  };
   const [exporting, setExporting] = useState(false);
   const setExportToast = (m) => m && toast(m); // old calls keep working, the null "clear" calls are ignored
   const exportRef = useRef(null);
@@ -1956,6 +1231,7 @@ useEffect(() => {
     (bgType === "custom" && !!customBgImageUrl && (gradientFx.some((f) => f.visible) || grainAmount > 0));
 
   const grainImgsRef = useRef({});
+  const fxPendingRef = useRef(false); // a filtered background is still rendering
   const [grainImgTick, setGrainImgTick] = useState(0);
   useEffect(() => {
     const g = GRAIN_TYPES.find((t) => t.value === grainType);
@@ -2536,7 +1812,7 @@ useEffect(() => {
     closeEffectPopup();
     setTextItems((prev) => [
       ...prev,
-      { ...DEFAULT_TEXT, id, visible: true, mode: toolbarMode, hex: darkMode ? "FFFFFF" : "000000", dy: prev.length ? 0.06 * (prev.length % 6) : 0 },
+      { ...DEFAULT_TEXT, id, visible: true, mode: tabKey, hex: darkMode ? "FFFFFF" : "000000", dy: prev.length ? 0.06 * (prev.length % 6) : 0 },
     ]);
     setSelectedTextId(id);
     setTextPopupOpen(true);
@@ -2559,7 +1835,7 @@ useEffect(() => {
         content: "",
         size: 32,
         visible: true,
-        mode: toolbarMode,
+        mode: tabKey,
         position: "tl",
         dx: (x - textPad({ w, h })) / w, // padding scales with the canvas
         dy: (y - textPad({ w, h })) / h,
@@ -2620,11 +1896,11 @@ setVidTexts((prev) => (prev.some((c) => c.tid === id) ? prev.filter((c) => c.tid
     }
   }, [textItems, selectedTextId]);
 
-    useEffect(() => {
+  useEffect(() => {
     setSelectedTextId(null);
     setTextPopupOpen(false);
     setColorPickerOpen(false);
-  }, [toolbarMode]);
+  }, [tabKey]);
 
   useEffect(() => {
     if (!textTool) return;
@@ -2635,7 +1911,7 @@ setVidTexts((prev) => (prev.some((c) => c.tid === id) ? prev.filter((c) => c.tid
 
   useEffect(() => {
     setTextTool(false);
-  }, [toolbarMode]);
+  }, [tabKey]);
 
   const textPopupRef = useRef(null);
   const addTextBtnRef = useRef(null);
@@ -2838,33 +2114,35 @@ setVidTexts((prev) => (prev.some((c) => c.tid === id) ? prev.filter((c) => c.tid
 
   // Gradient painted through the filter stack (plus grain) on a fresh canvas.
   // The scene, the Frame preview and the Frame export all use it, so they match.
-  const renderGradientFxCanvas = (W, H, k) => {
+  const renderGradientFxCanvas = (W, H, k, snap = null) => {
+    // snap = a background clip's settings (video export); without it, the live panel values are used
+    const s = snap ?? { bgType, gradientOpacity, gradientType, gradientAngle, gradientStops, grainAmount };
     const c = document.createElement("canvas");
     c.width = W;
     c.height = H;
     const x = c.getContext("2d", { willReadFrequently: true });
-    if (bgType === "custom") {
-      const im = customImgRef.current;
+    if (s.bgType === "custom") {
+      const im = snap ? bgImage(snap.customBgImageUrl) : customImgRef.current;
       if (im) {
-        const s = Math.max(W / im.naturalWidth, H / im.naturalHeight);
-        const dw = im.naturalWidth * s, dh = im.naturalHeight * s;
+        const sc = Math.max(W / im.naturalWidth, H / im.naturalHeight);
+        const dw = im.naturalWidth * sc, dh = im.naturalHeight * sc;
         x.drawImage(im, (W - dw) / 2, (H - dh) / 2, dw, dh);
       }
     } else {
-      x.globalAlpha = gradientOpacity / 100;
-      x.fillStyle = makeCanvasGradient(x, gradientType, gradientAngle, gradientStops, 0, 0, W, H);
+      x.globalAlpha = s.gradientOpacity / 100;
+      x.fillStyle = makeCanvasGradient(x, s.gradientType, s.gradientAngle, s.gradientStops, 0, 0, W, H);
       x.fillRect(0, 0, W, H);
       x.globalAlpha = 1;
     }
     applyGradientFx(c, gradientFx, k);
-    if (grainAmount > 0 && grainType !== "noise") {
+    if (s.grainAmount > 0 && grainType !== "noise") {
       const gi = grainImgsRef.current[grainType];
-      if (gi) paintGrainTexture(x, W, H, gi, grainAmount, grainScale, grainBlend);
-    } else if (grainAmount > 0) {
+      if (gi) paintGrainTexture(x, W, H, gi, s.grainAmount, grainScale, grainBlend);
+    } else if (s.grainAmount > 0) {
       x.save();
       x.scale(k, k);
       x.globalCompositeOperation = "overlay";
-      x.fillStyle = x.createPattern(makeGrainTile(512, grainAmount), "repeat");
+      x.fillStyle = x.createPattern(makeGrainTile(512, s.grainAmount), "repeat");
       x.fillRect(0, 0, W / k, H / k);
       x.restore();
     }
@@ -2872,12 +2150,14 @@ setVidTexts((prev) => (prev.some((c) => c.tid === id) ? prev.filter((c) => c.tid
   };
 
   useEffect(() => {
+    fxPendingRef.current = false;
     if (bgAnimOnRef.current) return; // a background animation is painting the scene
     if (gradFxOn) {
       const d = canvasDims;
       if (!d) return;
       if (bgType === "custom" && !customImgRef.current) return; // image still decoding
       setFxBusy(true);
+      fxPendingRef.current = true;
       const t = setTimeout(() => {
         try {
           const W = 1280, H = Math.max(2, Math.round((W * d.h) / d.w));
@@ -2889,8 +2169,9 @@ setVidTexts((prev) => (prev.some((c) => c.tid === id) ? prev.filter((c) => c.tid
           }
         } finally {
           setFxBusy(false);
+          fxPendingRef.current = false;
         }
-      }, 50);
+      }, vidEndRef.current ? 0 : 50); // no debounce while exporting
       return () => clearTimeout(t);
     }
     setFxBusy(false);
@@ -3353,423 +2634,17 @@ handlePositionXChange(0);
   useBlockStrayFileDrops();
 
   const exportImgCacheRef = useRef(new Map()); // src -> Promise<Image>, reused between exported frames
-  // ov (video export only): { cam, pose, texts, bg } for the frame being rendered
-  const renderFrameCanvas = async (width, transparent = false, height = null, ov = null) => {
-    const size = ov?.size ?? frameSizeRef.current;
-    if (!size) return null;
-    const outW = width;
-    const outH = height ?? Math.round(width * (size.h / size.w));
-    const canvas = document.createElement("canvas");
-    canvas.width = outW;
-    canvas.height = outH;
-    const ctx = canvas.getContext("2d");
-    ctx.imageSmoothingQuality = "high";
+  const getFrameRenderCtx = () => ({
+    frameSizeRef, exportImgCacheRef, frames, textItems, tabKey, environment, frameCam,
+    videoOn, videoFrameAt, vidTimeRef,
+    bgType, bgHex, bgOpacity, gradientType, gradientAngle, gradientStops, gradientOpacity,
+    grainAmount, grainType, customBgImageUrl, gradFxOn, gradientFx,
+    renderGradientFxCanvas, hexToRgba,
+  });
+  const renderFrameCanvas = (width, transparent = false, height = null, ov = null) =>
+    renderFrameCanvasLib(getFrameRenderCtx(), width, transparent, height, ov);
 
-    const loadImg = (src) => {
-      const hit = exportImgCacheRef.current.get(src);
-      if (hit) return hit;
-      const p = new Promise((resolve, reject) => {
-        const img = new Image();
-        img.crossOrigin = "anonymous";
-        img.onload = () => (img.decode ? img.decode().catch(() => {}).then(() => resolve(img)) : resolve(img));
-        img.onerror = reject;
-        img.src = src;
-      });
-      p.catch(() => exportImgCacheRef.current.delete(src));
-      exportImgCacheRef.current.set(src, p);
-      return p;
-    };
-    const drawCover = (img, x, y, w, h, target = ctx) => {
-      const iw = img.naturalWidth || img.videoWidth, ih = img.naturalHeight || img.videoHeight;
-      const s = Math.max(w / iw, h / ih);
-      const dw = iw * s;
-      const dh = ih * s;
-      target.drawImage(img, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
-    };
-
-    try {
-      await Promise.all([400, 500, 600, 700].map((wt) => document.fonts.load(`${wt} 16px "TikTok Sans"`)));
-      // Background. A video export passes the clip that is playing at this frame
-      const liveBg = { bgType, bgHex, bgOpacity, gradientType, gradientAngle, gradientStops, gradientOpacity, grainAmount, customBgImageUrl };
-      {
-      const { bgType, bgHex, bgOpacity, gradientType, gradientAngle, gradientStops, gradientOpacity, grainAmount, customBgImageUrl } = ov?.bg?.snap ?? liveBg;
-      const cx = outW / 2;
-      const cy = outH / 2;
-      if (transparent) {
-        // leave the canvas clear
-      } else if (ov?.bg?.canvas) {
-        ctx.drawImage(ov.bg.canvas, 0, 0, outW, outH);
-      } else if (bgType === "solid") {
-        ctx.fillStyle = hexToRgba(bgHex, bgOpacity);
-        ctx.fillRect(0, 0, outW, outH);
-      } else if ((bgType === "gradient" || bgType === "custom") && gradFxOn && (!ov?.bg?.snap || bgKey(ov.bg.snap) === bgKey(liveBg))) {
-        // filters run at up to 2560px wide, then scale to the export size
-        const FW = Math.min(outW, 2560), FH = Math.max(2, Math.round((FW * outH) / outW));
-        // video export: render the filters once and reuse them for every frame
-        let fxc = ov?.fxCache?.canvas;
-        if (!fxc || fxc.width !== FW || fxc.height !== FH) {
-          fxc = renderGradientFxCanvas(FW, FH, FW / size.w);
-          if (ov?.fxCache) ov.fxCache.canvas = fxc;
-        }
-        ctx.drawImage(fxc, 0, 0, outW, outH);
-      } else if (bgType === "gradient") {
-        let g;
-        if (gradientType === "Radial") {
-          g = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.hypot(outW, outH) / 2);
-        } else if (gradientType === "Angular" || gradientType === "Diamond") {
-          const from = (gradientType === "Diamond" ? gradientAngle + 45 : gradientAngle) - 90;
-          g = ctx.createConicGradient((from * Math.PI) / 180, cx, cy);
-        } else {
-          const rad = (gradientAngle * Math.PI) / 180;
-          const dx = Math.sin(rad);
-          const dy = -Math.cos(rad);
-          const len = Math.abs(outW * dx) + Math.abs(outH * dy);
-          g = ctx.createLinearGradient(cx - (dx * len) / 2, cy - (dy * len) / 2, cx + (dx * len) / 2, cy + (dy * len) / 2);
-        }
-        [...gradientStops]
-          .sort((a, b) => a.position - b.position)
-          .forEach((s) => g.addColorStop(Math.min(1, Math.max(0, s.position / 100)), hexToRgba(s.hex, s.opacity)));
-        ctx.globalAlpha = gradientOpacity / 100;
-        ctx.fillStyle = g;
-        ctx.fillRect(0, 0, outW, outH);
-        ctx.globalAlpha = 1;
-        if (grainAmount > 0) {
-          const gk = outW / size.w; // scale the tile so grain matches the on-screen size
-          ctx.save();
-          ctx.scale(gk, gk);
-          ctx.globalCompositeOperation = "overlay";
-          ctx.fillStyle = ctx.createPattern(makeGrainTile(512, grainAmount), "repeat");
-          ctx.fillRect(0, 0, size.w, size.h);
-          ctx.restore();
-        }
-      } else if (bgType === "custom" && customBgImageUrl) {
-        const bgImg = await loadImg(customBgImageUrl).catch(() => null);
-        if (bgImg) drawCover(bgImg, 0, 0, outW, outH);
-        else {
-          ctx.fillStyle = "#808080"; // image failed to load: still draw the frames
-          ctx.fillRect(0, 0, outW, outH);
-        }
-      }
-      }
-
-      const cam = ov?.cam ?? frameCam;
-      const backFacing = isFrameBackFacing(cam);
-      const k = outW / size.w;
-      const FAR = outW * 3;
-
-      // video export passes texts that already have their animation applied
-      const textLayers = ov?.texts ?? textItems.filter((t) => t.mode === "frame" && t.visible !== false && t.content);
-      const prep = (t) => (ov?.texts ? t : prepText(t, size));
-      textLayers.filter((t) => t.layer === "behind").forEach((t) => paintTextItem(ctx, prep(t), outW, outH, k));
-
-      // Each frame is drawn on `layer` (so its stroke/clip stay clean), then composited onto `comp`
-      // with its shadows and blur. `comp` is one plane, so the camera warps all frames together.
-      const frameList = ov?.frames ?? frames;
-
-      // With a camera applied, the flat comp is warped afterwards, so it must cover everything that
-      // can come into view (frames bleeding off the edges, shadows, blur), not just the canvas rect.
-      let padL = 0, padT = 0, padR = 0, padB = 0;
-      if (!isDefaultCamera(cam)) {
-        let minX = 0, minY = 0, maxX = outW, maxY = outH;
-        frameList.forEach((fr) => {
-          const r = frameRect(fr, { w: outW, h: outH });
-          const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-          const half = fr.r ? Math.hypot(r.width, r.height) / 2 : null; // rotated: use the circumscribed circle
-          const hw = half ?? r.width / 2, hh = half ?? r.height / 2;
-          const fx = Math.max(0, ...fr.effects.filter((e) => e.visible && isShadowFx(e)).map((e) => (Math.abs(e.x) + e.blur * 2 + Math.abs(e.spread)) * k));
-          const fy = Math.max(0, ...fr.effects.filter((e) => e.visible && isShadowFx(e)).map((e) => (Math.abs(e.y) + e.blur * 2 + Math.abs(e.spread)) * k));
-          const fb = fr.effects.filter((e) => e.visible && e.type === "layerBlur").reduce((s, e) => s + e.blur, 0) * k * 3;
-          minX = Math.min(minX, cx - hw - fx - fb);
-          maxX = Math.max(maxX, cx + hw + fx + fb);
-          minY = Math.min(minY, cy - hh - fy - fb);
-          maxY = Math.max(maxY, cy + hh + fy + fb);
-        });
-        padL = Math.ceil(-minX); padT = Math.ceil(-minY);
-        padR = Math.ceil(maxX - outW); padB = Math.ceil(maxY - outH);
-        // keep memory sane on very large exports
-        const MAX_PX = 120e6;
-        const area = (outW + padL + padR) * (outH + padT + padB);
-        if (area > MAX_PX) {
-          const s = Math.sqrt(MAX_PX / area);
-          padL = Math.floor(padL * s); padT = Math.floor(padT * s);
-          padR = Math.floor(padR * s); padB = Math.floor(padB * s);
-        }
-      }
-      const compW = outW + padL + padR, compH = outH + padT + padB;
-
-      const layer = document.createElement("canvas");
-      layer.width = compW;
-      layer.height = compH;
-      const lctx = layer.getContext("2d");
-      lctx.imageSmoothingQuality = "high";
-      lctx.translate(padL, padT);
-      const comp = document.createElement("canvas");
-      comp.width = compW;
-      comp.height = compH;
-      const cctx = comp.getContext("2d");
-      cctx.imageSmoothingQuality = "high";
-      cctx.translate(padL, padT);
-
-      for (const fr of sortByDepth(frameList)) {
-        const fp = ov?.framePoses?.[fr.id];
-        if (fp === "hidden" || fr.hidden) continue; // outside its row, or switched off with the eye
-        if (fr.rig?.hide && planeBackFacing(fr, { w: outW, h: outH })) continue;
-        const { left: sx, top: sy, width: sw, height: sh } = frameRect(fr, { w: outW, h: outH });
-        const rs = cornersOf(fr).map((p) => Math.min((Math.min(outW, outH) * p) / 100, Math.min(sw, sh) / 2)); // [tl, tr, br, bl]
-        const srcUrl = fr.img ? (fr.img.cropUrl ?? fr.img.url) : null;
-        const srcImg =
-          backFacing || !srcUrl
-            ? null
-            : fr.img?.video && videoOn
-            ? await videoFrameAt(fr.img.video.url, ov?.t ?? vidTimeRef.current)
-            : await loadImg(srcUrl);
-
-        lctx.clearRect(-padL, -padT, compW, compH);
-        lctx.save();
-        lctx.beginPath();
-        lctx.roundRect(sx, sy, sw, sh, rs);
-        lctx.clip();
-        if (isClipped(fr)) {
-          const cw = sw * (1 - (fr.cl ?? 0) - (fr.cr ?? 0)), ch = sh * (1 - (fr.ct ?? 0) - (fr.cb ?? 0));
-          const uniform = fr.cl === fr.ct && fr.ct === fr.cr && fr.cr === fr.cb; // zoom crop: round it. A one-sided slide cut stays square
-          lctx.beginPath();
-          lctx.roundRect(sx + sw * (fr.cl ?? 0), sy + sh * (fr.ct ?? 0), cw, ch, uniform ? rs.map((v) => Math.min(v, cw / 2, ch / 2)) : 0);
-          lctx.clip();
-        }
-        if (backFacing) {
-          lctx.save();
-          lctx.translate(2 * sx + sw, 0);
-          lctx.scale(-1, 1); // mirrored here, mirrored again by the warp, so it reads as authored
-          if (fr.backType === "solid") {
-            lctx.fillStyle = hexToRgba(fr.backHex, fr.backOpacity);
-          } else {
-            lctx.globalAlpha = fr.backGradientOpacity / 100;
-            lctx.fillStyle = makeCanvasGradient(lctx, fr.backGradientType, fr.backGradientAngle, fr.backStops, sx, sy, sw, sh);
-          }
-          lctx.fillRect(sx, sy, sw, sh);
-          lctx.restore();
-        } else if (fr.social?.on) {
-          lctx.fillStyle = "#000";
-          lctx.fillRect(sx, sy, sw, sh);
-        } else if (srcImg) {
-          lctx.save();
-          if (fr.flipX || fr.flipY) {
-            lctx.translate(sx + sw / 2, sy + sh / 2);
-            lctx.scale(fr.flipX ? -1 : 1, fr.flipY ? -1 : 1);
-            lctx.translate(-(sx + sw / 2), -(sy + sh / 2));
-          }
-          drawCover(srcImg, sx, sy, sw, sh, lctx);
-          lctx.restore();
-          const ca = fr.effects.find((e) => e.visible && e.type === "chromatic" && e.amount > 0);
-          if (ca && !fr.img?.video) {
-            const rad = ((ca.angle ?? 0) * Math.PI) / 180;
-            paintChromatic(lctx, padL, padT, sx, sy, sw, sh, Math.cos(rad) * ca.amount * k, Math.sin(rad) * ca.amount * k);
-          }
-        } else {
-          const ph = await loadImg(`${import.meta.env.BASE_URL}mockup-defaults/frame.png`).catch(() => null);
-          if (ph) drawCover(ph, sx, sy, sw, sh, lctx);
-          else {
-            lctx.fillStyle = "#808080";
-            lctx.fillRect(sx, sy, sw, sh);
-          }
-        }
-        if (fr.social?.on && !backFacing) {
-          const sops = socialOps({ ...fr.social, media: srcUrl }, sw, sh);
-          const imgs = new Map();
-          for (const src of new Set(sops.filter((o) => (o.t === "image" || o.t === "media") && o.src).map((o) => o.src))) {
-            const im = await loadImg(src).catch(() => null);
-            if (im) imgs.set(src, im);
-          }
-          paintSocial(lctx, sops, sx, sy, imgs);
-        }
-if (!backFacing && (fr.statusBar || fr.homeIndicator || fr.browser?.on)) {
-  const auto = srcImg ? sampleChromeColors(srcImg, fr.w, fr.h) : null;
-  const cop = chromeOps(fr, sw, sh, auto)[0];
-  lctx.save();
-  lctx.translate(sx, sy);
-  paintPhoneChrome(lctx, sw, sh, cop);
-  lctx.restore();
-}
-        fr.effects
-          .filter((e) => e.visible && e.type === "noise")
-          .forEach((e) => drawNoise(lctx, sx, sy, sw, sh, e.amount, Math.max(1, ((1 + e.size * 0.5) / 1.4) * k)));
-        paintSheen(lctx, sx, sy, sw, sh, environment, cam.rotationX, cam.rotationY);
-        const dim = frameDim(fr, { w: outW, h: outH }); // a tint toward the background, the frame stays opaque
-        const shade = Math.min(1, (fr.sh || 0) + dim);
-        if (shade > 0) {
-          lctx.save();
-          lctx.globalAlpha = shade;
-          lctx.fillStyle = fr.tint === "bg" || dim > 0 ? depthTintOf(ov?.bg?.snap ?? liveBg) : "#000";
-          lctx.fillRect(sx, sy, sw, sh);
-          lctx.restore();
-        }
-        lctx.restore();
-
-        // Stroke: inside / center / outside are the same path offset by half the weight.
-        const st = fr.stroke;
-        if (st.on && st.width > 0) {
-          const w = st.width * k;
-          // inside / outside strokes share their edge with the image, so widen them by ~1px to cover its antialiased fringe
-          const bleed = st.position !== "center" && st.opacity >= 100 ? Math.min(1, w) : 0;
-          const sign = st.position === "inside" ? -1 : st.position === "outside" ? 1 : 0;
-          const off = (sign * (w - bleed)) / 2;
-          lctx.beginPath();
-          lctx.roundRect(sx - off, sy - off, sw + off * 2, sh + off * 2, rs.map((v) => Math.max(0, v + off)));
-          lctx.lineWidth = w + bleed;
-          lctx.strokeStyle = hexToRgba(st.hex, st.opacity);
-          lctx.stroke();
-        }
-
-        const fe = featherOf(fr);
-        if (fe) {
-          const gr = lctx.createLinearGradient(sx + sw * fe.p0[0], sy + sh * fe.p0[1], sx + sw * fe.p1[0], sy + sh * fe.p1[1]);
-          (fe.stops ?? [[0, 1], [1, 0]]).forEach(([p, a]) => gr.addColorStop(p, `rgba(0,0,0,${a})`));
-          lctx.save();
-          lctx.globalCompositeOperation = "destination-in";
-          lctx.fillStyle = gr;
-          lctx.fillRect(-padL, -padT, compW, compH);
-          lctx.restore();
-        }
-        const rot = ((fr.r ?? 0) * Math.PI) / 180;
-        const rcos = Math.cos(rot), rsin = Math.sin(rot);
-        const rcx = sx + sw / 2, rcy = sy + sh / 2;
-        cctx.save();
-        cctx.globalAlpha = 1;
-        if (fp) {
-          // this frame's own enter / exit pose
-          const { a = 1, x = 0, y = 0, s = 1, rx = 0, ry = 0 } = fp;
-          cctx.globalAlpha = vidClamp(a, 0, 1);
-          cctx.translate(x * outW, -y * outH);
-          cctx.translate(rcx, rcy);
-          cctx.scale(Math.max(0.001, Math.abs(s * Math.cos(ry))), Math.max(0.001, Math.abs(s * Math.cos(rx))));
-          cctx.translate(-rcx, -rcy);
-        }
-        if (fr.rig) {
-          const rr = { left: sx, top: sy, width: sw, height: sh };
-          const bx = { w: outW, h: outH };
-          const proj = (u, v) => projectPlane(fr, rr, bx, u, v);
-          const poly = [proj(0, 0), proj(1, 0), proj(1, 1), proj(0, 1)];
-          fr.effects
-            .filter((e) => e.visible && isShadowFx(e))
-            .forEach((e) => {
-              cctx.save();
-              cctx.shadowColor = hexToRgba(e.hex, e.opacity);
-              cctx.shadowBlur = e.blur * k;
-              cctx.shadowOffsetX = e.x * k + FAR;
-              cctx.shadowOffsetY = e.y * k;
-              cctx.fillStyle = "#000";
-              cctx.beginPath();
-              poly.forEach(([px, py], n) => (n ? cctx.lineTo(px - FAR, py) : cctx.moveTo(px - FAR, py)));
-              cctx.closePath();
-              cctx.fill();
-              cctx.restore();
-            });
-          drawPlane3D(cctx, layer, { x: sx + padL, y: sy + padT, w: sw, h: sh }, proj, ...planeGrid(fr));
-          cctx.restore();
-          continue;
-        }
-        fr.effects
-          .filter((e) => e.visible && isShadowFx(e))
-          .forEach((e) => {
-            const sp = e.spread * k;
-            cctx.save();
-            cctx.shadowColor = hexToRgba(e.hex, e.opacity);
-            cctx.shadowBlur = e.blur * k;
-            // shadow offset rotates with the frame, like CSS box-shadow
-            cctx.shadowOffsetX = (e.x * rcos - e.y * rsin) * k + FAR;
-            cctx.shadowOffsetY = (e.x * rsin + e.y * rcos) * k;
-            cctx.translate(rcx - FAR, rcy);
-            cctx.rotate(rot);
-            cctx.translate(-(rcx - FAR), -rcy);
-            cctx.fillStyle = "#000";
-            cctx.beginPath();
-            cctx.roundRect(sx - FAR - sp, sy - sp, Math.max(0, sw + sp * 2), Math.max(0, sh + sp * 2), rs.map((v) => Math.max(0, v + sp)));
-            cctx.fill();
-            cctx.restore();
-          });
-        cctx.translate(rcx, rcy);
-        cctx.rotate(rot);
-        cctx.translate(-rcx, -rcy);
-        cctx.drawImage(layer, -padL, -padT);
-        cctx.restore();
-      }
-
-      // progressive blur covers the whole canvas and is applied once to all frames together
-      const isPb = (e) => e.visible && e.type === "layerBlur" && e.mode === "progressive" && (e.blur > 0 || (e.startBlur ?? 0) > 0);
-      const pbFrame = frameList.find((fr) => !fr.hidden && fr.effects.some(isPb));
-      (pbFrame?.effects ?? []).filter(isPb).forEach((fx) =>
-        applyProgressiveBlur(comp, fx, k, { left: padL, top: padT, width: outW, height: outH })
-      );
-
-      // uniform layer blur: one blur over all frames together
-      const isUb = (e) => e.visible && e.type === "layerBlur" && e.mode !== "progressive" && e.blur > 0;
-      const ubFrame = frameList.find((fr) => !fr.hidden && fr.effects.some(isUb));
-      const ubBlur = ubFrame ? ubFrame.effects.filter(isUb).reduce((s, e) => s + e.blur, 0) * k : 0;
-      if (ubBlur > 0) {
-        const tmp = document.createElement("canvas");
-        tmp.width = comp.width;
-        tmp.height = comp.height;
-        const t = tmp.getContext("2d");
-        t.filter = `blur(${ubBlur}px)`;
-        t.drawImage(comp, 0, 0);
-        const c2 = comp.getContext("2d");
-        c2.save();
-        c2.setTransform(1, 0, 0, 1, 0, 0);
-        c2.clearRect(0, 0, comp.width, comp.height);
-        c2.drawImage(tmp, 0, 0);
-        c2.restore();
-      }
-
-      // canvas-wide effects come from the first visible frame that has them (like progressive blur above)
-      const canvasFx = (type) => {
-        for (const fr of frameList) {
-          if (fr.hidden) continue;
-          const e = fr.effects.find((x) => x.visible && x.type === type);
-          if (e) return e;
-        }
-        return null;
-      };
-      const canvasRect = { left: padL, top: padT, width: outW, height: outH };
-      const fish = canvasFx("fishEye");
-      if (fish && fish.amount > 0) applyFishEye(comp, fish.amount, canvasRect);
-
-      let deviceLayer = comp;
-      if (!isDefaultCamera(cam)) {
-        deviceLayer = document.createElement("canvas");
-        deviceLayer.width = outW;
-        deviceLayer.height = outH;
-        drawWarped(
-          deviceLayer.getContext("2d"), comp, getFrameCamera(cam, outH), outW, outH, 24,
-          { x: -padL, y: -padT, w: compW, h: compH }
-        );
-      }
-      ctx.save();
-      if (ov?.pose) {
-        const { a = 1, x = 0, y = 0, s = 1, rx = 0, ry = 0 } = ov.pose;
-        ctx.globalAlpha = vidClamp(a, 0, 1);
-        ctx.translate(outW / 2 + x * outW, outH / 2 - y * outH);
-        ctx.scale(Math.max(0.02, Math.abs(s * Math.cos(ry))), Math.max(0.02, Math.abs(s * Math.cos(rx))));
-        ctx.translate(-outW / 2, -outH / 2);
-      }
-      ctx.drawImage(deviceLayer, 0, 0);
-      ctx.restore();
-
-      const glass = canvasFx("liquidGlass");
-      if (glass && !ov?.framesOnly) paintGlassBands(ctx, outW, outH, glass, k);
-
-      const vig = canvasFx("vignette");
-      if (vig && vig.amount > 0 && !ov?.framesOnly) paintVignette(ctx, outW, outH, vig);
-
-      textLayers.filter((t) => t.layer === "front").forEach((t) => paintTextItem(ctx, prep(t), outW, outH, k));
-
-      return canvas;
-    } catch (err) {
-      console.error("Frame render failed:", err);
-      return null;
-    }
-  };
-
-  const exportFrame = async (width, fmt, height) => {
+  const exportFrame = async (width, fmt, height, dryRun = false) => {
     let canvas = await renderFrameCanvas(width, exportTransparent && fmt.mime !== "image/jpeg", height);
     if (!canvas) return;
     if (fmt.mime === "image/jpeg") {
@@ -3783,17 +2658,20 @@ if (!backFacing && (fr.statusBar || fr.homeIndicator || fr.browser?.on)) {
       fctx.drawImage(canvas, 0, 0);
       canvas = flat;
     }
-    await new Promise((resolve) =>
+    const px = canvas.width * canvas.height;
+    return await new Promise((resolve) =>
       canvas.toBlob((blob) => {
         if (blob) {
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = `${projectTitle || "frame"}.${fmt.ext}`;
-          a.click();
-          URL.revokeObjectURL(url);
-        }
-        resolve();
+          if (!dryRun) {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `${projectTitle || "frame"}.${fmt.ext}`;
+            a.click();
+            URL.revokeObjectURL(url);
+          }
+          resolve({ bytes: blob.size, px });
+        } else resolve(null);
       }, fmt.mime, 0.92)
     );
   };
@@ -3807,7 +2685,19 @@ if (!backFacing && (fr.statusBar || fr.homeIndicator || fr.browser?.on)) {
       toast(`Exporting ${vLabel}…`, { duration: 3000 });
       await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
       try {
-        await exportVideo();
+        const bytes = await exportVideo();
+        if (bytes) {
+          const vf = VIDEO_FORMATS.find((f) => f.value === videoFormat);
+          const vd = videoOutDims();
+          const vfps = Math.min(videoFps, vf.maxFps);
+          const vframes = Math.max(1, Math.round((vidDuration / videoSpeed) * vfps));
+          const raw = estimateVideoBytes(videoFormat, vd.w, vd.h, vfps, vframes);
+          setMeasuredBpp((p) => {
+            const n = { ...p, [`v:${videoFormat}`]: bytes / raw };
+            try { localStorage.setItem("bezel:bpp", JSON.stringify(n)); } catch {}
+            return n;
+          });
+        }
         toast(`${vLabel} exported`);
       } catch (err) {
         console.error("Video export failed:", err);
@@ -3827,14 +2717,14 @@ if (!backFacing && (fr.statusBar || fr.homeIndicator || fr.browser?.on)) {
     try {
       const d = exportDims(exportWidth) ?? { w: exportWidth, h: undefined };
       const transparent = exportTransparent && fmt.mime !== "image/jpeg"; // JPG has no alpha
-      if (toolbarMode === "frame") await exportFrame(d.w, fmt, d.h);
+      if (toolbarMode === "frame") recordExportSize(await exportFrame(d.w, fmt, d.h));
       else {
         const hiRes = gradFxOn && !transparent && canvasDims;
         if (hiRes) {
           const FW = Math.min(d.w, 2560), FH = Math.max(2, Math.round((FW * d.h) / d.w));
           sceneRef.current?.setBackgroundCanvas?.(renderGradientFxCanvas(FW, FH, FW / canvasDims.w));
         }
-        sceneRef.current?.exportAt(d.w, fmt.mime, fmt.ext, d.h, transparent);
+        recordExportSize(sceneRef.current?.exportAt(d.w, fmt.mime, fmt.ext, d.h, transparent));
         if (hiRes) {
           const LW = 1280, LH = Math.max(2, Math.round((LW * canvasDims.h) / canvasDims.w));
           sceneRef.current?.setBackgroundCanvas?.(renderGradientFxCanvas(LW, LH, LW / canvasDims.w));
@@ -3929,7 +2819,9 @@ if (!backFacing && (fr.statusBar || fr.homeIndicator || fr.browser?.on)) {
     }
     } catch (err) {
       console.error("Save failed:", err);
+      if (!silent) toast("Couldn't save the project", { type: "error", duration: 3000 });
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
@@ -4046,6 +2938,20 @@ setSelText(null);
     setVidDuration(10);
     setVidPlaying(false);
     vidTimeRef.current = 0;
+    vidBgActive.current = null;
+    vidBgExitKeyRef.current = null;
+    // the reset background is the new default, so the "background edited with no row selected" effect must not add a row for it
+    bgAppliedKeyRef.current = bgKey({
+      bgType: "solid", bgHex: surfaceHex(darkMode), bgOpacity: 100,
+      gradientType: "Linear", gradientAngle: 90, gradientOpacity: 100,
+      gradientStops: [
+        { id: 1, hex: "FFFFFF", position: 0, opacity: 100 },
+        { id: 2, hex: "000000", position: 100, opacity: 100 },
+      ],
+      grainAmount: 0, customBgImageUrl: null,
+    });
+    // in Video mode, rebuild the starting rows (Shot 1 / one row per frame, plus the background row) once the reset has applied
+    setTimeout(() => setVidSwapTick((n) => n + 1), 60);
 
     setBackSelectedStopId("back-1");
     nextBackStopIdRef.current = 3;
@@ -4068,557 +2974,56 @@ setSelText(null);
     setActiveCameraView(null);
   }, []);
 
-  // ---------- Video timeline logic ----------
-  const videoOn = imageOrVideo === "video"; // the timeline works in Mockup and Frame mode
-  const videoMock = videoOn && toolbarMode === "mockup";
-  const [vidShots, setVidShots] = useState([]); // [{ id, name, start, len, ease, keys }]
-const [vidBgs, setVidBgs] = useState([]);     // [{ id, start, len, snap, css, anim }]   (start = absolute seconds)
-const [vidAudios, setVidAudios] = useState([]); // [{ id, name, src, start, len, offset, dur, peaks, volume, muted }]
-const [selAudio, setSelAudio] = useState(null); // { aid }
-const audioElsRef = useRef(new Map()); // clip id -> HTMLAudioElement
-  const [vidSel, setVidSel] = useState({ shot: null, key: null, ids: [] });
-  const [vidTexts, setVidTexts] = useState([]); // [{ id, tid, start, len, enter, exit }]
-  const [vidDuration, setVidDuration] = useState(10);
-  const [vidPlaying, setVidPlaying] = useState(false);
-  const [vidLoop, setVidLoop] = useState(true);
-  const [vidExporting, setVidExporting] = useState(false);
-  const vidTimeRef = useRef(0);
-  const [vidHead, setVidHead] = useState(0); // playhead as undoable state (not updated during playback)
-  const vidEndRef = useRef(null); // resolver while exporting
-  const vidId = useRef(1);
-  const vidNo = useRef(2);
-  const vidByModeRef = useRef({}); // each mode (mockup / frame) keeps its own timeline
-  const prevVidModeRef = useRef(tabKey);
-  const [vidSwapTick, setVidSwapTick] = useState(0);
-  const autoKeyMuteRef = useRef(0); // while now < this, camera changes are programmatic and must not touch keyframes
-  const vidLive = useRef({});
-vidLive.current = {
-  playing: vidPlaying,
-  shots: vidShots,
-  bgs: vidBgs,
-  texts: vidTexts,
-  audios: vidAudios,
-  sel: vidSel,
-  loop: vidLoop,
-  duration: vidDuration,
-  cam: {
-    rotationX, rotationY, rotationZ, positionX, positionY, zoom, fov,
-    ...(toolbarMode === "frame" ? { frames: framePoseMap(frames, frameSizeRef.current) } : {}),
-  },
-};
-
-  const applyCam = (c) => {
-    const s = sceneRef.current;
-    if (!s || !c) return;
-    s.setManualRotation(c.rotationX);
-    s.setManualRotationY(c.rotationY);
-    s.setManualRotationZ(c.rotationZ);
-    s.setPositionX(c.positionX);
-    s.setPositionY(c.positionY);
-    s.setZoom(c.zoom);
-    s.setFov(c.fov);
-    applyFrameCam(c);
-  };
-
-  // Frame mode: the timeline writes straight to the DOM, so playback never re-renders the app
-  const applyFrameCam = (c) => {
-    const el = frameStageRef.current;
-    const box = frameSizeRef.current;
-    if (!el || !box || !c) return;
-    el.style.transition = "none";
-    el.style.transform = frameCameraCss(
-      getFrameCamera({ ...CAM_DEFAULT, rotationX: c.rotationX, rotationY: c.rotationY, rotationZ: c.rotationZ, positionX: c.positionX, positionY: c.positionY, zoom: c.zoom }, box.h)
-    );
-  };
-  const applyFrameAnim = (p) => {
-    const el = frameAnimRef.current;
-    const box = frameSizeRef.current;
-    if (!el || !box) return;
-    el.style.opacity = p ? String(vidClamp(p.a ?? 1, 0, 1)) : "";
-    el.style.transform = p
-      ? `translate(${(p.x ?? 0) * box.w}px, ${-(p.y ?? 0) * box.h}px) scale(${Math.max(0.001, p.s ?? 1)}) perspective(1400px) rotateX(${p.rx ?? 0}rad) rotateY(${p.ry ?? 0}rad)`
-      : "";
-  };
-
-  // Frame mode: each frame follows its own row. Outside its row (or with the row hidden) the frame is hidden,
-  // and the row's enter / exit animation moves only that frame.
-  // Result per frame id: "hidden" | pose | {} (resting). Frames without a row aren't listed (always shown).
-  const frameRowStates = (shots, frameIds, t) => {
-    const out = {};
-    frameIds.forEach((id) => {
-      const rows = shots.filter((s) => s.frameId === id);
-      if (!rows.length) return;
-      const row = [...rows].reverse().find((s) => !s.hidden && t >= s.start - 1e-6 && t <= s.start + s.len + 1e-6);
-      out[id] = row ? shotAnimPose(row, t) ?? {} : "hidden";
-    });
-    return out;
-  };
-  // t = null clears everything (used when leaving Video mode)
-  const applyFrameRowStatesAt = (t) => {
-    const stage = frameStageRef.current;
-    const box = frameSizeRef.current;
-    if (!stage || !box) return;
-    const st = t == null ? {} : frameRowStates(vidLive.current.shots, framesLatestRef.current.map((f) => f.id), t);
-    stage.querySelectorAll("[data-frame-id]").forEach((el) => {
-      const p = st[el.dataset.frameId];
-      if (p === "hidden") {
-        el.style.opacity = "0";
-        el.style.translate = "";
-        el.style.scale = "";
-      } else if (p) {
-        const { a = 1, x = 0, y = 0, s = 1, rx = 0, ry = 0 } = p;
-        el.style.opacity = String(vidClamp(a, 0, 1));
-        el.style.translate = `${x * box.w}px ${-y * box.h}px`;
-        el.style.scale = `${Math.max(0.001, Math.abs(s * Math.cos(ry)))} ${Math.max(0.001, Math.abs(s * Math.cos(rx)))}`;
-      } else {
-        el.style.opacity = "";
-        el.style.translate = "";
-        el.style.scale = "";
-      }
-      // off its row and not selected: clicks pass through to whatever is underneath
-      el.style.pointerEvents =
-        p === "hidden" && !selectedIdsRef.current.includes(Number(el.dataset.frameId)) ? "none" : "";
-    });
-  };
-  const showFrameBgCanvas = (src) => {
-    const c = frameBgCanvasRef.current;
-    if (!c) return;
-    if (c.width !== src.width || c.height !== src.height) {
-      c.width = src.width;
-      c.height = src.height;
-    }
-    c.getContext("2d").drawImage(src, 0, 0);
-    c.style.display = "block";
-  };
-  const hideFrameBgCanvas = () => {
-    if (frameBgCanvasRef.current) frameBgCanvasRef.current.style.display = "none";
-  };
-  // Pushes the sampled camera into React state too, so the sliders match after a seek / pause.
-  const commitCam = (c) => {
-    if (!c) return;
-    autoKeyMuteRef.current = performance.now() + 300; // sampled values pushed into the sliders are not user edits
-    const r = {};
-    CAM_KEYS.forEach((k) => (r[k] = Math.round(c[k])));
-    handleViewChange(r);
-  };
-
-  // Mockup video: a camera edit made with the playhead on a property's first keyframe updates that keyframe,
-  // so the starting camera can be changed without adding keys by hand.
-  const prevCamRef = useRef(null);
-  useEffect(() => {
-    const cam = { rotationX, rotationY, rotationZ, positionX, positionY, zoom, fov };
-    const prev = prevCamRef.current;
-    prevCamRef.current = cam;
-    if (!prev || !videoOn || toolbarMode !== "mockup" || vidPlaying || vidExporting) return;
-    if (performance.now() < autoKeyMuteRef.current) return;
-    const edited = CAM_KEYS.filter((p) => cam[p] !== prev[p]);
-    if (!edited.length) return;
-    const t = vidTimeRef.current;
-    const s = vidShotAt(t);
-    if (!s) return;
-    const rel = t - s.start;
-    const patches = new Map(); // key id -> { prop: value }
-    edited.forEach((p) => {
-      const key = s.keys.find((k) => !k.props || k.props.includes(p)); // the first keyframe driving this property
-      if (key && Math.abs(key.t - rel) < 1 / 60) patches.set(key.id, { ...(patches.get(key.id) ?? {}), [p]: cam[p] });
-    });
-    if (!patches.size) return;
-    const apply = (shots) =>
-      shots.map((x) =>
-        x.id !== s.id ? x : { ...x, keys: x.keys.map((k) => (patches.has(k.id) ? { ...k, ...patches.get(k.id) } : k)) }
-      );
-    vidLive.current.shots = apply(vidLive.current.shots);
-    setVidShots(apply);
-  }, [rotationX, rotationY, rotationZ, positionX, positionY, zoom, fov]);
-
-  // Applies the background clip under time t (later shots / clips win). Only touches state when the active clip changes.
-  const vidBgActive = useRef(null);
-  const bgAppliedKeyRef = useRef(null); // key of the last background pushed in from a clip, so only user edits create rows
-  const vidImgFiles = useRef(new Map()); // shot image id -> File
-  const vidImgShown = useRef(null); // id of the shot image on the device, null = the Image-mode upload
-  const uploadedCropRef = useRef(null);
-  uploadedCropRef.current = uploadedCrop;
-  const vidBgExitKeyRef = useRef(null); // background as it was when Video mode was last left
-  const vidTextSeenRef = useRef(new Set()); // text ids that already had their chance to get a timeline clip
-  const [selBg, setSelBg] = useState(null); // { sid, bid } of the clip being edited
-  const [selText, setSelText] = useState(null); // { sid, cid } of the text clip being edited
-  const selBgRef = useRef(null);
-  selBgRef.current = selBg;
-  // ---- Background animations ----
-  const bgAnimCanvasRef = useRef(null); // the canvas handed to the scene as its background
-  const frameBgCanvasRef = useRef(null); // Frame mode: same idea, a DOM canvas under the frames
-  const frameStageRef = useRef(null); // Frame mode: the camera plane
-  const frameAnimRef = useRef(null); // Frame mode: enter / exit pose wrapper
-  const bgAnimOnRef = useRef(null); // clip whose animation is currently painting the scene
-  const bgAnimCacheRef = useRef({}); // painted from / to canvases, reused between frames
-  const bgImgCacheRef = useRef(new Map());
-  const canvasDimsRef = useRef(null);
-  canvasDimsRef.current = canvasDims;
-
-  // Puts a stored background snapshot straight into the scene (used when an animation ends).
-  const pushBgSnap = (sn) => {
-    const sc = sceneRef.current;
-    if (!sc || !sn) return;
-    if (toolbarModeRef.current === "frame") {
-      applyBgSnap(sn); // Frame mode reads the background from React state
-      return;
-    }
-    if (sn.bgType === "solid") sc.setBackground(sn.bgHex, sn.bgOpacity);
-    else if (sn.bgType === "gradient") sc.setBackgroundGradient?.(sn.gradientType, sn.gradientStops, sn.gradientOpacity, sn.gradientAngle, sn.grainAmount);
-    else if (sn.bgType === "custom") sc.setBackgroundImage?.(sn.customBgImageUrl);
-  };
-
-  // Returns the loaded image, or null (and starts loading it, then repaints the current frame).
-  const bgImage = (url) => {
-    const cache = bgImgCacheRef.current;
-    const hit = cache.get(url);
-    if (hit) return hit.complete && hit.naturalWidth ? hit : null;
-    const im = new Image();
-    im.crossOrigin = "anonymous";
-    im.onload = () => {
-      bgAnimCacheRef.current = {};
-      applyBgAt(vidTimeRef.current);
-    };
-    im.src = url;
-    cache.set(url, im);
-    return null;
-  };
-
-  // The clip whose background is showing right before this one starts.
-const bgClipBefore = (clip) => {
-  let best = null, bestStart = -Infinity;
-  vidLive.current.bgs.forEach((b) => {
-    if (!b.hidden && b.id !== clip.id && b.start < clip.start - 1e-6 && b.start > bestStart) {
-      best = b;
-      bestStart = b.start;
-    }
+    const restoreUntilRef = useRef(Date.now() + 500); // startup effects settle without creating history
+  const {
+    videoOn, videoMock,
+    vidShots, setVidShots, vidBgs, setVidBgs, vidAudios, setVidAudios, selAudio, setSelAudio,
+    vidSel, setVidSel, vidTexts, setVidTexts, vidDuration, setVidDuration,
+    vidPlaying, setVidPlaying, vidLoop, setVidLoop, vidExporting, setVidExporting,
+    vidHead, setVidHead, vidSwapTick, setVidSwapTick,
+    selBg, setSelBg, selText, setSelText,
+    vidTplId, setVidTplId, tplParams, setTplParams,
+    vidTimeRef, vidEndRef, vidId, vidNo, vidByModeRef, vidLive, autoKeyMuteRef,
+    vidBgActive, bgAppliedKeyRef, vidBgExitKeyRef, vidImgFiles, vidFrameSeenRef, soloFrameRef,
+    bgAnimCanvasRef, bgAnimOnRef, frameBgCanvasRef, frameStageRef, frameAnimRef,
+    animTplRef, reapplyAnimRef, tplParamTimerRef, tplSmoothTimerRef,
+    markFrameEdit, applyCam, applyFrameAnim, frameRowStates, applyFrameRowStatesAt, commitCam,
+    showFrameBgCanvas, hideFrameBgCanvas, bgImage, applyBgAt, applyBgSnap, applyAnimAt, textsAt,
+    vidSeek, vidAddShot, vidDelete, vidPatchShot, vidSetShotImg, vidCropShotImg,
+    vidPatchKey, vidReorder, vidToggleKey, vidUpdateKey, vidDeleteKey,
+    vidDuplicate, vidGroup, vidUngroup,
+    bgSnapshot, bgPreviewCss, clearShotSel,
+    vidAddBg, vidPatchBg, vidSetBgAnim, vidSetShotAnim, vidUpdateBg, vidDuplicateBg, vidDeleteBg, vidToggleBgHidden,
+    vidAddTextClip, vidPatchText, vidSetTextAnim, vidDuplicateText, vidDeleteText,
+    vidSelectBg, vidMoveKey, vidSplitKey, vidSetDuration,
+    vidPatchAudio, vidSelectAudio, vidDeleteAudio, vidAddAudio,
+    vidSkip, vidToggle, syncVideos,
+    getAnimSubject, textAnimCtl, renderVideoStills, renderParamStill, prepareFrameLive,
+    applyVideoTemplate, changeTplParam, patchTplParams,
+  } = useVideoTimeline({
+    imageOrVideo, toolbarMode, animTab, tabKey, toolbarModeRef, tabKeyRef,
+    sceneRef, frames, setFrames, framesLatestRef, selectedIds, setSelectedIds, selectedIdsRef,
+    frameSizeRef, nextFrameIdRef, assetPoolRef,
+    rotationX, rotationY, rotationZ, positionX, positionY, zoom, fov, handleViewChange,
+    uploadedFileRef, uploadedCrop, mockupVideoRef,
+    canvasDims, canvasBoxRef,
+    bgType, bgHex, bgOpacity, gradientType, gradientAngle, gradientOpacity, gradientStops,
+    grainAmount, customBgImageUrl, gradientCss, darkMode, hexToRgba,
+    setBgType, setBgHex, setBgOpacity, setGradientType, setGradientAngle, setGradientOpacity,
+    setGradientStops, setGrainAmount, setCustomBgImageUrl,
+    textItems, setTextItems, nextTextIdRef, deleteTextLayer, fontTick,
+    deviceType, addBlankFrame, deleteFrames, renderFrameCanvas,
+    setCanvasSize, setCustomWidth, setCustomHeight, setSidebarOpen,
+    restoreUntilRef, vidUploadRef,
+    swapScene: () => swapSceneForTab(),
   });
-  return best;
-};
-
-// The clip that starts next, so an exit has something to animate towards.
-const bgClipAfter = (clip) => {
-  let best = null, bestStart = Infinity;
-  vidLive.current.bgs.forEach((b) => {
-    if (!b.hidden && b.id !== clip.id && b.start > clip.start + 1e-6 && b.start < bestStart) {
-      best = b;
-      bestStart = b.start;
-    }
-  });
-  return best;
-};
-
-const renderBgAnim = (clip, kind, anim, u) => {
-    const scene = sceneRef.current;
-    const d = canvasDimsRef.current;
-    if (!scene?.setBackgroundCanvas || !d) return false;
-    const W = 1280, H = Math.max(2, Math.round((W * d.h) / d.w));
-    const out = (bgAnimCanvasRef.current ??= document.createElement("canvas"));
-    if (out.width !== W || out.height !== H) {
-      out.width = W;
-      out.height = H;
-      bgAnimCacheRef.current = {};
-    }
-    const other = kind === "exit" ? bgClipAfter(clip) : bgClipBefore(clip); // what the background comes from / goes to
-    const fromKey = other?.snap ?? null;
-    const fallback = bgFallbackSnap();
-    const cache = bgAnimCacheRef.current;
-    const fc = bgTmp("live-from", W, H);
-    const tc = bgTmp("live-to", W, H);
-    if (cache.to !== clip.snap || cache.from !== fromKey) {
-      const okFrom = paintBgSnap(fc.getContext("2d"), fromKey ?? fallback, W, H, bgImage);
-      const okTo = paintBgSnap(tc.getContext("2d"), clip.snap, W, H, bgImage);
-      if (okFrom && okTo) {
-        cache.to = clip.snap;
-        cache.from = fromKey;
-      }
-    }
-    const p = bgProgress(anim.id, vidClamp(u, 0, 1), anim.ease);
-    drawBgTransition(out.getContext("2d"), anim.id, fc, tc, p, W, H, "live", anim);
-    if (toolbarModeRef.current === "frame") showFrameBgCanvas(out);
-    else scene.setBackgroundCanvas(out);
-    return true;
-  };
-const applyBgAt = (t) => {
-  let hit = null;
-  vidLive.current.bgs.forEach((b) => {
-    if (!b.hidden && t >= b.start && t <= b.start + b.len) hit = b;
-  });
-  // Paused: a selected row wins any overlap, so selecting a lower row doesn't get overridden by the one above it.
-  if (selBgRef.current && !vidLive.current.playing && !vidEndRef.current) {
-    const picked = vidLive.current.bgs.find(
-      (b) => b.id === selBgRef.current.bid && !b.hidden && t >= b.start && t <= b.start + b.len
-    );
-    if (picked) hit = picked;
-  }
-
-    if (hit && hit.id !== vidBgActive.current) {
-      vidBgActive.current = hit.id;
-      if (selBgRef.current && selBgRef.current.bid !== hit.id) setSelBg(null);
-      applyBgSnap(hit.snap);
-    }
-
-  if (hit) {
-    const en = bgAnimOf(hit, "enter"), ex = bgAnimOf(hit, "exit");
-    // exit wins when the two overlap, same as text
-    if (ex) {
-      const x1 = hit.start + hit.len - ex.delay / 1000;
-      const x0 = x1 - ex.dur / 1000;
-      if (t > x0) {
-        const q = vidClamp((t - x0) / Math.max(1e-6, x1 - x0), 0, 1);
-        if (renderBgAnim(hit, "exit", ex, 1 - q)) {
-          bgAnimOnRef.current = hit;
-          return;
-        }
-      }
-    }
-    if (en) {
-      const e0 = hit.start + en.delay / 1000;
-      const u = (t - e0) / Math.max(0.05, Math.min(en.dur / 1000, hit.len));
-      if (u < 1 && renderBgAnim(hit, "enter", en, Math.max(0, u))) {
-        bgAnimOnRef.current = hit;
-        return;
-      }
-    }
-  }
-
-    // animation just ended (or was left): hand the scene back to the normal background
-    if (bgAnimOnRef.current) {
-      const done = bgAnimOnRef.current;
-      bgAnimOnRef.current = null;
-      sceneRef.current?.setBackgroundCanvas?.(null);
-      hideFrameBgCanvas();
-      // an exit that ran out into a gap leaves the scene on what it animated to
-      const exited = !hit && bgAnimOf(done, "exit");
-      pushBgSnap(exited ? (bgClipAfter(done)?.snap ?? bgFallbackSnap()) : (hit ?? done).snap);
-    }
-  };
-
-  const applyBgSnap = (sn) => {
-    bgAppliedKeyRef.current = bgKey(sn);
-    setBgType(sn.bgType);
-    setBgHex(sn.bgHex);
-    setBgOpacity(sn.bgOpacity);
-    setGradientType(sn.gradientType);
-    setGradientAngle(sn.gradientAngle);
-    setGradientOpacity(sn.gradientOpacity);
-    setGradientStops(sn.gradientStops.map((s) => ({ ...s })));
-    setGrainAmount(sn.grainAmount);
-    setCustomBgImageUrl(sn.customBgImageUrl);
-  };
-
-  // Enter / exit pose of the device at time t.
-const applyShotImgAt = (t) => {
-  const sc = sceneRef.current;
-  if (!sc) return;
-  // the selected shot wins when shots overlap, so its own image (or no image) is what shows
-  const { shots, sel } = vidLive.current;
-  const picked = shots.find((x) => x.id === sel.shot && !x.hidden && t >= x.start - 1e-6 && t <= x.start + x.len + 1e-6);
-  const s = picked ?? shotForImgAt(shots, t);
-  const id = s?.img?.id ?? null;
-  if (id === vidImgShown.current) return; // already showing
-  vidImgShown.current = id;
-  if (id) {
-    const f = vidImgFiles.current.get(id);
-    if (f) sc.uploadFile(f, s.img.crop ?? undefined);
-  } else if (uploadedFileRef.current) {
-    sc.uploadFile(uploadedFileRef.current, uploadedCropRef.current ?? undefined);
-  } else {
-    sc.clearScreenshot();
-  }
-};
-
-// Frame mode: writes the keyframed placement of each frame into state (also used by playback and export)
-const applyFramePosesAt = (t) => {
-  if (toolbarModeRef.current !== "frame") return;
-  const poses = sampleShotFrames(vidLive.current.shots, t);
-  if (!poses || !Object.keys(poses).length) return;
-  let diff = false;
-  const next = framesLatestRef.current.map((f) => {
-    const p = poses[f.id];
-    if (!p) return f;
-    const n = { x: p.x, y: p.y, w: Math.round(p.w), h: Math.round(p.h), s: p.s, r: p.r ?? 0, rx: p.rx ?? 0, ry: p.ry ?? 0, z: p.z ?? 0, sh: p.sh ?? 0, ...clipOf(p) };
-    if (
-      f.x === n.x && f.y === n.y && f.w === n.w && f.h === n.h && f.s === n.s && (f.r ?? 0) === n.r &&
-      (f.rx ?? 0) === n.rx && (f.ry ?? 0) === n.ry && (f.z ?? 0) === n.z && (f.sh ?? 0) === n.sh &&
-      CLIP_KEYS.every((k) => (f[k] ?? 0) === n[k])
-    ) return f;
-    diff = true;
-    return { ...f, ...n };
-  });
-  if (!diff) return;
-  framesLatestRef.current = next;
-  restoreUntilRef.current = Date.now() + 400; // keeps playback from filling the undo history
-  setFrames(next);
-};
-
-const applyAnimAt = (t) => {
-  const shots = vidLive.current.shots;
-  const pose = shots.length ? sampleDeviceAnim(shots, t) : null;
-  if (toolbarModeRef.current === "frame") {
-    applyFramePosesAt(t);
-    // whole-canvas animation only for rows that aren't tied to a frame; frame rows animate their own frame
-    applyFrameAnim(shots.length ? sampleDeviceAnim(shots.filter((s) => s.frameId == null), t) : null);
-    applyFrameRowStatesAt(t);
-    return;
-  }
-  applyShotImgAt(t);
-  sceneRef.current?.setDeviceAnim?.(pose);
-  if (vidLive.current.texts.length) pushSceneTexts(t);
-};
-
-  // Text for the 3D scene / export. The scene only gets block-level motion (opacity, offset, scale).
-  // Per-letter motion is drawn by the DOM overlay (TextEditor).
-  const textLive = useRef({});
-  textLive.current = { textItems, canvasDims };
-const textsAt = (t, mode) => {
-  const { textItems: items, canvasDims: dims } = textLive.current;
-  const clips = vidLive.current.texts;
-  return items
-    .filter((it) => (it.mode ?? "mockup") === mode && it.visible !== false && it.content)
-    .map((it) => {
-      const base = prepText(it, dims);
-      const st = t == null ? undefined : sampleTextAnim(clips, it.id, t);
-      if (st === undefined || (st && !st.spec)) return base;
-      if (st === null) return null; // outside its clip
-      const u = txtUnitStates(st.spec, st.p, 1)[0];
-      return {
-        ...base,
-        hex: u.c ? mixHex(u.c, base.hex, u.ce) : base.hex,
-        letterSpacing: (base.letterSpacing ?? 0) + u.ls,
-        lineHeight: base.lineHeight + u.lh,
-        opacity: base.opacity * vidClamp(u.a, 0, 1),
-        size: Math.max(1, base.size * u.s),
-        dx: (base.dx ?? 0) + ((u.x / 100) * base.size) / (dims?.w || 1),
-        dy: (base.dy ?? 0) + ((u.y / 100) * base.size) / (dims?.h || 1),
-      };
-    })
-    .filter(Boolean);
-};
-const pushSceneTexts = (t) => {
-  const scene = sceneRef.current;
-  if (!scene) return;
-  const list = textsAt(t, "mockup");
-  if (scene.setTexts) scene.setTexts(list); // multi-layer, once MockupScene supports it
-  else scene.setText(list.length ? list[list.length - 1] : null); // single-layer fallback
-};
-  useEffect(() => {
-    pushSceneTexts(videoOn ? vidTimeRef.current : null);
-  }, [textItems, canvasDims, fontTick, videoOn, vidTexts]);
-
-  // Playback range: the selected shot's span, or the whole timeline when nothing is selected.
-// Export always uses the full timeline.
-const vidRange = () => {
-  const { shots, sel, duration } = vidLive.current;
-  const chosen = vidEndRef.current ? [] : shots.filter((x) => sel.ids.includes(x.id));
-  if (!chosen.length) return { a: 0, b: duration };
-  return { a: Math.min(...chosen.map((s) => s.start)), b: Math.max(...chosen.map((s) => s.start + s.len)) };
-};
-
-  const vidSeek = (t) => {
-    // Scrubbing is free across the whole timeline. Only playback is limited to the selected shot's range.
-    const tt = vidClamp(t, 0, vidLive.current.duration);
-    vidTimeRef.current = tt;
-    setVidHead(tt);
-    const c = sampleShots(vidLive.current.shots, tt);
-    applyCam(c);
-    applyBgAt(tt);
-    applyAnimAt(tt);
-    syncVideos(tt, false);
-    commitCam(c);
-  };
-
-  useEffect(() => {
-    if (!vidPlaying) return;
-    let raf, prev = performance.now();
-const step = (now) => {
-  const { shots, loop } = vidLive.current;
-  const { a, b } = vidRange();
-  let t = vidTimeRef.current + (now - prev) / 1000;
-  prev = now;
-  const exporting = !!vidEndRef.current;
-  if (t >= b) {
-    if (loop && !exporting) t = a; // loop the selected shot, or the whole timeline
-    else {
-      vidTimeRef.current = b;
-      applyCam(sampleShots(shots, b));
-      applyAnimAt(b);
-      setVidPlaying(false);
-      vidEndRef.current?.();
-      vidEndRef.current = null;
-      return;
-    }
-  }
-  vidTimeRef.current = t;
-  applyCam(sampleShots(shots, t));
-  applyBgAt(t);
-  applyAnimAt(t);
-  syncAudio(t, !exporting);
-  syncVideos(t, !exporting);
-  raf = requestAnimationFrame(step);
-};
-    raf = requestAnimationFrame(step);
-    return () => {
-      cancelAnimationFrame(raf);
-      commitCam(sampleShots(vidLive.current.shots, vidTimeRef.current));
-      syncAudio(0, false);
-      syncVideos(vidTimeRef.current, false);
-    };
-  }, [vidPlaying]);
-
-  // leaving Video mode stops playback and hands the background back to the Scene panel
-  useEffect(() => {
-    if (videoOn) {
-      applyAnimAt(vidTimeRef.current);
-      return;
-    }
-    setVidPlaying(false);
-    if (vidImgShown.current !== null) {
-      vidImgShown.current = null; // Image mode shows the Image-mode upload again
-      if (uploadedFileRef.current) sceneRef.current?.uploadFile(uploadedFileRef.current, uploadedCrop ?? undefined);
-      else sceneRef.current?.clearScreenshot();
-    }
-    vidBgExitKeyRef.current = JSON.stringify(bgSnapshot());
-    sceneRef.current?.setDeviceAnim?.(null); // Image mode always shows the device at rest
-    applyFrameAnim(null);
-    applyFrameRowStatesAt(null);
-    if (bgAnimOnRef.current) {
-      bgAnimOnRef.current = null;
-      sceneRef.current?.setBackgroundCanvas?.(null);
-      hideFrameBgCanvas();
-      pushBgSnap(bgSnapshot());
-    }
-  }, [videoOn]);
-
-  // first time Video opens: start with "Shot 1" holding the current camera, and a background clip holding the current background
-  useEffect(() => {
-    if (!videoOn) return;
-    // the canvas always has a background, so it gets its own clip across the whole timeline
-    if (!vidLive.current.bgs.length) {
-      const bid = vidId.current++;
-      const clip = { id: bid, start: 0, len: vidLive.current.duration, snap: bgSnapshot(), css: bgPreviewCss() };
-      vidLive.current.bgs = [clip]; // sync, so the playhead sampling sees it right away
-      vidBgActive.current = bid; // already showing, no need to re-apply it
-      setVidBgs([clip]);
-    } else if (vidBgExitKeyRef.current !== null && JSON.stringify(bgSnapshot()) !== vidBgExitKeyRef.current) {
-      // background was changed in Image mode since the last visit: it becomes the default (first) row
-      vidPatchBg(vidLive.current.bgs[0].id, { snap: bgSnapshot(), css: bgPreviewCss() });
-      vidBgActive.current = null;
-      applyBgAt(vidTimeRef.current);
-    }
-    if (vidLive.current.shots.length || toolbarMode === "frame") return; // Frame mode: each frame gets its own row
-    const sid = vidId.current++, kid = vidId.current++;
-    vidNo.current = 2; // "Shot 1" is taken, next one is "Shot 2"
-    setVidShots([{ id: sid, name: "Shot 1", start: 0, len: 5, ease: "smooth", keys: [{ id: kid, t: 0, ...vidLive.current.cam }] }]);
-    setVidSel({ shot: sid, key: null, ids: [sid] });
-  }, [videoOn, vidSwapTick]);
 
   // Switching Mockup <-> Frame also swaps the scene look, camera and template highlights.
   // Each mode remembers what it was left with; a mode that was never visited starts from defaults.
   // (Defined before the timeline swap effect below, so the timeline's background / camera wins in Video mode.)
   const sceneByModeRef = useRef({});
   const sceneModeRef = useRef(tabKey);
-  useEffect(() => {
+  const swapSceneForTab = () => {
     const prev = sceneModeRef.current;
     if (prev === tabKey) return;
     sceneModeRef.current = tabKey;
@@ -4692,1464 +3097,12 @@ const step = (now) => {
     // open pickers belong to the mode being left
     setGradientPickerOpen(false);
     setColorPickerOpen(false);
-  }, [tabKey]);
-
-  // Switching Mockup <-> Frame swaps the whole timeline
-  useEffect(() => {
-    const prev = prevVidModeRef.current;
-    if (prev === tabKey) return;
-    prevVidModeRef.current = tabKey;
-    const l = vidLive.current;
-    vidByModeRef.current[prev] = {
-      shots: l.shots, bgs: l.bgs, texts: l.texts, duration: l.duration, no: vidNo.current, time: vidTimeRef.current,
-    };
-    const next = vidByModeRef.current[tabKey] ?? { shots: [], bgs: [], texts: [], duration: 10, no: 2, time: 0 };
-    const sel = { shot: null, key: null, ids: [], prop: null };
-    l.shots = next.shots; // sync, so the seek below samples the new timeline
-    l.bgs = next.bgs;
-    l.texts = next.texts;
-    l.duration = next.duration;
-    l.sel = sel;
-    setVidPlaying(false);
-    setVidShots(next.shots);
-    setVidBgs(next.bgs);
-    setVidTexts(next.texts);
-    setVidDuration(next.duration);
-    setVidSel(sel);
-    setSelBg(null);
-    setSelText(null);
-    vidNo.current = next.no;
-    vidBgActive.current = null;
-    vidBgExitKeyRef.current = null;
-    setVidSwapTick((n) => n + 1); // lets the init effect create Shot 1 / a background clip if this mode is new
-    if (videoOn) vidSeek(next.time);
-    else {
-      vidTimeRef.current = next.time;
-      setVidHead(next.time);
-    }
-  }, [tabKey]);
-
-  // Frame mode: every frame on the canvas gets its own timeline row.
-  // Frames that already had their chance (seen) aren't re-added, so a row you delete stays deleted.
-  const vidFrameSeenRef = useRef(new Set());
-  useEffect(() => {
-    if (!videoOn || toolbarMode !== "frame") return;
-    const poses = framePoseMap(frames, frameSizeRef.current);
-    if (!poses) return;
-    const cur = vidLive.current.shots;
-    const ids = new Set(frames.map((f) => f.id));
-    const seen = vidFrameSeenRef.current;
-    const kept = cur.filter((s) => s.frameId == null || ids.has(s.frameId)); // deleted frame -> its row goes too
-    const added = [];
-    frames.forEach((f, i) => {
-      if (seen.has(f.id)) return;
-      seen.add(f.id);
-      if (kept.some((s) => s.frameId === f.id)) return; // a template already made its row
-      added.push({
-        id: vidId.current++,
-        name: `Frame ${i + 1}`,
-        start: 0,
-        len: vidLive.current.duration,
-        ease: "smooth",
-        frameId: f.id,
-        keys: [{ id: vidId.current++, t: 0, props: ["frames"], frames: { [f.id]: poses[f.id] } }],
-      });
-    });
-    if (!added.length && kept.length === cur.length) return;
-    const next = [...kept, ...added];
-    vidLive.current.shots = next;
-    setVidShots(next);
-  }, [videoOn, toolbarMode, frames, vidSwapTick]);
-
-  // Frame video: a frame you move, resize or rotate keeps its row's only keyframe in step, so scrubbing or playing
-  // never snaps it back. With several keyframes, only the one under the playhead follows.
-  // Only runs right after a user edit (markFrameEdit), never for changes the timeline itself makes.
-  const frameEditRef = useRef(0);
-  const markFrameEdit = () => {
-    frameEditRef.current = performance.now() + 250;
   };
-  useEffect(() => {
-    if (performance.now() > frameEditRef.current) return;
-    if (!videoOn || toolbarMode !== "frame" || animTab || vidPlaying || vidExporting) return;
-    const box = frameSizeRef.current;
-    const poses = box ? framePoseMap(frames, box) : null;
-    if (!poses) return;
-    const t = vidTimeRef.current;
-    const POSE = ["x", "y", "w", "h", "s", "r"];
-    let touched = false;
-    const next = vidLive.current.shots.map((s) => {
-      const pose = s.frameId != null ? poses[s.frameId] : null;
-      if (!pose || !s.keys.length) return s;
-      const key = s.keys.find((k) => Math.abs(s.start + k.t - t) < 1 / 60 && k.frames?.[s.frameId]);
-      const cur = key?.frames?.[s.frameId];
-      if (!cur) return s;
-      if (POSE.every((p) => Math.abs((cur[p] ?? 0) - (pose[p] ?? 0)) < 1e-4)) return s;
-      touched = true;
-      return {
-        ...s,
-        keys: s.keys.map((k) => (k === key ? { ...k, frames: { ...k.frames, [s.frameId]: { ...pose } } } : k)),
-      };
-    });
-    if (!touched) return;
-    vidLive.current.shots = next;
-    setVidShots(next);
-  }, [frames]);
-
-  // Frame mode: selecting frames (canvas or Upload Media thumbnails) selects their timeline rows.
-  // No seek here, so grabbing a frame never snaps it back to a keyed pose.
-  const soloFrameRef = useRef(null); // frame that was double-clicked: select only its row, not its group
-  useEffect(() => {
-    if (!videoOn || toolbarMode !== "frame") return;
-    const isSolo = selectedIds.length === 1 && soloFrameRef.current === selectedIds[0];
-    if (!isSolo) soloFrameRef.current = null;
-    const all = vidLive.current.shots;
-    const picked = all.filter((s) => s.frameId != null && selectedIds.includes(s.frameId));
-    // single click: the whole group's rows. Double click: only that frame's row.
-    const gids = new Set(isSolo ? [] : picked.filter((s) => s.group).map((s) => s.group));
-    const rows = all.filter((s) => picked.includes(s) || (s.frameId != null && s.group && gids.has(s.group)));
-    if (!rows.length) return;
-    const ids = rows.map((s) => s.id);
-    const cur = vidLive.current.sel;
-    if (cur.ids.length === ids.length && ids.every((i) => cur.ids.includes(i))) return;
-    const next = { shot: ids[ids.length - 1], key: null, ids, prop: null };
-    vidLive.current.sel = next;
-    setVidSel(next);
-    setSelBg(null);
-    setSelText(null);
-  }, [selectedIds, videoOn, toolbarMode]);
-
-  // Row visibility must follow selection, new/changed rows and frame changes
-  useEffect(() => {
-    if (videoOn && toolbarMode === "frame") applyFrameRowStatesAt(vidTimeRef.current);
-  }, [selectedIds, videoOn, toolbarMode, vidShots, frames]);
-
-  const vidShotAt = (t) => {
-    const { shots, sel } = vidLive.current;
-    const inside = (s) => t >= s.start - 1e-6 && t <= s.start + s.len + 1e-6;
-    const cur = shots.find((s) => s.id === sel.shot);
-    return cur && inside(cur) ? cur : [...shots].reverse().find(inside) ?? null;
-  };
-
-const vidAddShot = () => {
-  if (animTab) return; // Animation: planes come from the template
-  if (toolbarModeRef.current === "frame") return addBlankFrame();
-  const { shots, duration, cam } = vidLive.current;
-  const end = shots.reduce((m, s) => Math.max(m, s.start + s.len), 0);
-  const len = 3;
-  if (end + len > duration) setVidDuration(Math.ceil(end + len));
-  const sid = vidId.current++, kid = vidId.current++;
-  if (!shots.length) vidNo.current = 1; // timeline was emptied: restart numbering
-  const name = `Shot ${vidNo.current++}`; // computed once, outside the updater
-  setVidShots((prev) => [...prev, { id: sid, name, start: end, len, ease: "smooth", keys: [{ id: kid, t: 0, ...cam }] }]);
-  setVidSel({ shot: sid, key: kid, ids: [sid] });
-  vidTimeRef.current = end;
-  setVidHead(end);
-};
-
-  // Properties whose current value differs from what the timeline plays at time t.
-  // Returns null when nothing changed, or when everything changed (= key every property).
-  const vidChangedProps = (t) => {
-    const changed = changedCamProps(vidLive.current.shots, t, vidLive.current.cam);
-    return changed.length && changed.length < CAM_KEYS.length ? changed : null;
-  };
-
-  // Adds a keyframe at the playhead for the properties that changed (or all of them if none did).
-const vidAddKey = () => {
-  const t = vidTimeRef.current;
-  const s = vidShotAt(t);
-  if (!s) return;
-  const rel = +(t - s.start).toFixed(3);
-  const { frames: allFrames, ...camOnly } = vidLive.current.cam;
-  // frame shot: only its own frame. Group's camera shot: no frames. Anything else: unchanged.
-  const cam =
-    s.frameId != null ? { ...camOnly, frames: { [s.frameId]: allFrames?.[s.frameId] } }
-    : s.group ? camOnly
-    : vidLive.current.cam;
-
-// A selected property row keys only that property.
-// From the shot track, key only the properties you changed (null = every property, when nothing or everything changed).
-const selProp = vidLive.current.sel.prop;
-const rowProp = selProp && selProp !== "bg" ? selProp : null;
-  let props = s.frameId != null ? ["frames"] : rowProp ? [rowProp] : vidChangedProps(t);
-  if (s.group && s.frameId == null && props) props = props.filter((p) => p !== "frames");
-  if (props && !props.length) return;
-
-  const hit = s.keys.find((k) => Math.abs(k.t - rel) < 1 / 60);
-  const kid = hit ? hit.id : vidId.current++;
-  setVidShots((prev) =>
-    prev.map((x) => {
-      if (x.id !== s.id) return x;
-      if (hit) {
-        return {
-          ...x,
-          keys: x.keys.map((k) => {
-            if (k.id !== hit.id) return k;
-            const merged = { ...k };
-            (props ?? CAM_KEYS).forEach((p) => (merged[p] = cam[p])); // "frames" in props copies the frame placement too
-            if (!props && cam.frames) merged.frames = cam.frames;
-            merged.props = !k.props || !props ? undefined : [...new Set([...k.props, ...props])];
-            return merged;
-          }),
-        };
-      }
-      const newKey = { id: kid, t: rel, ...cam, ...(props ? { props } : {}) };
-      // a camera-only key (e.g. a single property row) must not pin the frames
-      if (newKey.frames && props && !props.includes("frames")) delete newKey.frames;
-      return {
-        ...x,
-        keys: [...x.keys, newKey].sort((a, b) => a.t - b.t),
-      };
-    })
-  );
-  setVidSel({ shot: s.id, key: kid, ids: [s.id], prop: rowProp });
-};
-
-const vidDelete = () => {
-  const { shot, key, ids } = vidLive.current.sel;
-  if (!ids.length) return;
-  if (animTab && !(ids.length === 1 && key != null)) return; // Animation: rows belong to the template, only keyframes can go
-  if (ids.length === 1 && key != null) {
-    // one shot with a keyframe selected: delete just the keyframe
-    setVidShots((prev) => prev.map((s) => (s.id === shot ? { ...s, keys: s.keys.filter((k) => k.id !== key) } : s)));
-    setVidSel({ shot, key: null, ids });
-  } else {
-    // frame rows take their frame with them
-    const goneFrames =
-      toolbarModeRef.current === "frame"
-        ? vidLive.current.shots.filter((s) => ids.includes(s.id) && s.frameId != null).map((s) => s.frameId)
-        : [];
-    setVidShots((prev) => prev.filter((s) => !ids.includes(s.id)));
-    setVidSel({ shot: null, key: null, ids: [] });
-    if (goneFrames.length) {
-      goneFrames.forEach((id) => vidFrameSeenRef.current.delete(id)); // if it was the last frame, its blank placeholder gets a fresh row
-      deleteFrames(goneFrames);
-    }
-  }
-};
-
-  const vidPatchShot = (id, patch) => setVidShots((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
-  const vidSetShotImg = (sid, file) => {
-    let img = null;
-    if (file) {
-      const id = `simg-${vidId.current++}`;
-      vidImgFiles.current.set(id, file);
-      img = { id, thumb: URL.createObjectURL(file), label: file.name };
-    }
-    vidLive.current.shots = vidLive.current.shots.map((s) => (s.id === sid ? { ...s, img } : s)); // sync, so the apply below sees it
-    vidPatchShot(sid, { img });
-    vidImgShown.current = undefined; // forces a reload even if the id matches
-    applyShotImgAt(vidTimeRef.current);
-  };
-  // Crops the shot's own image and reloads it on the device
-  const vidCropShotImg = (sid, crop) => {
-    const apply = (shots) => shots.map((s) => (s.id === sid && s.img ? { ...s, img: { ...s.img, crop } } : s));
-    vidLive.current.shots = apply(vidLive.current.shots); // sync, so the apply below sees it
-    setVidShots(apply);
-    vidImgShown.current = undefined; // forces a reload even if the id matches
-    applyShotImgAt(vidTimeRef.current);
-  };
-  // Selected shot, else the shot under the playhead
-  vidUploadRef.current = (file) => {
-    const { shots, sel } = vidLive.current;
-    const target = shots.find((s) => s.id === sel.shot) ?? shotForImgAt(shots, vidTimeRef.current);
-    if (!target) return false;
-    vidSetShotImg(target.id, file);
-    return true;
-  };
-  const vidPatchKey = (sid, kid, patch) =>
-    setVidShots((prev) =>
-      prev.map((s) => (s.id === sid ? { ...s, keys: s.keys.map((k) => (k.id === kid ? { ...k, ...patch } : k)).sort((a, b) => a.t - b.t) } : s))
-    );
-  const vidReorder = (fromId, toId) =>
-    setVidShots((prev) => {
-      const from = prev.findIndex((s) => s.id === fromId), to = prev.findIndex((s) => s.id === toId);
-      if (from < 0 || to < 0 || from === to) return prev;
-      const next = [...prev];
-      const [m] = next.splice(from, 1);
-      next.splice(to, 0, m);
-      return next;
-    });
-  // Diamond button: removes the keyframe under the playhead, or adds one if there isn't any.
-const vidToggleKey = () => {
-  const t = vidTimeRef.current;
-  const s = vidShotAt(t);
-  if (!s) return;
-  const hit = s.keys.find((k) => Math.abs(s.start + k.t - t) < 1 / 60);
-  const selProp = vidLive.current.sel.prop;
-  const rowProp = selProp && selProp !== "bg" ? selProp : null;
-
-  // no keyframe here, or one that doesn't cover the selected property -> add it, but only if the camera was edited
-  const covers = hit && (!rowProp || !hit.props || hit.props.includes(rowProp));
-  if (!covers) {
-    const changed = changedCamProps(vidLive.current.shots, t, vidLive.current.cam);
-    if (rowProp ? !changed.includes(rowProp) : !changed.length) return;
-    return vidAddKey();
-  }
-
-  // shot row + partial keyframe + newly changed properties -> merge them into the keyframe
-  if (!rowProp && hit.props && changedCamProps(vidLive.current.shots, t, vidLive.current.cam).some((c) => !hit.props.includes(c)))
-    return vidAddKey();
-
-  // a property row is selected and the keyframe drives other properties too -> remove just that property
-  const current = hit.props ?? CAM_KEYS;
-  if (rowProp && current.length > 1) {
-    const remaining = current.filter((p) => p !== rowProp);
-    setVidShots((prev) =>
-      prev.map((x) =>
-        x.id === s.id ? { ...x, keys: x.keys.map((k) => (k.id === hit.id ? { ...k, props: remaining } : k)) } : x
-      )
-    );
-    return;
-  }
-
-  // otherwise remove the whole keyframe
-  setVidShots((prev) => prev.map((x) => (x.id === s.id ? { ...x, keys: x.keys.filter((k) => k.id !== hit.id) } : x)));
-  setVidSel((p) => ({ ...p, key: p.key === hit.id ? null : p.key }));
-};
-
-  // Right-click menu: re-save a keyframe with the camera as it is right now.
-  const vidUpdateKey = (sid, kid) => vidPatchKey(sid, kid, { ...vidLive.current.cam });
-
-  // Right-click menu: remove one specific keyframe, whichever shot or selection is active.
-  const vidDeleteKey = (sid, kid) => {
-    setVidShots((prev) => prev.map((s) => (s.id === sid ? { ...s, keys: s.keys.filter((k) => k.id !== kid) } : s)));
-    setVidSel((p) => ({ ...p, key: p.key === kid ? null : p.key }));
-  };
-
-  // Copies the selected shots. Camera shots go after the last shot. Frame rows get a real copy of their
-  // frame (new id, nudged down-right), stay at the same time, and copies of a group form a new group.
-  const vidDuplicate = () => {
-    if (animTab) return;
-    const { shots, sel, duration } = vidLive.current;
-    const src = shots.filter((s) => sel.ids.includes(s.id));
-    if (!src.length) return;
-    const hasFrameRows = toolbarModeRef.current === "frame" && src.some((s) => s.frameId != null);
-    const end = shots.reduce((m, s) => Math.max(m, s.start + s.len), 0);
-    const delta = hasFrameRows ? 0 : end - Math.min(...src.map((s) => s.start));
-    const OFF = 0.03;
-
-    // frame rows: clone each frame once, remember old id -> new id
-    const newFrameIds = {};
-    if (hasFrameRows) {
-      const cur = framesLatestRef.current;
-      const clones = [];
-      src.forEach((s) => {
-        if (s.frameId == null || newFrameIds[s.frameId] != null) return;
-        const f = cur.find((x) => x.id === s.frameId);
-        if (!f) return;
-        const nid = nextFrameIdRef.current++;
-        newFrameIds[s.frameId] = nid;
-        vidFrameSeenRef.current.add(nid); // this row is created below, so the frame-row effect must skip it
-        clones.push({ ...cloneFrame(f, nid), x: f.x + OFF, y: f.y + OFF });
-      });
-      if (clones.length) {
-        const next = [...cur, ...clones];
-        framesLatestRef.current = next;
-        setFrames(next);
-        setSelectedIds(clones.map((c) => c.id));
-      }
-    }
-
-    const gmap = {}; // old group id -> new group id
-    const copies = src.flatMap((s) => {
-      const nf = s.frameId != null ? newFrameIds[s.frameId] : undefined;
-      if (s.frameId != null && nf == null) return []; // its frame no longer exists
-      const g = s.group ? (gmap[s.group] ??= vidId.current++) : undefined;
-      return [{
-        ...s,
-        id: vidId.current++,
-        name: `${s.name} copy`,
-        start: s.start + delta,
-        group: g,
-        groupName: s.group ? `${s.groupName || "Group"} copy` : undefined,
-        ...(nf != null ? { frameId: nf } : {}),
-        keys: s.keys.map((k) => {
-          const p = nf != null && k.frames ? k.frames[s.frameId] : null;
-          return {
-            ...k,
-            id: vidId.current++,
-            ...(nf != null && k.frames ? { frames: p ? { [nf]: { ...p, x: p.x + OFF, y: p.y + OFF } } : undefined } : {}),
-          };
-        }),
-      }];
-    });
-    if (!copies.length) return;
-    const newEnd = Math.max(...copies.map((c) => c.start + c.len));
-    if (newEnd > duration) setVidDuration(Math.ceil(newEnd));
-    setVidShots((prev) => [...prev, ...copies]);
-    setVidSel({ shot: copies[copies.length - 1].id, key: null, ids: copies.map((c) => c.id) });
-    vidTimeRef.current = copies[0].start;
-    setVidHead(copies[0].start);
-    const c = sampleShots(copies, copies[0].start);
-    applyCam(c);
-    commitCam(c);
-  };
-
-  // ---- Background clips (per shot) ----
-  const bgSnapshot = () => ({
-    bgType, bgHex, bgOpacity, gradientType, gradientAngle, gradientOpacity,
-    gradientStops: gradientStops.map((s) => ({ ...s })), grainAmount, customBgImageUrl,
-  });
-  const bgPreviewCss = () =>
-    bgType === "solid"
-      ? hexToRgba(bgHex, bgOpacity)
-      : bgType === "gradient"
-      ? gradientCss
-      : customBgImageUrl
-      ? `center / cover url(${customBgImageUrl})`
-      : "transparent";
-
-// Adds a clip on the shot under the playhead (or the selected shot).
-// If the shot already has backgrounds, the new one starts where the last one ends.
-// If there's no room left, the shot is extended to fit it. Returns that shot's id.
-// deselect shots, so playback range goes back to the whole timeline
-const clearShotSel = () => {
-  setSelAudio(null);
-  const next = { shot: null, key: null, ids: [], prop: null };
-  vidLive.current.sel = next;
-  setVidSel(next);
-};
-
-// New clip starts at the playhead, or after the last clip if the playhead is already on one.
-const vidAddBg = () => {
-  const { bgs, duration } = vidLive.current;
-  const t = vidTimeRef.current;
-  const covered = bgs.some((b) => t >= b.start - 1e-6 && t < b.start + b.len - 1e-6);
-  const start = covered ? +Math.max(...bgs.map((b) => b.start + b.len)).toFixed(3) : +t.toFixed(3);
-  const len = 2;
-  if (start + len > duration) setVidDuration(Math.ceil(start + len));
-  const bid = vidId.current++;
-  setVidBgs((prev) => [...prev, { id: bid, start, len, snap: bgSnapshot(), css: bgPreviewCss() }]);
-};
-// A background edit with no background row selected: add a new row at the playhead and select it.
-const vidAddBgFromEdit = () => {
-  // Animation tab: no background rows to manage, so the edit changes the default row that spans the whole timeline
-  if (animTab && vidLive.current.bgs.length) {
-    const first = vidLive.current.bgs[0];
-    const snap = bgSnapshot();
-    vidPatchBg(first.id, { snap, css: bgPreviewCss() });
-    vidBgActive.current = first.id;
-    bgAppliedKeyRef.current = bgKey(snap);
-    return;
-  }
-  const { duration } = vidLive.current;
-  const start = +vidTimeRef.current.toFixed(3);
-  const len = 2;
-  if (start + len > duration) setVidDuration(Math.ceil(start + len));
-  const bid = vidId.current++;
-  const snap = bgSnapshot();
-  const clip = { id: bid, start, len, snap, css: bgPreviewCss() };
-  vidLive.current.bgs = [...vidLive.current.bgs, clip]; // sync, so the playhead sampling sees it
-  setVidBgs((prev) => [...prev, clip]);
-  vidBgActive.current = bid;
-  bgAppliedKeyRef.current = bgKey(snap);
-  clearShotSel();
-  setSelText(null);
-  setSelBg({ bid, ids: [bid] });
-};
-
-const vidPatchBg = (bid, patch) => {
-  const apply = (list) => list.map((b) => (b.id === bid ? { ...b, ...patch } : b));
-  vidLive.current.bgs = apply(vidLive.current.bgs); // sync, so a seek right after sees it
-  setVidBgs(apply);
-};
-const vidSetBgAnim = (bid, kind, anim) => {
-  vidPatchBg(bid, { [kind]: anim, ...(kind === "enter" ? { anim: undefined } : {}) }); // drops the old single-animation field
-  const b = vidLive.current.bgs.find((x) => x.id === bid);
-  if (!b) return;
-  setVidPlaying(false);
-  const a = b.start, e = a + b.len;
-  let t = vidTimeRef.current;
-  if (anim) {
-    const d = anim.dur / 1000, dl = (anim.delay ?? 0) / 1000;
-    t = kind === "enter" ? a + dl + d / 2 : e - dl - d / 2; // park the playhead mid-animation
-  }
-  vidSeek(vidClamp(t, a, e));
-};
-  // kind: "enter" | "exit". anim: { id, dur, delay } or null to remove.
-  // seek = true parks the playhead mid-animation so the canvas shows the effect.
-  const vidSetShotAnim = (sid, kind, anim, seek = true) => {
-    // any shot / frame row that belongs to a group pulls the whole group in
-    const all = vidLive.current.shots;
-    const selIds = vidLive.current.sel.ids;
-    const base = selIds.includes(sid) ? selIds : [sid];
-    const gids = new Set(all.filter((x) => base.includes(x.id) && x.group).map((x) => x.group));
-    const ids = all.filter((x) => base.includes(x.id) || (x.group && gids.has(x.group))).map((x) => x.id);
-    const apply = (shots) => shots.map((s) => (ids.includes(s.id) ? { ...s, [kind]: anim } : s));
-    vidLive.current.shots = apply(vidLive.current.shots); // sync, so the seek below sees it
-    setVidShots(apply);
-    const s = vidLive.current.shots.find((x) => x.id === sid);
-    if (!s) return;
-    setVidPlaying(false);
-    if (!seek) {
-      applyAnimAt(vidTimeRef.current);
-      return;
-    }
-    let t = vidTimeRef.current;
-    if (anim) {
-      const d = anim.dur / 1000, dl = anim.delay / 1000;
-      t = kind === "enter" ? s.start + dl + d / 2 : s.start + s.len - dl - d / 2;
-    }
-    vidSeek(vidClamp(t, s.start, s.start + s.len));
-  };
-const vidUpdateBg = (bid) => vidPatchBg(bid, { snap: bgSnapshot(), css: bgPreviewCss() });
-
-// Copy lands after the last background clip (a copy on top of the original would just hide it).
-const vidDuplicateBg = (bid) => {
-  const { bgs, duration } = vidLive.current;
-  const src = bgs.find((b) => b.id === bid);
-  if (!src) return;
-  const start = +Math.max(...bgs.map((b) => b.start + b.len)).toFixed(3);
-  if (start + src.len > duration) setVidDuration(Math.ceil(start + src.len));
-  const nid = vidId.current++;
-  const copy = {
-    ...src,
-    id: nid,
-    name: `${src.name || `Background ${bgs.indexOf(src) + 1}`} copy`,
-    start,
-    snap: { ...src.snap, gradientStops: src.snap.gradientStops.map((s) => ({ ...s })) },
-  };
-  vidLive.current.bgs = [...bgs, copy]; // sync, so the select below sees it
-  setVidBgs((prev) => [...prev, copy]);
-  vidSelectBg(nid);
-};
-const vidDeleteBg = (bid) => {
-  setVidBgs((prev) => prev.filter((b) => b.id !== bid));
-  if (selBgRef.current?.bid === bid) setSelBg(null);
-};
-const vidToggleBgHidden = (bid) => {
-  const b = vidLive.current.bgs.find((x) => x.id === bid);
-  if (!b) return;
-  vidPatchBg(bid, { hidden: !b.hidden });
-  if (selBgRef.current?.ids?.includes(bid)) setSelBg(null); // otherwise the panel edit-sync would overwrite this clip
-  if (bgAnimOnRef.current) {
-    bgAnimOnRef.current = null;
-    sceneRef.current?.setBackgroundCanvas?.(null);
-  }
-  vidBgActive.current = null;
-  const t = vidTimeRef.current;
-  const vis = vidLive.current.bgs.filter((x) => !x.hidden);
-  const target =
-    vis.find((x) => t >= x.start && t <= x.start + x.len) ??
-    [...vis].filter((x) => x.start <= t).sort((a, c) => c.start - a.start)[0];
-  if (target) {
-    vidBgActive.current = target.id;
-    applyBgSnap(target.snap);
-  } else {
-    applyBgSnap({
-      bgType: "solid", bgHex: surfaceHex(darkMode), bgOpacity: 100,
-      gradientType, gradientAngle, gradientOpacity, gradientStops, grainAmount, customBgImageUrl,
-    });
-  }
-};
-
-    // ---- Text clips (per shot) ----
-// whole = text that existed before Video mode: clip spans the whole timeline
-const vidAddTextClip = (tid, whole = false) => {
-  if (animTab) whole = true; // Animation has no text rows to trim, so the text lives for the whole loop
-  vidTextSeenRef.current.add(tid);
-  const { duration } = vidLive.current;
-  const start = whole ? 0 : +vidTimeRef.current.toFixed(3);
-  const len = whole ? duration : +Math.max(0.2, Math.min(3, duration - start)).toFixed(3);
-  const cid = vidId.current++;
-  setVidTexts((prev) => [...prev, { id: cid, tid, start, len }]);
-  if (!whole) {
-    clearShotSel();
-    setSelBg(null);
-    setSelText({ cid, ids: [cid] });
-  }
-};
-useEffect(() => {
-  if (!videoOn) return;
-  const seen = vidTextSeenRef.current;
-  textItems
-    .filter((t) => (t.mode ?? "mockup") === toolbarMode && !seen.has(t.id))
-    .forEach((t) => {
-      seen.add(t.id);
-      if (!vidLive.current.texts.some((c) => c.tid === t.id)) vidAddTextClip(t.id, true);
-    });
-}, [videoOn, textItems, toolbarMode]);
-
-const vidPatchText = (cid, patch) => {
-  const apply = (list) => list.map((c) => (c.id === cid ? { ...c, ...patch } : c));
-  vidLive.current.texts = apply(vidLive.current.texts);
-  setVidTexts(apply);
-};
-const vidSetTextAnim = (cid, kind, anim) => {
-  vidPatchText(cid, { [kind]: anim });
-  const c = vidLive.current.texts.find((x) => x.id === cid);
-  if (!c) return;
-  setVidPlaying(false);
-  const a = c.start, b = a + c.len;
-  let t = vidTimeRef.current;
-  if (anim) {
-    const d = anim.dur / 1000, dl = anim.delay / 1000;
-    t = kind === "enter" ? a + dl + d / 2 : b - dl - d / 2;
-  }
-  vidSeek(vidClamp(t, a, b));
-};
-
-// Duplicates the text layer and gives the copy its own clip with the same timing and animations.
-const vidDuplicateText = (cid) => {
-  const clip = vidLive.current.texts.find((c) => c.id === cid);
-  if (!clip) return;
-  const tid = nextTextIdRef.current++;
-  const nid = vidId.current++;
-  vidTextSeenRef.current.add(tid); // so the "whole timeline" auto-clip effect skips it
-  setTextItems((prev) => {
-    const i = prev.findIndex((t) => t.id === clip.tid);
-    if (i < 0) return prev;
-    const src = prev[i];
-    const copy = {
-      ...src,
-      id: tid,
-      name: `${textName(src)} copy`,
-      dx: (src.dx ?? 0) + 0.03,
-      dy: (src.dy ?? 0) + 0.03,
-      customFonts: [...src.customFonts],
-      decoStash: { ...(src.decoStash ?? {}) },
-    };
-    const next = [...prev];
-    next.splice(i + 1, 0, copy);
-    return next;
-  });
-  const copy = { ...clip, id: nid, tid };
-  vidLive.current.texts = [...vidLive.current.texts, copy];
-  setVidTexts((prev) => [...prev, copy]);
-  clearShotSel();
-  setSelBg(null);
-  setSelText({ cid: nid, ids: [nid] });
-};
-
-const vidDeleteText = (cid) => {
-  const clip = vidLive.current.texts.find((c) => c.id === cid);
-  setSelText((p) => (p?.cid === cid ? null : p));
-  if (clip) deleteTextLayer(clip.tid); // removes the text layer and every clip that points to it
-  else setVidTexts((prev) => prev.filter((c) => c.id !== cid));
-};
-
-  // Click a clip: load its background into the Scene panel and keep it in sync with further edits.
-const vidSelectBg = (bid, additive = false) => {
-  const cur = additive ? selBgRef.current?.ids ?? [] : [];
-  const ids = additive ? (cur.includes(bid) ? cur.filter((i) => i !== bid) : [...cur, bid]) : [bid];
-  if (!additive) {
-    clearShotSel();
-    setSelText(null);
-  }
-  if (!ids.length) return setSelBg(null);
-  const primary = ids.includes(bid) ? bid : ids[ids.length - 1];
-  const clip = vidLive.current.bgs.find((b) => b.id === primary);
-  if (!clip) return;
-  vidBgActive.current = primary;
-  applyBgSnap(clip.snap);
-  setSelBg({ bid: primary, ids });
-};
-
-  // While a clip is selected, Scene panel edits are written back into it.
-useEffect(() => {
-  if (!selBg) return;
-  const clip = vidLive.current.bgs.find((b) => b.id === selBg.bid);
-  if (!clip) return;
-  const snap = bgSnapshot();
-  if (JSON.stringify(clip.snap) === JSON.stringify(snap)) return;
-  vidPatchBg(selBg.bid, { snap, css: bgPreviewCss() });
-}, [bgType, bgHex, bgOpacity, gradientType, gradientAngle, gradientOpacity, gradientStops, grainAmount, customBgImageUrl]);
-
-// No background row selected + the user changes the background -> new row instead of losing the change.
-useEffect(() => {
-  if (!videoOn || selBg || vidPlaying || vidExporting) return;
-  if (bgKey(bgSnapshot()) === bgAppliedKeyRef.current) return; // came from a clip, not from the user
-  vidAddBgFromEdit();
-}, [bgType, bgHex, bgOpacity, gradientType, gradientAngle, gradientOpacity, gradientStops, grainAmount, customBgImageUrl]);
-
-  // Moves a keyframe and puts the playhead exactly on it.
-  const vidMoveKey = (sid, kid, t) => {
-    // update the live ref first so the seek samples the moved key, not its old position
-    vidLive.current.shots = vidLive.current.shots.map((s) =>
-      s.id === sid ? { ...s, keys: s.keys.map((k) => (k.id === kid ? { ...k, t } : k)).sort((a, b) => a.t - b.t) } : s
-    );
-    vidPatchKey(sid, kid, { t });
-    const shot = vidLive.current.shots.find((s) => s.id === sid);
-    if (shot) vidSeek(shot.start + t);
-  };
-
-    // Splits one property off a shared keyframe into its own keyframe (same time and value). Returns the new key's id.
-  const vidSplitKey = (sid, kid, prop) => {
-    const shot = vidLive.current.shots.find((x) => x.id === sid);
-    const key = shot?.keys.find((k) => k.id === kid);
-    if (!key) return null;
-    const nid = vidId.current++;
-    const rest = (key.props ?? CAM_KEYS).filter((p) => p !== prop);
-    const { [prop]: _own, ...restEase } = key.propEase ?? {};
-    const own = {
-      ...key,
-      id: nid,
-      props: [prop],
-      frames: undefined, // the frame placement stays on the original key
-      propEase: key.propEase?.[prop] ? { [prop]: key.propEase[prop] } : undefined,
-    };
-    const left = { ...key, props: rest, propEase: Object.keys(restEase).length ? restEase : undefined };
-    const apply = (shots) =>
-      shots.map((x) =>
-        x.id === sid
-          ? { ...x, keys: x.keys.map((k) => (k.id === kid ? left : k)).concat(own).sort((a, b) => a.t - b.t) }
-          : x
-      );
-    vidLive.current.shots = apply(vidLive.current.shots); // sync, so the move below sees it
-    setVidShots(apply);
-    return nid;
-  };
-
-  // can't shrink past the end of the last shot
-  const vidSetDuration = (d) => {
-    const { shots, bgs, texts, audios } = vidLive.current;
-const minEnd = Math.max(1, ...shots.map((s) => s.start + s.len), ...bgs.map((b) => b.start + b.len), ...texts.map((c) => c.start + c.len), ...audios.map((a) => a.start + a.len));
-    const tpl = animTplRef.current;
-    const tplDriven = animTab && tpl && defaultParams(tpl.params).duration !== undefined;
-    // Animation: the template rebuilds the shots, so shrinking must not be blocked by the current shot lengths
-    const nd = Math.min(200, Math.max(tplDriven ? 1 : minEnd, Math.round(d * 10) / 10));
-    setVidDuration(nd);
-    if (tplDriven) changeTplParam(tpl, "duration", nd);
-  };
-  // ---- Audio clips (independent of shots / frames) ----
-  const audioEl = (a) => {
-    const m = audioElsRef.current;
-    let el = m.get(a.id);
-    if (!el) {
-      el = new Audio(a.src);
-      el.preload = "auto";
-      m.set(a.id, el);
-    }
-    return el;
-  };
-  // play = true: audio inside its clip plays in sync with t. false: everything pauses.
-  const syncAudio = (t, play) => {
-    const list = vidLive.current.audios ?? [];
-    audioElsRef.current.forEach((el, id) => {
-      if (!list.some((a) => a.id === id) && !el.paused) el.pause(); // clip was deleted / undone
-    });
-    list.forEach((a) => {
-      const el = audioEl(a);
-      const inside = play && !a.muted && t >= a.start && t < a.start + a.len;
-      if (!inside) {
-        if (!el.paused) el.pause();
-        return;
-      }
-      const want = (a.offset ?? 0) + (t - a.start);
-      el.volume = vidClamp(a.volume ?? 1, 0, 1);
-      if (el.paused) {
-        el.currentTime = want;
-        el.play().catch(() => {});
-      } else if (Math.abs(el.currentTime - want) > 0.3) {
-        el.currentTime = want; // playhead jumped (seek / loop)
-      }
-    });
-  };
-    // Keeps every uploaded video (frame <video>s and the mockup video) on the timeline's clock, looping by its own length.
-  const syncVideos = (t, play) => {
-    const els = [...document.querySelectorAll("video[data-frame-video]")];
-    const mv = mockupVideoRef.current?.el;
-    if (mv && toolbarModeRef.current === "mockup") els.push(mv);
-    els.forEach((el) => {
-      const d = el.duration;
-      if (!d || !isFinite(d)) return;
-      const want = t % d;
-      const diff = Math.abs(el.currentTime - want);
-      if (play) {
-        if (el.paused) {
-          el.currentTime = want;
-          el.play().catch(() => {});
-        } else if (diff > 0.3 && diff < d - 0.3) el.currentTime = want; // jumped (seek / loop); near-wrap is normal looping
-      } else {
-        if (!el.paused) el.pause();
-        if (diff > 1 / 60) el.currentTime = want;
-      }
-    });
-    if (mv) sceneRef.current?.refreshScreen?.();
-  };
-  const vidPatchAudio = (id, patch) => {
-    const apply = (list) =>
-      list.map((a) => {
-        if (a.id !== id) return a;
-        const n = { ...a, ...patch };
-        // trimming the left edge moves the start point inside the source file
-        if (patch.start !== undefined && patch.len !== undefined) n.offset = Math.max(0, (a.offset ?? 0) + (patch.start - a.start));
-        return n;
-      });
-    vidLive.current.audios = apply(vidLive.current.audios);
-    setVidAudios(apply);
-  };
-  const vidSelectAudio = (id) => {
-    clearShotSel();
-    setSelBg(null);
-    setSelText(null);
-    setSelAudio({ aid: id });
-  };
-  const vidDeleteAudio = (id) => {
-    const el = audioElsRef.current.get(id);
-    if (el) {
-      el.pause();
-      audioElsRef.current.delete(id);
-    }
-    setVidAudios((prev) => prev.filter((a) => a.id !== id));
-    setSelAudio((p) => (p?.aid === id ? null : p));
-  };
-  const vidAddAudio = async (file) => {
-    const src = URL.createObjectURL(file);
-    let dur = 5, peaks = null;
-    try {
-      const Ctx = window.AudioContext || window.webkitAudioContext;
-      const ctx = new Ctx();
-      const buf = await ctx.decodeAudioData(await file.arrayBuffer());
-      ctx.close();
-      dur = buf.duration;
-      const N = 400, ch = buf.getChannelData(0), step = Math.max(1, Math.floor(ch.length / N));
-      const raw = Array.from({ length: N }, (_, i) => {
-        let m = 0;
-        const end = Math.min(ch.length, (i + 1) * step);
-        for (let j = i * step; j < end; j += Math.max(1, step >> 5)) m = Math.max(m, Math.abs(ch[j]));
-        return m;
-      });
-      const top = Math.max(...raw, 1e-6);
-      peaks = raw.map((p) => Math.round((p / top) * 100));
-    } catch {
-      dur = await new Promise((res) => {
-        const a = new Audio(src);
-        a.onloadedmetadata = () => res(a.duration || 5);
-        a.onerror = () => res(5);
-      });
-    }
-    const total = vidLive.current.duration;
-    const start = +Math.min(vidTimeRef.current, Math.max(0, total - 0.2)).toFixed(3);
-    const len = +Math.max(0.2, Math.min(dur, total - start)).toFixed(3);
-    const id = vidId.current++;
-    const clip = { id, name: file.name.replace(/\.[^.]+$/, ""), src, start, len, offset: 0, dur, peaks, volume: 1, muted: false };
-    vidLive.current.audios = [...vidLive.current.audios, clip];
-    setVidAudios((prev) => [...prev, clip]);
-    vidSelectAudio(id);
-  };
-
-  const vidSkip = (dir) => {
-    const { shots, duration } = vidLive.current;
-    const t = vidTimeRef.current, eps = 1 / 60;
-    const pts = new Set([0, duration]);
-    shots.forEach((s) => {
-      pts.add(s.start);
-      pts.add(s.start + s.len);
-      s.keys.forEach((k) => pts.add(s.start + k.t));
-    });
-    const list = [...pts].sort((a, b) => a - b);
-    const next = dir > 0 ? list.find((p) => p > t + eps) : [...list].reverse().find((p) => p < t - eps);
-    vidSeek(next ?? (dir > 0 ? duration : 0));
-  };
-const vidToggle = () => {
-  if (!vidPlaying) {
-    const { a, b } = vidRange();
-    const t = vidTimeRef.current;
-    if (t >= b - 1e-6 || t < a) vidTimeRef.current = a;
-  }
-  setVidPlaying((p) => !p);
-};
-
-  // What the enter / exit previews animate: the real device (Mockup) or the real frames (Frame).
-  const getAnimSubject = async () => {
-    const loadImg = (src) =>
-      new Promise((res) => {
-        const im = new Image();
-        im.crossOrigin = "anonymous";
-        im.onload = () => res(im);
-        im.onerror = () => res(null);
-        im.src = src;
-      });
-
-    if (toolbarModeRef.current === "frame") {
-      const box = frameSizeRef.current;
-      if (!box) return null;
-      const items = await Promise.all(
-        framesLatestRef.current.map(async (f) => {
-          const r = frameRect(f, box);
-          const url = f.img ? (f.img.cropUrl ?? f.img.url) : null;
-          return {
-            l: r.left / box.w,
-            t: r.top / box.h,
-            w: r.width / box.w,
-            h: r.height / box.h,
-            radii: cornersOf(f).map((p) => p / 100),
-            img: url ? await loadImg(url) : null,
-          };
-        })
-      );
-      return { type: "frames", ratio: box.w / box.h, items };
-    }
-
-    const scene = sceneRef.current;
-    if (!scene?.isReady?.(deviceType)) return null;
-    const url = scene.renderPreviews?.([templatePreviewCam({ cameraKey: "front" })])?.[0];
-    const img = url ? await loadImg(url) : null;
-    return img ? { type: "image", img } : null;
-  };
-
-  // handed to each TextEditor so it can animate itself during playback
-  const textAnimCtl = React.useMemo(
-    () => (videoOn ? { timeRef: vidTimeRef, getTexts: () => vidLive.current.texts } : null),
-    [videoOn]
-  );
-
-    const [vidTplId, setVidTplId] = useState(null);
-
-  // Renders the device at rest (whatever the playhead's enter / exit pose is), then puts the pose back.
-  const renderVideoStills = (cams) => {
-    const sc = sceneRef.current;
-    if (!sc?.isReady?.(deviceType)) return null;
-    sc.setDeviceAnim?.(null);
-    try {
-      return sc.renderPreviews(cams);
-    } finally {
-      const s = vidLive.current.shots;
-      sc.setDeviceAnim?.(s.length ? sampleDeviceAnim(s, vidTimeRef.current) : null);
-    }
-  };
-
-  // Frame templates: turns each key's `fo` offsets into real per-frame placements (key.frames).
-  // "Rest" layout = the last keyframed pose already on the timeline, else where the frames sit now.
-  // Expands a `stagger` spec into keyframes: each frame gets its own start time, so frames
-  // animate one after another. Segments are linear, and the easing is baked in by sampling
-  // 5 points per frame per phase. rest = null when the canvas isn't measured yet (camera only).
-  // Per-frame tracks: the template returns every keyframe for each frame ({ u: 0-1, dx, dy, k, dr }),
-  // so any motion works, including loops. Two keys with the same u make a hard cut.
-  const buildTrackKeys = (s, cur, rest) => {
-    if (!rest) return [];
-    const L = s.len;
-    const lin = vidEaseSpec("linear");
-    return cur.map((f, i) => {
-      const r = rest[f.id];
-      const keys = s.stagger.track(i, cur.length).map((o) => ({
-        t: +(vidClamp(o.u, 0, 1) * L).toFixed(3),
-        props: ["frames"],
-        ease: lin,
-        frames: {
-          [f.id]: {
-            x: r.x + (o.dx ?? 0), y: r.y + (o.dy ?? 0), w: r.w * (o.kw ?? 1), h: r.h * (o.kh ?? 1), s: r.s * (o.k ?? 1), r: (r.r ?? 0) + (o.dr ?? 0),
-            rx: o.rx ?? 0, ry: o.ry ?? 0, z: o.dz ?? 0, sh: o.sh ?? 0, ...clipOf(o), // 3D fields and window clip are absolute, not offsets
-          },
-        },
-      }));
-      return {
-        name: `Frame ${i + 1}`, start: s.start, len: L, ease: "smooth", frameId: f.id,
-        ...(s.enter ? { enter: { ...s.enter } } : {}),
-        ...(s.exit ? { exit: { ...s.exit } } : {}),
-        keys, groupKey: s.name, groupName: s.name,
-      };
-    });
-  };
-
-  const buildStaggerKeys = (s, cur, rest) => {
-    const st = s.stagger, n = cur.length, L = s.len;
-    if (st.track) return buildTrackKeys(s, cur, rest);
-    const lerp = (a, b, u) => a + (b - a) * u;
-    const easeIn = vidEaseFn(vidEaseSpec(st.ease ?? "expo-out"));
-    const easeOut = vidEaseFn(vidEaseSpec(st.outEase ?? "cubic-in"));
-    const dur = Math.min(st.dur ?? 1, L);
-    const hasOut = !!st.out;
-    const avail = L - dur - (hasOut ? dur + (st.hold ?? 0.5) : 0);
-    const step = n > 1 ? Math.max(0, Math.min(st.step ?? 0.2, avail / (n - 1))) : 0;
-    const span = (n - 1) * step;
-    const ranks = txtRanks(st.order ?? "start", n);
-    const poseAt = (f, i, t) => {
-      const r = rest[f.id];
-      const off = (fn) => {
-        const o = fn(i, n, { x: r.x, y: r.y }) ?? {};
-        // dx / dy = position offset, k = scale multiplier, dr = rotation offset in degrees
-        return { x: r.x + (o.dx ?? 0), y: r.y + (o.dy ?? 0), w: r.w, h: r.h, s: r.s * (o.k ?? 1), r: (r.r ?? 0) + (o.dr ?? 0) };
-      };
-      const mix = (a, b, u) => ({ x: lerp(a.x, b.x, u), y: lerp(a.y, b.y, u), w: r.w, h: r.h, s: lerp(a.s, b.s, u), r: lerp(a.r ?? 0, b.r ?? 0, u) });
-      const a0 = ranks[i] * span, a1 = a0 + dur;
-      if (t <= a0) return off(st.from);
-      if (t < a1) return mix(off(st.from), r, easeIn((t - a0) / dur));
-      if (hasOut) {
-        const o0 = L - dur - span + ranks[i] * span, o1 = o0 + dur;
-        if (t >= o1) return off(st.out);
-        if (t > o0) return mix(r, off(st.out), easeOut((t - o0) / dur));
-      }
-      return r;
-    };
-
-    const lin = vidEaseSpec("linear");
-    const out = [];
-
-    // One shot per frame, each owning only that frame's pose (no camera shot)
-    if (rest) {
-      cur.forEach((f, i) => {
-        const ts = new Set([0, L]);
-        const phases = [ranks[i] * span];
-        if (hasOut) phases.push(L - dur - span + ranks[i] * span);
-        phases.forEach((p) =>
-          [0, 0.25, 0.5, 0.75, 1].forEach((u) => ts.add(vidClamp(+(Math.round((p + u * dur) * VID_FPS) / VID_FPS).toFixed(3), 0, L)))
-        );
-        out.push({
-          name: `Frame ${i + 1}`, start: s.start, len: L, ease: "smooth", frameId: f.id,
-          ...(s.enter ? { enter: { ...s.enter } } : {}),
-          ...(s.exit ? { exit: { ...s.exit } } : {}),
-          keys: [...ts].sort((a, b) => a - b).map((t) => ({ t, props: ["frames"], frames: { [f.id]: poseAt(f, i, t) }, ease: lin })),
-        });
-      });
-    }
-    return out.map((o) => ({ ...o, groupKey: s.name, groupName: s.name }));
-  };
-
-  // Frames arranged as one of the FRAME_LAYOUTS. Pure: sets no state. Extra slots get copies of
-  // your images (cycled); alloc() hands out ids for the new frames.
-  const layoutFramesFor = (layoutKey, alloc, boxOverride = null) => {
-    const box = boxOverride ?? frameSizeRef.current;
-    const cur = framesLatestRef.current;
-    const slots = Array.isArray(layoutKey) ? layoutKey : FRAME_LAYOUTS[layoutKey];
-    if (!box || !slots) return cur;
-    const short = Math.min(box.w, box.h);
-    const base = cur.find((f) => selectedIdsRef.current.includes(f.id)) ?? cur[0];
-    // every image uploaded so far (upload order), plus anything already on the canvas, e.g. from an opened project
-    const own = cur.filter((f) => f.img).map((f) => f.img);
-    const pool = [...assetPoolRef.current, ...own.filter((im) => !assetPoolRef.current.some((a) => a?.url === im.url))];
-    const NOMINAL_H = 1000;
-    return slots.map((sl, i) => {
-      const existing = cur[i];
-      const src = existing ?? cloneFrame({ ...base, hidden: false, locked: false }, nextFrameIdRef.current++);
-      // Animation: planes always cycle through the assets. Other tabs keep each frame's own image.
-      const slotImg = animTab ? assetPoolRef.current[sl.asset ?? i] ?? defaultAnimImage(sl.asset ?? i) : null;
-      const img = animTab ? (slotImg ? { ...slotImg } : null) : src.img ?? (pool.length ? { ...pool[i % pool.length] } : null);
-      return {
-        ...src, img,
-        r: 0, // a layout starts unrotated, even if the frame was left mid-animation
-        rx: 0, ry: 0, z: 0, sh: 0, cl: 0, ct: 0, cr: 0, cb: 0,
-        asset: sl.asset, // set by templates that reuse assets across planes, undefined otherwise
-        tint: sl.tint, // "bg" = the depth shade blends toward the background
-        feather: sl.feather ?? 0, // soft leading edge for sliding planes
-        featherSym: sl.featherSym, // "x" / "y": soft edges open from the center
-        fill: sl.fill ?? null, // a solid css color instead of an image (Selector container + outline)
-        backdrop: sl.backdrop ?? 0, // blur behind the frame, px on an 800px canvas
-        ring: sl.ring ?? null, // { width, hex, opacity }: outline inside the frame, px on an 800px canvas
-        noHit: sl.noHit ?? false, // true = clicks pass through (full-canvas backgrounds, the container, the outline)
-        rig: sl.rig ?? null, // 3D templates set this, every other layout clears it
-        fade: sl.fade ?? 0,
-        fadeAxis: sl.fadeAxis ?? "x",
-        ...(sl.radius != null ? { radius: sl.radius, corners: null } : {}),
-        ...(sl.blurs !== undefined || sl.fx !== undefined
-          ? {
-              effects: [
-                ...(sl.blurs ?? []).map((b, n) => ({ id: 9000 + n, type: "layerBlur", visible: true, ...b })),
-                ...(sl.fx ?? []).map((x, n) => ({ id: 9500 + n, visible: true, ...x })),
-              ],
-            }
-          : {}),
-        w: Math.round(NOMINAL_H * sl.r), h: NOMINAL_H,
-        s: (sl.h * box.h) / short / NOMINAL_H,
-        x: (sl.x * box.w) / short, y: (sl.y * box.h) / short,
-      };
-    });
-  };
-
-  // framesOverride = frames to resolve against (the template's layout), instead of the live ones
-  const resolveFrameTplShots = (tpl, framesOverride = null, boxOverride = null) => {
-    const cur = framesOverride ?? framesLatestRef.current;
-    const base = framePoseMap(cur, boxOverride ?? frameSizeRef.current);
-    if (!base)
-      return tpl.shots.flatMap(({ stagger, ...s }) =>
-        stagger ? buildStaggerKeys({ ...s, stagger }, [], null) : [{ ...s, keys: s.keys.map(({ fo, ...k }) => k) }]
-      );
-    const rest = { ...base };
-    if (!tpl.layout) {
-      // no layout: rest = the last keyframed pose already on the timeline
-      const at = {};
-      vidLive.current.shots.forEach((s) =>
-        s.keys.forEach((k) => {
-          if (!k.frames) return;
-          Object.keys(k.frames).forEach((id) => {
-            if (s.start + k.t >= (at[id] ?? -1)) {
-              at[id] = s.start + k.t;
-              rest[id] = k.frames[id];
-            }
-          });
-        })
-      );
-    }
-    const n = cur.length;
-    return tpl.shots.flatMap(({ stagger, ...s }) =>
-      stagger
-        ? buildStaggerKeys({ ...s, stagger }, cur, rest)
-        : [{
-            ...s,
-            keys: s.keys.map(({ fo, ...k }) =>
-              !fo
-                ? k // camera-only key
-                : {
-                    ...k,
-                    frames: Object.fromEntries(
-                      cur.map((f, i) => {
-                        const r = rest[f.id] ?? base[f.id];
-                        const o = fo(i, n, { x: r.x, y: r.y });
-                        return [f.id, { x: r.x + (o.dx ?? 0), y: r.y + (o.dy ?? 0), w: r.w, h: r.h, s: r.s * (o.k ?? 1), r: (r.r ?? 0) + (o.dr ?? 0) }];
-                      })
-                    ),
-                  }
-            ),
-          }]
-    );
-  };
-
-  // Renders the real frames at time t of a template (used by the template cards).
-  const renderFrameVideoStill = async (tpl, t, w) => {
-    // temporary negative ids, so previews never use up real frame ids
-    let tmp = -1;
-    const tbox = tpl.canvas ? { w: tpl.canvas.w, h: tpl.canvas.h } : frameSizeRef.current;
-    const laid = tpl.layout ? layoutFramesFor(tpl.layout, () => tmp--, tbox) : null;
-    const shots = resolveFrameTplShots(tpl, laid, tbox);
-    const c = sampleShots(shots, t); // null for frame-only templates
-    const poses = sampleShotFrames(shots, t);
-    const fr = (laid ?? framesLatestRef.current).map((f) => {
-      const p = poses?.[f.id];
-      return p ? { ...f, x: p.x, y: p.y, w: Math.round(p.w), h: Math.round(p.h), s: p.s, r: p.r ?? 0, rx: p.rx ?? 0, ry: p.ry ?? 0, z: p.z ?? 0, sh: p.sh ?? 0, ...clipOf(p) } : f;
-    });
-    // use the template's own background at time t, so the card matches what gets applied
-    const bgClip = tpl.bgs ? [...tpl.bgs].sort((a, b) => a.at - b.at).reverse().find((b) => b.at <= t) ?? tpl.bgs[0] : null;
-    return renderFrameCanvas(w, false, null, {
-      size: tbox,
-      frames: fr,
-      cam: c ? { ...CAM_DEFAULT, rotationX: c.rotationX, rotationY: c.rotationY, rotationZ: c.rotationZ, positionX: c.positionX, positionY: c.positionY, zoom: c.zoom } : CAM_DEFAULT,
-      pose: sampleDeviceAnim(shots.filter((s) => s.frameId == null), t),
-      framePoses: frameRowStates(shots, fr.map((f) => f.id), t),
-      ...(bgClip ? { bg: { snap: vtBgSnap(bgClip.bg, bgClip.grain) } } : {}),
-    });
-  };
-
-  // Template keys drive every property. Split them into per-property keys (like manual keyframes),
-  // keeping a key only where that property starts, ends or changes.
-  const splitKeysPerProp = (keys) => {
-    if (!keys.length || keys.some((k) => k.frames || k.props)) return keys; // frame / already per-property keys stay as they are
-    const sorted = [...keys].sort((a, b) => a.t - b.t);
-    const out = [];
-    CAM_KEYS.forEach((p) => {
-      const vals = sorted.map((k) => k[p]);
-      const keep = sorted.filter(
-        (k, i) => i === 0 || i === sorted.length - 1 || Math.abs(vals[i] - vals[i - 1]) > 1e-6 || Math.abs(vals[i] - vals[i + 1]) > 1e-6
-      );
-      const flat = Math.max(...vals) - Math.min(...vals) < 1e-6;
-      (flat ? keep.slice(0, 1) : keep).forEach((k) => out.push({ ...k, props: [p] }));
-    });
-    return out.sort((a, b) => a.t - b.t);
-  };
-
-  // Replaces the camera shots. If a shot row is selected (Mockup mode), only that shot is replaced.
-  // Otherwise the whole timeline is replaced. Backgrounds and text stay; clips that spanned the whole timeline stretch to the new length.
-  const handleApplyVideoTemplate = (tpl) => {
-    const live = vidLive.current;
-
-    // ---- A shot is selected: swap only that shot for the template's camera move (and background, if it has one) ----
-    const picked = toolbarModeRef.current === "frame" ? [] : live.shots.filter((s) => live.sel.ids.includes(s.id));
-    if (picked.length) {
-      const anchor = Math.min(...picked.map((s) => s.start));
-      const span = Math.max(...picked.map((s) => s.start + s.len)) - anchor;
-      const end = anchor + span;
-      const f = span / tpl.duration; // template is squeezed / stretched to fit the selected shot
-      const firstPicked = picked[0];
-
-      const fresh = tpl.shots.map((s) => ({
-        id: vidId.current++,
-        name: s.name,
-        start: +(anchor + s.start * f).toFixed(3),
-        len: +(s.len * f).toFixed(3),
-        ease: "smooth",
-        ...(firstPicked.img ? { img: firstPicked.img } : {}),
-        ...(s.enter ? { enter: { ...s.enter } } : {}),
-        ...(s.exit ? { exit: { ...s.exit } } : {}),
-        keys: splitKeysPerProp(s.keys).map((k) => ({ ...k, id: vidId.current++, t: +(k.t * f).toFixed(3) })),
-      }));
-
-      // new shots take the place of the selected ones, every other shot stays untouched
-      const firstIdx = live.shots.findIndex((s) => live.sel.ids.includes(s.id));
-      const rest = live.shots.filter((s) => !live.sel.ids.includes(s.id));
-      const before = live.shots.slice(0, firstIdx).filter((s) => !live.sel.ids.includes(s.id)).length;
-      const shots = [...rest.slice(0, before), ...fresh, ...rest.slice(before)];
-      const sel = { shot: fresh[fresh.length - 1].id, key: null, ids: fresh.map((s) => s.id), prop: null };
-
-      // Template background: only covers the selected shot's time range.
-      // Existing background clips are cut around that range, everything outside it stays as it was.
-      let bgs = live.bgs;
-      if (tpl.bgs) {
-        const kept = [];
-        live.bgs.forEach((c) => {
-          const cs = c.start, ce = c.start + c.len;
-          if (ce <= anchor + 1e-6 || cs >= end - 1e-6) {
-            kept.push(c); // completely outside the range
-            return;
-          }
-          if (cs < anchor - 1e-6) {
-            // part before the range keeps its place (its exit animation would now end mid-clip, so drop it)
-            kept.push({ ...c, len: +(anchor - cs).toFixed(3), exit: undefined });
-          }
-          if (ce > end + 1e-6) {
-            // part after the range becomes its own clip (no enter animation, it isn't starting fresh)
-            kept.push({ ...c, id: vidId.current++, start: +end.toFixed(3), len: +(ce - end).toFixed(3), enter: undefined, anim: undefined });
-          }
-        });
-
-        const sortedBgs = [...tpl.bgs].sort((a, b) => a.at - b.at);
-        const inserted = sortedBgs.map((b, i) => {
-          const snap = vtBgSnap(b.bg, b.grain);
-          const s0 = anchor + b.at * f;
-          const s1 = i < sortedBgs.length - 1 ? anchor + sortedBgs[i + 1].at * f : end;
-          return {
-            id: vidId.current++,
-            start: +s0.toFixed(3),
-            len: +(s1 - s0).toFixed(3),
-            snap,
-            css: vtBgCss(snap),
-            ...(b.enter ? { enter: { ...b.enter } } : {}),
-          };
-        });
-        bgs = [...kept, ...inserted];
-      }
-
-      // sync first, so the seek below samples the new shots and backgrounds
-      vidLive.current.shots = shots;
-      vidLive.current.bgs = bgs;
-      vidLive.current.sel = sel;
-      vidBgActive.current = null; // forces the background to be re-applied at the playhead
-      setVidPlaying(false);
-      setVidShots(shots);
-      setVidBgs(bgs);
-      setSelBg(null);
-      setVidSel(sel);
-      setVidTplId(tpl.id);
-      setSidebarOpen(true);
-      vidSeek(anchor);
-      return;
-    }
-
-    // ---- Nothing selected (or Frame mode): replace the whole timeline ----
-    const gids = {}; // template group key -> real group id
-    const oldD = live.duration;
-    const whole = (c) => c.start + c.len >= oldD - 1e-3;
-    const d = Math.min(
-      600,
-      Math.max(tpl.duration, ...[...(tpl.bgs ? [] : live.bgs), ...(animTab ? [] : live.texts)].filter((c) => !whole(c)).map((c) => c.start + c.len))
-    );
-    const stretch = (list) => list.map((c) => (whole(c) ? { ...c, len: +(d - c.start).toFixed(3) } : c));
-
-    // Frame mode + layout: arrange the frames first, then build the animation from that arrangement
-    if (toolbarModeRef.current === "frame" && tpl.layout) {
-      const laid = layoutFramesFor(tpl.layout, () => nextFrameIdRef.current++);
-      framesLatestRef.current = laid;
-      setFrames(laid);
-      setSelectedIds([laid[0].id]);
-    }
-    const shots = (toolbarModeRef.current === "frame" ? resolveFrameTplShots(tpl) : tpl.shots).map((s) => ({
-      id: vidId.current++,
-      name: s.name,
-      start: s.start,
-      len: s.len,
-      ease: "smooth",
-      ...(s.frameId != null ? { frameId: s.frameId } : {}),
-      ...(s.groupKey ? { group: (gids[s.groupKey] ??= vidId.current++), groupName: s.groupName } : {}),
-      ...(s.enter ? { enter: { ...s.enter } } : {}),
-      ...(s.exit ? { exit: { ...s.exit } } : {}),
-      keys: splitKeysPerProp(s.keys).map((k) => ({ ...k, id: vidId.current++ })),
-    }));
-    // templates with `bgs` replace the background rows, the rest keep the user's own
-    const sortedBgs = tpl.bgs ? [...tpl.bgs].sort((a, b) => a.at - b.at) : null;
-    const bgs = sortedBgs
-      ? sortedBgs.map((b, i) => {
-          const snap = vtBgSnap(b.bg, b.grain);
-          const end = i < sortedBgs.length - 1 ? sortedBgs[i + 1].at : d;
-          return {
-            id: vidId.current++,
-            start: b.at,
-            len: +(end - b.at).toFixed(3),
-            snap,
-            css: vtBgCss(snap),
-            ...(b.enter ? { enter: { ...b.enter } } : {}),
-          };
-        })
-      : stretch(live.bgs);
-    const texts = animTab ? live.texts.map((c) => ({ ...c, start: 0, len: d })) : stretch(live.texts);
-    const sel = { shot: null, key: null, ids: [], prop: null }; // nothing selected, so playback covers the whole timeline
-
-    // sync first, so the seek below samples the new shots
-    vidLive.current.shots = shots;
-    vidLive.current.bgs = bgs;
-    vidBgActive.current = null; // forces applyBgAt below to load the new first clip
-    vidLive.current.texts = texts;
-    vidLive.current.duration = d;
-    vidLive.current.sel = sel;
-
-    setVidPlaying(false);
-    setVidShots(shots);
-    setVidBgs(bgs);
-    setVidTexts(texts);
-    setVidDuration(d);
-    setVidSel(sel);
-    setSelBg(null);
-    setSelText(null);
-    vidNo.current = shots.length + 1;
-    vidTimeRef.current = 0;
-    setVidHead(0);
-
-    const c = sampleShots(shots, 0);
-    applyCam(c);
-    commitCam(c);
-    applyBgAt(0);
-    applyAnimAt(0);
-    setVidTplId(tpl.id);
-    setSidebarOpen(true);
-  };
-
-    // Parametric templates: re-run build() with the current params and re-apply
-  const [tplParams, setTplParams] = useState({}); // template id -> param values
-  const tplParamTimerRef = useRef(null);
-  // keepTime: tweaking a control keeps the playhead and playback where they were. Picking a card starts at 0.
-  const applyVideoTemplate = (tpl, params, keepTime = false, settled = false) => {
-    // templates with their own canvas size: resize first, then apply once the canvas has re-measured
-    if (tpl.canvas && !settled && toolbarModeRef.current === "frame") {
-      setCanvasSize("Custom");
-      setCustomWidth(tpl.canvas.w);
-      setCustomHeight(tpl.canvas.h);
-      setTimeout(() => applyVideoTemplate(tpl, params, keepTime, true), 150);
-      return;
-    }
-    if (!tpl.build) {
-      handleApplyVideoTemplate(tpl);
-      if (!keepTime) setVidPlaying(true); // picking a card starts playback from 0
-      return;
-    }
-    const p = params ?? { ...defaultParams(tpl.params), ...tplParams[tpl.id] };
-    const box = frameSizeRef.current;
-    const t0 = vidTimeRef.current, wasPlaying = vidLive.current.playing;
-    handleApplyVideoTemplate(instantiateParam(tpl, p, { aspect: box ? box.w / box.h : 1 }));
-    if (keepTime) {
-      vidSeek(Math.min(t0, vidLive.current.duration));
-      if (wasPlaying) setVidPlaying(true);
-    } else {
-      setVidPlaying(true); // picking a card starts playback from 0
-    }
-  };
-  const tplSmoothTimerRef = useRef(null);
-  const tplLastApplyRef = useRef(0);
-  useEffect(() => () => {
-    clearTimeout(tplParamTimerRef.current);
-    clearTimeout(tplSmoothTimerRef.current);
-  }, []);
-  const changeTplParam = (tpl, key, value) => patchTplParams(tpl, { [key]: value });
-  const patchTplParams = (tpl, patch) => {
-    const next = { ...defaultParams(tpl.params), ...tplParams[tpl.id], ...patch };
-    setTplParams((p) => ({ ...p, [tpl.id]: next }));
-    const run = () => {
-      tplLastApplyRef.current = performance.now();
-      const box = canvasBoxRef.current;
-      const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-      // smooth only offset drags while paused; playback writes frame styles every tick and must not lag
-      const smooth = !!box && !reduce && !vidLive.current.playing && Object.keys(patch).some((k) => ["offsetX", "offsetY", "size", "height", "stagger", "fxList", "gap", "planeW", "planeH", "planeScale"].includes(k));
-      if (smooth) box.dataset.frameSmooth = "";
-      applyVideoTemplate(tpl, next, true);
-      clearTimeout(tplSmoothTimerRef.current);
-      tplSmoothTimerRef.current = setTimeout(() => box && delete box.dataset.frameSmooth, 300);
-    };
-    clearTimeout(tplParamTimerRef.current);
-    const wait = Math.max(0, 40 - (performance.now() - tplLastApplyRef.current)); // steady ~40ms updates instead of waiting for a pause
-    tplParamTimerRef.current = setTimeout(run, wait);
-  };
-
-  // Card previews: default params, but the real canvas aspect
-  const renderParamStill = (tpl, t, w) => {
-    const box = frameSizeRef.current;
-    const full = tpl.build ? instantiateParam(tpl, defaultParams(tpl.params), { aspect: box ? box.w / box.h : 1 }) : tpl;
-    return renderFrameVideoStill(full, t, w);
-  };
-
-  // Live card preview: the laid-out frames, resolved shots and a background-only render.
-  // The card draws the planes itself every frame, so nothing is pre-rendered per time step.
-  const prepareFrameLive = async (tpl, w) => {
-    const box = tpl.canvas ? { w: tpl.canvas.w, h: tpl.canvas.h } : frameSizeRef.current;
-    if (!box) return null;
-    const full = tpl.build ? instantiateParam(tpl, defaultParams(tpl.params), { aspect: box.w / box.h }) : tpl;
-    let tmp = -1; // temporary negative ids, so previews never use up real frame ids
-    const laid = full.layout ? layoutFramesFor(full.layout, () => tmp--, box) : framesLatestRef.current;
-    const shots = resolveFrameTplShots(full, laid, box);
-    const clip = full.bgs ? [...full.bgs].sort((a, b) => a.at - b.at)[0] : null;
-    const bg = await renderFrameCanvas(w, false, null, {
-      size: box,
-      frames: [],
-      texts: [],
-      cam: CAM_DEFAULT,
-      ...(clip ? { bg: { snap: vtBgSnap(clip.bg, clip.grain) } } : {}),
-    });
-    return { box: { w: box.w, h: box.h }, frames: laid, shots, duration: full.duration, bg };
-  };
-
-  // Re-applies the open Animation template (after an upload / delete changes the images)
-  const animTplRef = useRef(null);
-  const reapplyAnimRef = useRef(null);
-  reapplyAnimRef.current = () => animTplRef.current && applyVideoTemplate(animTplRef.current, undefined, true);
-
-  // Animation tab opens with the first template already applied
-  useEffect(() => {
-    if (!animTab) return;
-    const first = PARAM_ALL[0];
-    if (!first) return;
-    let tries = 0, timer;
-    const run = () => {
-      if (animTplRef.current) return; // a template is already active
-      if (!frameSizeRef.current && tries++ < 30) {
-        timer = setTimeout(run, 100); // canvas not measured yet, keep waiting (up to ~3s)
-        return;
-      }
-      restoreUntilRef.current = Date.now() + 500; // the initial template isn't an undoable step
-      applyVideoTemplate(first);
-      timer = setTimeout(() => setVidPlaying(true), 60); // start after the apply has settled
-    };
-    timer = setTimeout(run, 150);
-    return () => clearTimeout(timer);
-  }, [animTab]);
-
-    // Canvas ratio changed: rebuild the open Animation template so its planes re-fit
-  const animAspect = canvasDims ? Math.round((canvasDims.w / canvasDims.h) * 1000) / 1000 : null;
-  useEffect(() => {
-    if (!animTab || !animAspect) return;
-    const t = setTimeout(() => {
-      if (!animTplRef.current) return;
-      restoreUntilRef.current = Date.now() + 500; // not an undoable step
-      reapplyAnimRef.current?.();
-    }, 120); // after FrameLayer has re-measured the box
-    return () => clearTimeout(t);
-  }, [animAspect, animTab]);
 
     useEffect(() => {
     const key = animTab ? `animrow-${animSel}` : `framerow-${selectedIds[0]}`;
     document.querySelector(`[data-asset-row="${key}"]`)?.scrollIntoView({ block: "nearest" });
   }, [animSel, selectedIds.join(","), animTab]);
-
-  // Group: selected shots become one group, moved next to each other (at the first one's position)
-  const vidGroup = () => {
-    const { shots, sel } = vidLive.current;
-    const ids = sel.ids;
-    if (ids.length < 2) return;
-    const gid = vidId.current++;
-    const name = `Group ${new Set(shots.map((s) => s.group).filter(Boolean)).size + 1}`;
-    const first = shots.findIndex((s) => ids.includes(s.id));
-    const before = shots.slice(0, first).filter((s) => !ids.includes(s.id)).length;
-    const rest = shots.filter((s) => !ids.includes(s.id));
-    const members = shots.filter((s) => ids.includes(s.id)).map((s) => ({ ...s, group: gid, groupName: name }));
-    const next = [...rest.slice(0, before), ...members, ...rest.slice(before)];
-    vidLive.current.shots = next;
-    setVidShots(next);
-  };
-
-  // Ungroup: every group that has a selected shot is dissolved
-  const vidUngroup = () => {
-    const { shots, sel } = vidLive.current;
-    const gids = new Set(shots.filter((s) => sel.ids.includes(s.id) && s.group).map((s) => s.group));
-    if (!gids.size) return;
-    const next = shots.map((s) => (gids.has(s.group) ? { ...s, group: undefined, groupName: undefined } : s));
-    vidLive.current.shots = next;
-    setVidShots(next);
-  };
 
   const vidApi = {
     shots: vidShots,
@@ -6329,7 +3282,7 @@ onBgDelete: vidDeleteBg,
     await Promise.all([400, 500, 600, 700].map((wt) => document.fonts.load(`${wt} 16px "TikTok Sans"`)));
     if (!frameExport) scene.beginCapture(w, h);
     try {
-      await encodeVideoFrames({
+      return await encodeVideoFrames({
         format: videoFormat,
         width: w,
         height: h,
@@ -6346,8 +3299,10 @@ onBgDelete: vidDeleteBg,
           applyCam(cam);
           applyBgAt(t);
           applyAnimAt(t);
-          // let React flush the background / text state this frame depends on
-          await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
+          // let React flush the background / text state this frame depends on (twice: state update, then the effects it triggers)
+          await yieldNow();
+          await yieldNow();
+          for (let n = 0; fxPendingRef.current && n < 400; n++) await new Promise((r) => setTimeout(r, 5)); // wait for this frame's filtered background
           if (!frameExport) {
             const mv = mockupVideoRef.current?.el;
             if (mv) {
@@ -6363,7 +3318,7 @@ onBgDelete: vidDeleteBg,
             cam: cam ? { ...CAM_DEFAULT, rotationX: cam.rotationX, rotationY: cam.rotationY, rotationZ: cam.rotationZ, positionX: cam.positionX, positionY: cam.positionY, zoom: cam.zoom } : undefined,
             pose: sampleDeviceAnim(vidLive.current.shots.filter((s) => s.frameId == null), t),
             framePoses: frameRowStates(vidLive.current.shots, framesLatestRef.current.map((f) => f.id), t),
-            texts: textsAt(t, "frame"),
+            texts: textsAt(t, tabKey),
             bg: bgAnimOnRef.current
               ? { canvas: bgAnimCanvasRef.current }
               : { snap: vidLive.current.bgs.find((b) => b.id === vidBgActive.current)?.snap },
@@ -6471,61 +3426,51 @@ vidDuration,
   const snapshotKeyRef = useRef(snapshotKey);
   snapshotKeyRef.current = snapshotKey;
 
-  // History only sees what belongs to the active tab, so undo in one tab never touches another tab's state.
-  const HISTORY_DEVICE_KEYS = [
-    "deviceCategory", "deviceType", "finish", "bodyHex", "bodyOpacity", "deviceOrientation",
-    "brightness", "reflectionMode", "reflectionShiny", "reflectionMatte", "lighting", "lightingIntensity",
-    "showStatusBar", "showHomeIndicator", "showMenuBar", "showBrowser", "browserType", "browserTheme",
-    "browserUrl", "safariTabs", "shotId", "mockupEffects",
-  ];
-  const historyKey = vidExporting && keyCacheRef.current.hist ? keyCacheRef.current.hist : (() => {
-    const s = { ...snapshot };
-    if (tabKey === "mockup") delete s.frames; // Mockup doesn't own frames
-    else HISTORY_DEVICE_KEYS.forEach((k) => delete s[k]); // Frame / Animation don't own the device
-    s.textItems = textItems.filter((t) => (t.mode ?? "mockup") === toolbarMode);
-    if (tabKey === "animation") {
-      // Animation keeps its assets in a ref and its controls in tplParams, so they have to be part of the history too
-      s.animPool = animPool().map((a) => (a && a.cropUrl ? { ...a, cropUrl: assetId(a.cropUrl) } : a));
-      s.tplParams = tplParams;
-      s.vidTplId = vidTplId;
-    }
-    return JSON.stringify(s);
-  })();
-  keyCacheRef.current.hist = historyKey;
-  const historyKeyRef = useRef(historyKey);
-  historyKeyRef.current = historyKey;
+  const {
+    historyKey, historyKeyRef, historiesRef, historyRef, setHistoryTick,
+    flushPendingHistory, undo, redo, canUndo, canRedo,
+  } = useEditorHistory({
+    snapshot, keyCacheRef, assetId, animPool,
+    tabKey, videoOn, toolbarMode, vidExporting,
+    textItems, tplParams, vidTplId,
+    projCtxRef, restoreUntilRef,
+    applySnapshot: (s, o) => applySnapshot(s, o),
+  });
 
-  const historiesRef = useRef({}); // tab -> its own { past, future, committed }
-  const historyRef = useRef({ past: [], future: [], committed: null }); // the active tab's stack
-  const restoreUntilRef = useRef(Date.now() + 500); // startup effects settle without creating history
-  const [, setHistoryTick] = useState(0);
-
-    // toggling Video mode (or switching mode) changes which fields the snapshot has, so it isn't an undoable step
+  // Runs the real export (no download) to get the exact file size for the dropdown
+  const [exactSize, setExactSize] = useState(null); // { key, bytes }
+  const sampleKey = `${exportFormat}|${exportWidth}|${canvasSize}|${customWidth}x${customHeight}|${exportTransparent}|${toolbarMode}`;
   useEffect(() => {
-    restoreUntilRef.current = Date.now() + 300;
-  }, [videoOn, toolbarMode, tabKey]);
-
-  useEffect(() => {
-    const h = historyRef.current;
-    if (h.committed === null) {
-      h.committed = historyKey;
-      return;
-    }
-    if (Date.now() < restoreUntilRef.current) {
-      h.committed = historyKey;
-      return;
-    }
-    if (historyKey === h.committed) return;
-    const t = setTimeout(() => {
-      h.past.push(h.committed);
-      if (h.past.length > 100) h.past.shift();
-      h.future = [];
-      h.committed = historyKey;
-      projCtxRef.current = false; // the editor made the latest change, so Cmd/Ctrl+Z belongs to it again
-      setHistoryTick((n) => n + 1);
-    }, 400);
-    return () => clearTimeout(t);
-  }, [historyKey]);
+    if (!exportOpen || videoOn || exporting) return;
+    let dead = false;
+    const t = setTimeout(async () => {
+      try {
+        const fmt = EXPORT_FORMATS.find((f) => f.value === exportFormat);
+        const d = exportDims(exportWidth);
+        if (!fmt || !d) return;
+        const transparent = exportTransparent && fmt.mime !== "image/jpeg";
+        let r;
+        if (toolbarMode === "frame") {
+          r = await exportFrame(d.w, fmt, d.h, true);
+        } else {
+          const hiRes = gradFxOn && !transparent && canvasDims;
+          if (hiRes) {
+            const FW = Math.min(d.w, 2560), FH = Math.max(2, Math.round((FW * d.h) / d.w));
+            sceneRef.current?.setBackgroundCanvas?.(renderGradientFxCanvas(FW, FH, FW / canvasDims.w));
+          }
+          r = sceneRef.current?.exportAt(d.w, fmt.mime, fmt.ext, d.h, transparent, true);
+          if (hiRes) {
+            const LW = 1280, LH = Math.max(2, Math.round((LW * canvasDims.h) / canvasDims.w));
+            sceneRef.current?.setBackgroundCanvas?.(renderGradientFxCanvas(LW, LH, LW / canvasDims.w));
+          }
+        }
+        if (r?.bytes && !dead) setExactSize({ key: sampleKey, bytes: r.bytes });
+      } catch (err) {
+        console.error("Size measure failed:", err);
+      }
+    }, 500);
+    return () => { dead = true; clearTimeout(t); };
+  }, [exportOpen, sampleKey, historyKey]);
 
   const applySnapshot = (s, { scoped = false } = {}) => {
     restoreUntilRef.current = Date.now() + 300;
@@ -6581,7 +3526,7 @@ vidDuration,
     // undo / redo only restores this tab's texts; opening a project replaces all of them
     setTextItems(
       scoped
-        ? (prev) => [...prev.filter((t) => (t.mode ?? "mockup") !== toolbarModeRef.current), ...(s.textItems ?? [])]
+        ? (prev) => [...prev.filter((t) => (t.mode ?? "mockup") !== tabKeyRef.current), ...(s.textItems ?? [])]
         : s.textItems ?? []
     );
     setSelectedTextId(s.selectedTextId ?? null);
@@ -6590,6 +3535,29 @@ vidDuration,
       assetPoolRef.current = s.animPool.map((a) => (a && a.cropUrl ? { ...a, cropUrl: assetValue(a.cropUrl) } : a));
       setTplParams(s.tplParams ?? {});
       setVidTplId(s.vidTplId ?? null);
+
+      // undo / redo (not opening a project): put back backgrounds, texts and length, then rebuild from the template
+      if (scoped) {
+        clearTimeout(tplParamTimerRef.current); // a pending slider apply must not land after the undo
+        const bgs = unpackBgs(s.vidBgs ?? []);
+        const texts = s.vidTexts ?? [];
+        vidLive.current.bgs = bgs;
+        vidLive.current.texts = texts;
+        if (s.vidDuration != null) vidLive.current.duration = s.vidDuration;
+        setVidBgs(bgs);
+        setVidTexts(texts);
+        if (s.vidDuration != null) setVidDuration(s.vidDuration);
+        setSelBg(null);
+        setSelText(null);
+        vidBgActive.current = null;
+        const tpl = PARAM_ALL.find((t) => t.id === s.vidTplId);
+        if (tpl) {
+          setTimeout(() => {
+            restoreUntilRef.current = Date.now() + 600; // the rebuild isn't an undoable step
+            applyVideoTemplate(tpl, { ...defaultParams(tpl.params), ...(s.tplParams?.[tpl.id] ?? {}) }, true);
+          }, 0);
+        }
+      }
     }
 
       // Screenshot: only touch the scene when it actually differs from what's showing.
@@ -6671,41 +3639,6 @@ if (s.vidShots) {
     }
   };
 
-  const flushPendingHistory = () => {
-    const h = historyRef.current;
-    if (h.committed !== null && historyKeyRef.current !== h.committed) {
-      h.past.push(h.committed);
-      h.future = [];
-      h.committed = historyKeyRef.current;
-    }
-    return h;
-  };
-
-  const undo = () => {
-    const h = flushPendingHistory();
-    const prev = h.past.pop();
-    if (!prev) return;
-    h.future.push(h.committed);
-    h.committed = prev;
-    applySnapshot(JSON.parse(prev), { scoped: true });
-    setHistoryTick((n) => n + 1);
-  };
-
-  const redo = () => {
-    const h = flushPendingHistory();
-    const next = h.future.pop();
-    if (!next) return;
-    h.past.push(h.committed);
-    h.committed = next;
-    applySnapshot(JSON.parse(next), { scoped: true });
-    setHistoryTick((n) => n + 1);
-  };
-
-  const historyPending =
-    historyRef.current.committed !== null && historyKey !== historyRef.current.committed;
-  const canUndo = historyRef.current.past.length > 0 || historyPending;
-  const canRedo = historyRef.current.future.length > 0 && !historyPending;
-
   // Autosave: writes the open project 2s after the last change.
   const savingRef = useRef(false);
   const autosaveRef = useRef(null);
@@ -6714,7 +3647,7 @@ if (s.vidShots) {
     if (!selectedProjectId || !projectsLoaded) return;
     if (Date.now() < restoreUntilRef.current) return; // opening a project / switching tabs isn't an edit
     if (pendingOpenRef.current || vidPlaying || vidExporting) return;
-    const t = setTimeout(() => autosaveRef.current?.(), 2000);
+    const t = setTimeout(() => !vidEndRef.current && autosaveRef.current?.(), 2000);
     return () => clearTimeout(t);
   }, [historyKey]);
 
@@ -6891,6 +3824,12 @@ const reloadTabRef = useRef(
       const t = e.target;
       const typing =
         t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
+      // only real text entry should keep the browser's own undo; sliders, checkboxes and buttons shouldn't block ours
+      const editingText =
+        t instanceof HTMLElement &&
+        (t.isContentEditable ||
+          t.tagName === "TEXTAREA" ||
+          (t.tagName === "INPUT" && !/^(range|checkbox|radio|button|submit|reset|color|file)$/.test(t.type)));
       const key = e.key;
 
       // "?" opens and closes the modal (Esc is handled inside the modal itself).
@@ -6991,7 +3930,7 @@ const reloadTabRef = useRef(
 
       const mod = e.metaKey || e.ctrlKey;
       // Skipped while typing so the browser's native text undo still works in inputs.
-      if (mod && !e.altKey && !typing) {
+      if (mod && !e.altKey && !editingText) {
         const zk = key.toLowerCase();
         if (zk === "z") { e.preventDefault(); if (e.shiftKey) h.redo(); else h.undo(); return; }
         if (zk === "y" && !e.shiftKey) { e.preventDefault(); h.redo(); return; }
@@ -7076,6 +4015,7 @@ const animFxId = typeof openEffectId === "string" && openEffectId.startsWith("an
 const FX_TYPES = [
   { type: "fade", label: "Fade", Icon: CircleHalf },
   { type: "blur", label: "Layer blur", Icon: Drop },
+  { type: "dropShadow", label: "Drop shadow", Icon: FX_ICON.dropShadow ?? Drop },
   ...Object.entries(SHARED_FX).map(([type, d]) => ({ type, label: d.label, Icon: FX_ICON[type] ?? Drop })),
 ];
 const fxMeta = (type) => FX_TYPES.find((x) => x.type === type) ?? FX_TYPES[0];
@@ -7086,6 +4026,7 @@ const addAnimFx = (tpl, type) => {
   const id = Math.max(0, ...list.map((x) => x.id)) + 1;
   const base =
     SHARED_FX[type] ? { ...SHARED_FX[type].defaults }
+    : type === "dropShadow" ? { x: 0, y: 24, blur: 60, spread: 0, hex: "000000", opacity: 25 }
     : type === "fade" ? { fade: 40 }
     : { blur: 20, mode: "Uniform", start: 0, end: 100 };
   patchTplParams(tpl, { fxList: [...list, { id, type, on: true, ...base }] });
@@ -7188,7 +4129,7 @@ useLayoutEffect(() => {
 useEffect(() => {
   if (!animTab) closeEffectPopup(); // leaving Animation closes its effect popup
 }, [animTab]);
-const modeTexts = textItems.filter((t) => (t.mode ?? "mockup") === toolbarMode);
+const modeTexts = textItems.filter((t) => (t.mode ?? "mockup") === tabKey);
 // asset row a canvas frame belongs to (the frame's own index unless the template shares assets)
 const animAssetOf = (id) => {
   const k = frames.findIndex((f) => f.id === id);
@@ -7270,6 +4211,65 @@ const frameAppearance = (() => {
       .filter((e) => e.visible && e.type === "noise")
       .map((e) => ({ id: e.id, opacity: (e.amount / 100) * 0.6, url: makeGrainUrl(e.size) })),
   };
+})();
+
+// Alt-measure: nearest neighbour (or canvas edge) on each side of the selection, in canvas px
+const altMeasures = (() => {
+  const box = frameSizeRef.current;
+  if (!altDown || !box || toolbarMode !== "frame" || animTab || !isDefaultCamera(frameCam)) return [];
+  const toBox = (f) => {
+    const r = frameRect(f, box);
+    return { l: r.left, r: r.left + r.width, t: r.top, b: r.top + r.height };
+  };
+  const sel = frames.filter((f) => selectedIds.includes(f.id) && !f.hidden).map(toBox);
+  if (!sel.length) return [];
+  const S = {
+    l: Math.min(...sel.map((r) => r.l)),
+    r: Math.max(...sel.map((r) => r.r)),
+    t: Math.min(...sel.map((r) => r.t)),
+    b: Math.max(...sel.map((r) => r.b)),
+  };
+  if (!altPoint) return [];
+  // topmost unselected frame under the cursor (later in the array = on top)
+  const hovered = [...frames].reverse().find((f) => {
+    if (selectedIds.includes(f.id) || f.hidden) return false;
+    const o = toBox(f);
+    return altPoint.x >= o.l && altPoint.x <= o.r && altPoint.y >= o.t && altPoint.y <= o.b;
+  });
+  if (!hovered) return [];
+  const T = toBox(hovered);
+
+  const k = (exportDims(1920)?.w ?? box.w) / box.w; // show values in the canvas's export size, not screen px
+  const out = [];
+  const add = (axis, x1, y1, x2, y2) => {
+    const len = axis === "h" ? Math.abs(x2 - x1) : Math.abs(y2 - y1);
+    if (len < 0.5) return;
+    out.push({ axis, x1, y1, x2, y2, target: T, value: Math.round(len * k) });
+  };
+
+  // where the two boxes overlap on each axis, lines are drawn through the middle of that overlap
+  const yo0 = Math.max(S.t, T.t), yo1 = Math.min(S.b, T.b);
+  const xo0 = Math.max(S.l, T.l), xo1 = Math.min(S.r, T.r);
+  const yMid = yo0 < yo1 ? (yo0 + yo1) / 2 : (S.t + S.b) / 2;
+  const xMid = xo0 < xo1 ? (xo0 + xo1) / 2 : (S.l + S.r) / 2;
+
+  // horizontal: a gap if they're side by side, otherwise the left and right edge offsets
+  if (S.r <= T.l) add("h", S.r, yMid, T.l, yMid);
+  else if (T.r <= S.l) add("h", T.r, yMid, S.l, yMid);
+  else {
+    add("h", Math.min(S.l, T.l), yMid, Math.max(S.l, T.l), yMid);
+    add("h", Math.min(S.r, T.r), yMid, Math.max(S.r, T.r), yMid);
+  }
+
+  // vertical: same idea
+  if (S.b <= T.t) add("v", xMid, S.b, xMid, T.t);
+  else if (T.b <= S.t) add("v", xMid, T.b, xMid, S.t);
+  else {
+    add("v", xMid, Math.min(S.t, T.t), xMid, Math.max(S.t, T.t));
+    add("v", xMid, Math.min(S.b, T.b), xMid, Math.max(S.b, T.b));
+  }
+
+  return out;
 })();
 
 const frameBackground = (
@@ -7431,145 +4431,21 @@ const chrome = {
     </button>
   </Tooltip>
 </div>
-{exportOpen && (() => {
-  const labelCls = "text-[13px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]";
-  const segWrap = "flex items-center p-0.5 w-full h-8 bg-[#F0F0F0] dark:bg-black rounded-2xl";
-  const segBtn = (on, off = false) =>
-    `seg-tab flex-1 h-7 flex items-center justify-center px-2.5 py-1 rounded-[14px] leading-5 transition-colors duration-200 ${
-      on ? SEG_ON : SEG_OFF
-    } ${off ? "opacity-40 cursor-not-allowed" : ""}`;
-
-  const imgFmt = EXPORT_FORMATS.find((f) => f.value === exportFormat);
-  const vidFmt = VIDEO_FORMATS.find((f) => f.value === videoFormat);
-  const alphaOk = videoOn ? vidFmt.alpha : exportFormat !== "jpg";
-
-  let dims, estimate;
-  if (videoOn) {
-    dims = videoOutDims();
-    const fps = Math.min(videoFps, vidFmt.maxFps);
-    const frames = Math.max(1, Math.round((vidDuration / videoSpeed) * fps));
-    estimate = formatBytes(estimateVideoBytes(videoFormat, dims.w, dims.h, fps, frames));
-  } else {
-    dims = exportDims(exportWidth);
-    estimate = dims ? formatBytes(dims.w * dims.h * imgFmt.bpp) : null;
-  }
-  const size = !videoOn ? EXPORT_SIZES.find((s) => s.width === exportWidth) : null;
-
-  const changeVideoFormat = (v) => {
-    const f = VIDEO_FORMATS.find((x) => x.value === v);
-    setVideoFormat(v);
-    setVideoRes((r) => Math.min(r, f.maxLong));
-    setVideoFps((p) => Math.min(p, f.maxFps));
-  };
-
-  return (
-    <div className="pop-enter absolute right-0 mt-1 w-[340px] p-4 flex flex-col gap-4 rounded-2xl border border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10 bg-[#FAF9FA] dark:bg-[#171717] shadow-[0_8px_24px_rgba(0,0,0,0.08),0_2px_6px_rgba(0,0,0,0.04)] dark:shadow-[0_8px_24px_rgba(0,0,0,0.5),0_2px_6px_rgba(0,0,0,0.3)] z-10">
-      <div className="flex flex-col gap-2">
-        <label className={labelCls}>File type</label>
-        {videoOn ? (
-          <ToolbarDropdown value={videoFormat} options={VIDEO_FORMATS} onChange={changeVideoFormat} />
-        ) : (
-          <ToolbarDropdown value={exportFormat} options={EXPORT_FORMATS} onChange={setExportFormat} />
-        )}
-      </div>
-
-      <ToggleRow
-        muted
-        label="Transparent background"
-        checked={exportTransparent && alphaOk}
-        disabled={!alphaOk || exporting}
-        onChange={setExportTransparent}
-      />
-
-      <div className="flex flex-col gap-2">
-        <label className={labelCls}>Size</label>
-        <ToolbarDropdown value={canvasSize} options={CANVAS_SIZE_OPTIONS} onChange={setCanvasSize} />
-      </div>
-
-      {videoOn ? (
-        <>
-          <div className="flex flex-col gap-2">
-            <label className={labelCls}>Resolution</label>
-            <ToolbarDropdown
-              value={videoRes}
-              options={VIDEO_RESOLUTIONS.filter((r) => r.value <= vidFmt.maxLong)}
-              onChange={setVideoRes}
-            />
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <label className={labelCls}>Speed</label>
-            <div className={segWrap}>
-              {VIDEO_SPEEDS.map((sp) => (
-                <button key={sp} type="button" disabled={exporting} onClick={() => setVideoSpeed(sp)} className={segBtn(videoSpeed === sp)}>
-                  {sp}x
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <label className={labelCls}>Frame rate (FPS)</label>
-            <div className={segWrap}>
-              {VIDEO_FPS_OPTIONS.map((f) => {
-                const off = f > vidFmt.maxFps;
-                return (
-                  <button
-                    key={f}
-                    type="button"
-                    disabled={exporting || off}
-                    onClick={() => setVideoFps(f)}
-                    className={segBtn(videoFps === f, off)}
-                  >
-                    {f}
-                  </button>
-                );
-              })}
-            </div>
-            <div className="flex flex-col gap-0.5 text-[12px] font-medium text-[#737373] dark:text-[#ABABAB]">
-              <span className="tabular-nums">{dims.w} × {dims.h} px · ~{estimate}</span>
-              {videoFormat === "lottie" && <span>Lottie is exported as an image sequence, so files get large.</span>}
-            </div>
-          </div>
-        </>
-      ) : (
-        <div className="flex flex-col gap-2">
-          <label className={labelCls}>Resolution</label>
-          <div className={segWrap}>
-            {EXPORT_SIZES.map((opt) => (
-              <button key={opt.width} type="button" disabled={exporting} onClick={() => setExportWidth(opt.width)} className={segBtn(exportWidth === opt.width)}>
-                {opt.label}
-              </button>
-            ))}
-          </div>
-          <div className="flex flex-col gap-0.5 text-[12px] font-medium text-[#737373] dark:text-[#ABABAB]">
-            <span className="tabular-nums">
-              {dims ? `${dims.w} × ${dims.h} px` : "—"}{estimate ? ` · ~${estimate}` : ""}
-            </span>
-            {size?.warn && <span>Large export. It can take a few seconds and the page may pause.</span>}
-          </div>
-        </div>
-      )}
-
-      <button
-        type="button"
-        onClick={handleExport}
-        disabled={exporting}
-        className="w-full h-8 flex items-center justify-center gap-2 px-3 py-1.5 rounded-2xl border border-[#FCFCFC]/20 bg-[#FF47BC] text-[13px] leading-5 font-medium tracking-[0.01em] text-[#FCFCFC] enabled:hover:bg-[#F230AE] transition-[background-color,transform] duration-150 enabled:active:scale-[0.97] disabled:opacity-70 disabled:cursor-wait"
-        style={{ boxShadow: "0px 4px 4px rgba(255,71,188,0.06), inset 0px 4px 4px rgba(255,240,255,0.25), inset 0px -2px 4px rgba(71,0,45,0.25)" }}
-      >
-        {exporting ? (
-          <>
-            <CircleNotch size={14} weight="regular" className="animate-spin" />
-            {exportProgress != null ? `Exporting ${Math.round(exportProgress * 100)}%` : "Exporting…"}
-          </>
-        ) : (
-          <><UploadSimple size={14} weight="regular" /> {videoOn ? "Export video" : "Export image"}</>
-        )}
-      </button>
-    </div>
-  );
-})()}
+{exportOpen && (
+  <ExportMenu
+    videoOn={videoOn} exporting={exporting} exportProgress={exportProgress}
+    exportFormat={exportFormat} setExportFormat={setExportFormat}
+    videoFormat={videoFormat} setVideoFormat={setVideoFormat}
+    videoRes={videoRes} setVideoRes={setVideoRes}
+    videoSpeed={videoSpeed} setVideoSpeed={setVideoSpeed}
+    videoFps={videoFps} setVideoFps={setVideoFps}
+    exportTransparent={exportTransparent} setExportTransparent={setExportTransparent}
+    canvasSize={canvasSize} setCanvasSize={setCanvasSize}
+    exportWidth={exportWidth} setExportWidth={setExportWidth}
+    vidDuration={vidDuration} measuredBpp={measuredBpp} exactSize={exactSize} sampleKey={sampleKey}
+    videoOutDims={videoOutDims} exportDims={exportDims} handleExport={handleExport}
+  />
+)}
           </div>
         </div>
       </div>
@@ -8221,7 +5097,53 @@ const chrome = {
                         />
                       ))}
 
-                    {textTool && (
+{altMeasures.length > 0 && (
+  <div aria-hidden className="absolute inset-0 z-30 pointer-events-none overflow-hidden">
+    {[...new Set(altMeasures.map((m) => m.target).filter(Boolean))].map((o, i) => (
+      <div
+        key={`cmp-${i}`}
+        className="absolute rounded-[2px]"
+        style={{ left: o.l, top: o.t, width: o.r - o.l, height: o.b - o.t, outline: `2px solid ${GUIDE}` }}
+      />
+    ))}
+    {altMeasures.map((m, i) => {
+      const horiz = m.axis === "h";
+      const len = horiz ? Math.abs(m.x2 - m.x1) : Math.abs(m.y2 - m.y1);
+      return (
+        <div
+          key={i}
+          className="absolute"
+          style={{
+            left: Math.min(m.x1, m.x2),
+            top: Math.min(m.y1, m.y2),
+            width: horiz ? len : 1,
+            height: horiz ? 1 : len,
+          }}
+        >
+          <div className="absolute inset-0" style={{ background: GUIDE }} />
+          {/* end caps */}
+          <div
+            className="absolute"
+            style={{ background: GUIDE, ...(horiz ? { left: 0, top: -3, width: 1, height: 7 } : { top: 0, left: -3, height: 1, width: 7 }) }}
+          />
+          <div
+            className="absolute"
+            style={{ background: GUIDE, ...(horiz ? { right: 0, top: -3, width: 1, height: 7 } : { bottom: 0, left: -3, height: 1, width: 7 }) }}
+          />
+          {/* value */}
+          <span
+            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center h-4 px-1 rounded-[4px] text-[10px] leading-4 font-medium tabular-nums text-[#FAF9FA] whitespace-nowrap"
+            style={{ background: GUIDE }}
+          >
+            {m.value}
+          </span>
+        </div>
+      );
+    })}
+  </div>
+)}
+
+{textTool && (
                       <div
                         data-text-tool
                         className="absolute inset-0 z-30"
@@ -8574,7 +5496,51 @@ const chrome = {
                   <Plus size={14} weight="regular" className="shrink-0" /> Add frame
                 </button>
               )}
-              {animTab ? renderAnimAssets() : renderFrameAssets()}
+              {animTab ? (
+                <AnimAssetList
+                  frames={frames}
+                  animAssetCount={animAssetCount}
+                  animPool={animPool}
+                  animSel={animSel}
+                  setAnimSel={setAnimSel}
+                  animHover={animHover}
+                  setAnimHover={setAnimHover}
+                  animSlotRef={animSlotRef}
+                  pickFrameFile={pickFrameFile}
+                  animDragRef={animDragRef}
+                  animDragFrom={animDragFrom}
+                  setAnimDragFrom={setAnimDragFrom}
+                  animDrop={animDrop}
+                  setAnimDrop={setAnimDrop}
+                  moveAnimAsset={moveAnimAsset}
+                  endAnimDrag={endAnimDrag}
+                  setFrameCropId={setFrameCropId}
+                  setFrames={setFrames}
+                  removeAnimAsset={removeAnimAsset}
+                  clearAnimAssets={clearAnimAssets}
+                  mediaLoading={mediaLoading}
+                />
+              ) : (
+                <FrameAssetList
+                  frames={frames}
+                  selectedIds={selectedIds}
+                  setSelectedIds={setSelectedIds}
+                  setSelectedTextId={setSelectedTextId}
+                  setFrames={setFrames}
+                  dragIdRef={dragIdRef}
+                  draggingId={draggingId}
+                  setDraggingId={setDraggingId}
+                  frameDrop={frameDrop}
+                  setFrameDrop={setFrameDrop}
+                  moveFrameRow={moveFrameRow}
+                  endFrameDrag={endFrameDrag}
+                  openFrameMenu={openFrameMenu}
+                  pickFrameFile={pickFrameFile}
+                  setFrameCropId={setFrameCropId}
+                  deleteFrames={deleteFrames}
+                  mediaLoading={mediaLoading}
+                />
+              )}
             </div>
             <input ref={fileInputRef} type="file" accept={imageOrVideo === "video" ? "image/*,video/*" : "image/*"} onChange={handleUpload} className="hidden" />
           </div>
@@ -9590,94 +6556,45 @@ className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed borde
       </div>
 
       {fxMenu && (
-        <div
-          ref={fxMenuRef}
-          data-fx-menu
-          role="menu"
-          style={{ position: "fixed", right: fxMenu.right, ...(fxMenu.up ? { bottom: fxMenu.bottom } : { top: fxMenu.top }) }}
-          className="pop-enter w-[180px] p-2 flex flex-col gap-1 bg-[#FAF9FA] dark:bg-[#171717] border border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10 rounded-2xl shadow-[0_4px_8px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_12px_rgba(0,0,0,0.4)] z-[9999]"
-        >
-          {(fxMenu.kind === "gradient" ? GRAD_FX_LIST : fxMenu.kind === "frame" ? FRAME_FX : fxMenu.kind === "mockup" ? MOCKUP_FX : FX_TYPES).map(({ type, label, Icon }) => (
-            <button
-              key={type}
-              type="button"
-              onClick={() => {
-                if (fxMenu.kind === "gradient") addGradFx(type);
-                else if (fxMenu.kind === "frame" || fxMenu.kind === "mockup") addEffect(type);
-                else if (animTplRef.current) addAnimFx(animTplRef.current, type);
-                setFxMenu(null);
-              }}
-              className="group flex items-center w-full h-8 pl-2 pr-2 gap-2 rounded-lg text-[12px] font-medium tracking-[-0.005em] text-[#737373] dark:text-[#ABABAB] hover:text-[#3A3A3A] dark:hover:text-[#FAF9FA] hover:bg-[#F2F2F2] dark:hover:bg-[#1F1F1F] transition-colors duration-100"
-            >
-              <Icon size={16} weight="regular" className="shrink-0" />
-              {label}
-            </button>
-          ))}
-        </div>
+        <FxAddMenu
+          menuRef={fxMenuRef}
+          menu={fxMenu}
+          items={fxMenu.kind === "gradient" ? GRAD_FX_LIST : fxMenu.kind === "frame" ? FRAME_FX : fxMenu.kind === "mockup" ? MOCKUP_FX : FX_TYPES}
+          onPick={(type) => {
+            if (fxMenu.kind === "gradient") addGradFx(type);
+            else if (fxMenu.kind === "frame" || fxMenu.kind === "mockup") addEffect(type);
+            else if (animTplRef.current) addAnimFx(animTplRef.current, type);
+            setFxMenu(null);
+          }}
+        />
       )}
 
-      {frameMenu && (() => {
-        const sel = frames.filter((f) => selectedIds.includes(f.id));
-        if (!sel.length) return null;
-        const allHidden = sel.every((f) => f.hidden);
-        const allLocked = sel.every((f) => f.locked);
-        const canPaste = !!frameClipRef.current?.length;
-        // Timeline-only actions (enter / exit animation, rename, group, ungroup) need Video mode.
-        // The Animation tab is excluded too, because its rows come from the template.
-        const inTimeline = videoOn && !animTab;
-        const row = inTimeline ? vidShots.find((s) => s.frameId != null && selectedIds.includes(s.frameId)) : null;
-        const anyGrouped = inTimeline && vidShots.some((s) => s.group && selectedIds.includes(s.frameId));
-        const rowsSelected = videoOn && vidLive.current.sel.ids.length > 0;
-        const run = (fn) => () => {
-          setFrameMenu(null);
-          fn();
-        };
-        const item = (label, keys, fn, { disabled = false } = {}) => (
-          <button
-            key={label}
-            type="button"
-            role="menuitem"
-            disabled={disabled}
-            onClick={run(fn)}
-            className={`${CTX_ITEM} justify-between disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent`}
-          >
-            {label}
-            {keys && <KeyCombo keys={keys} />}
-          </button>
-        );
-        return (
-          <CtxMenu data-frame-menu left={frameMenu.left} top={frameMenu.top} width={240}>
-            {row && item("Enter animation", null, () => askTimeline({ type: "anim", kind: "enter", sid: row.id }))}
-            {row && item("Exit animation", null, () => askTimeline({ type: "anim", kind: "exit", sid: row.id }))}
-            {row && item("Rename", null, () => askTimeline({ type: "rename", sid: row.id }))}
-            {item("Duplicate", ["mod", "D"], () => (rowsSelected ? vidDuplicate() : duplicateSelected()))}
-            {inTimeline && sel.length >= 2 && item("Group", ["mod", "G"], vidGroup)}
-            {anyGrouped && item("Ungroup", ["mod", "⇧", "G"], vidUngroup)}
-            {CTX_DIVIDER}
-            {item("Copy", ["mod", "C"], copyFrames)}
-            {item("Paste here", ["mod", "V"], () => pasteFrames(frameMenu.point), { disabled: !canPaste })}
-            {CTX_DIVIDER}
-            {item("Bring to front", ["]"], () => reorderSelected(true))}
-            {item("Send to back", ["["], () => reorderSelected(false))}
-            {CTX_DIVIDER}
-            {item(allHidden ? "Show" : "Hide", ["mod", "⇧", "H"], toggleHideSelected)}
-            {item(allLocked ? "Unlock" : "Lock", ["mod", "⇧", "L"], toggleLockSelected)}
-            {CTX_DIVIDER}
-            {item("Flip horizontal", ["⇧", "H"], () => flipSelected("h"))}
-            {item("Flip vertical", ["⇧", "V"], () => flipSelected("v"))}
-            {CTX_DIVIDER}
-            <button
-              type="button"
-              role="menuitem"
-              onClick={run(() => (rowsSelected ? vidDelete() : deleteSelected()))}
-              className={CTX_DANGER}
-            >
-              Delete
-              <KeyCombo keys={["⌫"]} />
-            </button>
-          </CtxMenu>
-        );
-      })()}
+      {frameMenu && (
+        <FrameContextMenu
+          frameMenu={frameMenu}
+          setFrameMenu={setFrameMenu}
+          frames={frames}
+          selectedIds={selectedIds}
+          videoOn={videoOn}
+          animTab={animTab}
+          vidShots={vidShots}
+          vidLive={vidLive}
+          frameClipRef={frameClipRef}
+          askTimeline={askTimeline}
+          vidDuplicate={vidDuplicate}
+          duplicateSelected={duplicateSelected}
+          vidGroup={vidGroup}
+          vidUngroup={vidUngroup}
+          copyFrames={copyFrames}
+          pasteFrames={pasteFrames}
+          reorderSelected={reorderSelected}
+          toggleHideSelected={toggleHideSelected}
+          toggleLockSelected={toggleLockSelected}
+          flipSelected={flipSelected}
+          vidDelete={vidDelete}
+          deleteSelected={deleteSelected}
+        />
+      )}
 
       {distMenu && (
         <div
@@ -9713,70 +6630,22 @@ className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed borde
       {projectMenu && (() => {
         const p = savedProjects.find((x) => x.id === projectMenu.id);
         if (!p) return null;
-        const itemClass =
-          "flex items-center gap-2 w-full h-8 pl-2 pr-1.5 rounded-lg text-[13px] font-medium tracking-[-0.005em] text-[#3A3A3A] dark:text-[#FAF9FA] hover:bg-[#F2F2F2] dark:hover:bg-[#1F1F1F] transition-colors duration-100";
-        const run = (fn) => () => {
-          setProjectMenu(null);
-          fn();
-        };
         return (
-          <div
-            ref={projectMenuRef}
-            role="menu"
-            style={{ position: "fixed", left: projectMenu.left, top: projectMenu.top, bottom: projectMenu.bottom }}
-            className={`${projectMenu.bottom !== undefined ? "pop-enter-up" : "pop-enter"} w-[180px] p-2 flex flex-col items-start bg-[#FAF9FA] dark:bg-[#171717] border border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10 rounded-2xl shadow-[0_4px_8px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_12px_rgba(0,0,0,0.4)] z-[9999]`}
-          >
-            {p.deletedAt ? (
-              <div className="flex flex-col gap-1 w-full">
-                <button type="button" className={itemClass} onClick={run(() => handleRestoreProject(p.id))}>
-                  <ArrowCounterClockwise size={16} weight="regular" className="shrink-0" /> Restore
-                </button>
-                <button
-                  type="button"
-                  onClick={run(() => handlePurgeProject(p.id))}
-                  className={`${itemClass} hover:!bg-[#F04438]/10 hover:text-[#F04438] dark:hover:text-[#F04438]`}
-                >
-                  <X size={16} weight="regular" className="shrink-0" /> Delete permanently
-                </button>
-              </div>
-            ) : (
-              <>
-                <div className="flex flex-col gap-1 w-full">
-                  <button type="button" className={itemClass} onClick={run(() => handleOpenProjectInNewTab(p))}>
-                    <ArrowSquareOut size={16} weight="regular" className="shrink-0" /> Open in new tab
-                  </button>
-                  <button type="button" className={itemClass} onClick={run(() => handleCopyProjectLink(p))}>
-                    <LinkSimple size={16} weight="regular" className="shrink-0" /> Copy link
-                  </button>
-                  <button type="button" className={itemClass} onClick={run(() => handleTogglePin(p.id))}>
-                    <PushPin size={16} weight={p.pinned ? "fill" : "regular"} className="shrink-0" /> {p.pinned ? "Unpin" : "Pin"}
-                  </button>
-                </div>
-                <div className="my-1 h-px w-full bg-[#3A3A3A]/10 dark:bg-[#FAF9FA]/10" />
-                <div className="flex flex-col gap-1 w-full">
-                  <button type="button" className={itemClass} onClick={run(() => handleDuplicateProject(p))}>
-                    <Copy size={16} weight="regular" className="shrink-0" /> Duplicate
-                  </button>
-                  <button type="button" className={itemClass} onClick={run(() => startRenameProject(p))}>
-                    <PencilSimple size={16} weight="regular" className="shrink-0" /> Rename
-                  </button>
-                  <button type="button" className={itemClass} onClick={run(() => setMoveTarget({ list: [p] }))}>
-                    <FolderOpen size={16} weight="regular" className="shrink-0" /> Move
-                  </button>
-                </div>
-                <div className="my-1 h-px w-full bg-[#3A3A3A]/10 dark:bg-[#FAF9FA]/10" />
-                <div className="flex flex-col gap-1 w-full">
-                  <button
-                    type="button"
-                    onClick={run(() => handleDeleteProject(p.id))}
-                    className={`${itemClass} hover:!bg-[#F04438]/10 hover:text-[#F04438] dark:hover:text-[#F04438]`}
-                  >
-                    <TrashSimple size={16} weight="regular" className="shrink-0" /> Move to Trash
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
+          <ProjectMenu
+            p={p}
+            projectMenu={projectMenu}
+            projectMenuRef={projectMenuRef}
+            setProjectMenu={setProjectMenu}
+            handleRestoreProject={handleRestoreProject}
+            handlePurgeProject={handlePurgeProject}
+            handleOpenProjectInNewTab={handleOpenProjectInNewTab}
+            handleCopyProjectLink={handleCopyProjectLink}
+            handleTogglePin={handleTogglePin}
+            handleDuplicateProject={handleDuplicateProject}
+            startRenameProject={startRenameProject}
+            setMoveTarget={setMoveTarget}
+            handleDeleteProject={handleDeleteProject}
+          />
         );
       })()}
 
@@ -9799,555 +6668,49 @@ className="w-full h-[66px] bg-white dark:bg-[#1F1F1F] border border-dashed borde
       )}
 
       {openEffect && effectPopupPos && (
-  <div
-    ref={effectPopupRef}
-    style={{ position: "fixed", top: effectPopupPos.top, right: effectPopupPos.right }}
-    className="panel-enter w-[240px] px-3 pb-3 flex flex-col gap-2 bg-[#FAF9FA] dark:bg-[#171717] border border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10 rounded-2xl shadow-[0_4px_8px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_12px_rgba(0,0,0,0.4)] z-[9000]"
-  >
-    <div className="-mx-3 mb-1 flex items-center justify-between h-11 pl-4 pr-2 shrink-0 border-b border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10">
-      <span className="text-[14px] font-medium tracking-[-0.005em] text-[#737373] dark:text-[#ABABAB]">Effect</span>
-      <button
-        type="button"
-        onClick={closeEffectPopup}
-        aria-label="Close"
-        className="group flex items-center justify-center w-7 h-7 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-      >
-        <X size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
-      </button>
-    </div>
-    <PopupDropdown
-      value={openEffect.type}
-      options={toolbarMode === "mockup" ? MOCKUP_FX_OPTIONS : FRAME_FX_OPTIONS}
-      onChange={(t) => changeEffectType(openEffect.id, t)}
-    />
-    <div className={`flex flex-col gap-2 transition-opacity duration-200 ${openEffect.visible ? "opacity-100" : "opacity-40"}`}>
-      {openEffect.type === "dropShadow" && (
-        <>
-          <Scrubber label="X" value={openEffect.x} min={-100} max={100} onChange={(x) => updateEffect(openEffect.id, { x })} />
-          <Scrubber label="Y" value={openEffect.y} min={-100} max={100} onChange={(y) => updateEffect(openEffect.id, { y })} />
-          <Scrubber label="Blur" value={openEffect.blur} min={0} max={200} onChange={(blur) => updateEffect(openEffect.id, { blur })} />
-          <Scrubber label="Spread" value={openEffect.spread} min={-50} max={50} onChange={(spread) => updateEffect(openEffect.id, { spread })} />
-          <ColorOpacityField
-            hex={openEffect.hex}
-            opacity={openEffect.opacity}
-            onHexChange={(hex) => updateEffect(openEffect.id, { hex })}
-            onOpacityChange={(opacity) => updateEffect(openEffect.id, { opacity })}
-            onSwatchClick={() => handleSwatchClick(`fx-${openEffect.id}`)}
-            makePercentDrag={makePercentDrag}
-          />
-        </>
+        <EffectPopup
+          openEffect={openEffect}
+          effectPopupPos={effectPopupPos}
+          effectPopupRef={effectPopupRef}
+          closeEffectPopup={closeEffectPopup}
+          toolbarMode={toolbarMode}
+          changeEffectType={changeEffectType}
+          updateEffect={updateEffect}
+          canvasDims={canvasDims}
+          handleSwatchClick={handleSwatchClick}
+          makePercentDrag={makePercentDrag}
+        />
       )}
-      {openEffect.type === "layerBlur" && (
-        <>
-          <div className="flex items-center p-0.5 w-full h-8 bg-[#F0F0F0] dark:bg-black rounded-2xl">
-            {[["uniform", "Uniform"], ["progressive", "Progressive"]].map(([v, l]) => (
-              <button
-                key={v}
-                type="button"
-                onClick={() => updateEffect(openEffect.id, { mode: v })}
-                className={`seg-tab flex-1 h-7 flex items-center justify-center gap-2 px-2.5 py-1 rounded-[14px] leading-5 transition-colors duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] ${
-                  (openEffect.mode ?? "uniform") === v ? SEG_ON : SEG_OFF
-                }`}
-              >
-                {l}
-              </button>
-            ))}
-          </div>
-          {openEffect.mode === "progressive" ? (
-            <>
-              <Scrubber label="Start blur" value={openEffect.startBlur ?? 0} min={0} max={100} onChange={(startBlur) => updateEffect(openEffect.id, { startBlur })} />
-              <Scrubber label="End blur" value={openEffect.blur} min={0} max={100} onChange={(blur) => updateEffect(openEffect.id, { blur })} />
-              <Scrubber
-                label="Angle"
-                value={pbAngle(openEffect, canvasDims?.w || 1, canvasDims?.h || 1)}
-                min={-180} max={180}
-                onChange={(a) => updateEffect(openEffect.id, pbRotate(openEffect, canvasDims?.w || 1, canvasDims?.h || 1, a))}
-              />
-            </>
-          ) : (
-            <Scrubber label="Blur" value={openEffect.blur} min={0} max={100} onChange={(blur) => updateEffect(openEffect.id, { blur })} />
-          )}
-        </>
+
+      {animFxId != null && effectPopupPos && activeParamTpl && (
+        <AnimEffectPopup
+          animFxId={animFxId}
+          effectPopupPos={effectPopupPos}
+          effectPopupRef={effectPopupRef}
+          activeParamTpl={activeParamTpl}
+          animFxList={animFxList}
+          fxMeta={fxMeta}
+          patchAnimFx={patchAnimFx}
+          closeEffectPopup={closeEffectPopup}
+          canvasDims={canvasDims}
+          handleSwatchClick={handleSwatchClick}
+          makePercentDrag={makePercentDrag}
+        />
       )}
-      {openEffect.type === "noise" && (
-        <>
-          <Scrubber label="Amount" value={openEffect.amount} min={0} max={100} onChange={(amount) => updateEffect(openEffect.id, { amount })} />
-          <Scrubber label="Size" value={openEffect.size} min={1} max={20} onChange={(size) => updateEffect(openEffect.id, { size })} />
-        </>
-      )}
-      <EffectControls
-        type={openEffect.type}
-        value={openEffect}
-        onChange={(patch) => updateEffect(openEffect.id, patch)}
-        onSwatch={handleSwatchClick}
-        colorTarget={`fx-${openEffect.id}`}
-        makePercentDrag={makePercentDrag}
-      />
-    </div>
-  </div>
+
+{activeGradFx && effectPopupPos && (
+  <GradientFxPopup
+    fx={activeGradFx}
+    pos={effectPopupPos}
+    popupRef={effectPopupRef}
+    onClose={closeEffectPopup}
+    set={(patch) => updateGradFx(activeGradFx.id, patch)}
+    onTypeChange={(t) => changeGradFxType(activeGradFx.id, t)}
+    grain={{ grainType, setGrainType, grainAmount, setGrainAmount, grainScale, setGrainScale, grainBlend, setGrainBlend }}
+    handleSwatchClick={handleSwatchClick}
+    makePercentDrag={makePercentDrag}
+  />
 )}
-
-      {animFxId != null && effectPopupPos && activeParamTpl && (() => {
-        const tpl = activeParamTpl;
-        const fx = animFxList(tpl).find((x) => x.id === animFxId);
-        if (!fx) return null;
-        const { Icon, label } = fxMeta(fx.type);
-        const set = (patch) => patchAnimFx(tpl, fx.id, patch);
-        return (
-          <div
-            ref={effectPopupRef}
-            style={{ position: "fixed", top: effectPopupPos.top, right: effectPopupPos.right }}
-            className="panel-enter w-[240px] px-3 pb-3 flex flex-col gap-2 bg-[#FAF9FA] dark:bg-[#171717] border border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10 rounded-2xl shadow-[0_4px_8px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_12px_rgba(0,0,0,0.4)] z-[9000]"
-          >
-            <div className="-mx-3 mb-1 flex items-center justify-between h-11 pl-4 pr-2 shrink-0 border-b border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10">
-              <span className="flex items-center gap-2 text-[14px] font-medium tracking-[-0.005em] text-[#737373] dark:text-[#ABABAB]">
-                <Icon size={16} weight="regular" className="shrink-0" />
-                {label}
-              </span>
-              <button
-                type="button"
-                onClick={closeEffectPopup}
-                aria-label="Close"
-                className="group flex items-center justify-center w-7 h-7 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-              >
-                <X size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
-              </button>
-            </div>
-            {fx.type === "fade" && <Scrubber label="Fade" value={fx.fade} min={0} max={100} onChange={(fade) => set({ fade })} />}
-            {fx.type === "blur" && (
-              <>
-                <div className="flex items-center p-0.5 w-full h-8 bg-[#F0F0F0] dark:bg-black rounded-2xl">
-                  {["Uniform", "Progressive"].map((o) => (
-                    <button
-                      key={o}
-                      type="button"
-                      onClick={() => set({ mode: o })}
-                      className={`seg-tab flex-1 h-7 flex items-center justify-center gap-2 px-2.5 py-1 rounded-[14px] leading-5 transition-colors duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] ${
-                        fx.mode === o ? SEG_ON : SEG_OFF
-                      }`}
-                    >
-                      {o}
-                    </button>
-                  ))}
-                </div>
-                {fx.mode === "Progressive" ? (
-                  <>
-                    <Scrubber label="Start blur" value={fx.startBlur ?? 0} min={0} max={100} onChange={(startBlur) => set({ startBlur })} />
-                    <Scrubber label="End blur" value={fx.blur} min={0} max={100} onChange={(blur) => set({ blur })} />
-                    <Scrubber
-                      label="Angle"
-                      value={pbAngle(fx, canvasDims?.w || 1, canvasDims?.h || 1)}
-                      min={-180} max={180}
-                      onChange={(a) => set(pbRotate(fx, canvasDims?.w || 1, canvasDims?.h || 1, a))}
-                    />
-                  </>
-                ) : (
-                  <Scrubber label="Blur" value={fx.blur} min={0} max={100} onChange={(blur) => set({ blur })} />
-                )}
-              </>
-            )}
-            <EffectControls
-              type={fx.type}
-              value={fx}
-              onChange={set}
-              onSwatch={handleSwatchClick}
-              colorTarget={`afx-${fx.id}`}
-              makePercentDrag={makePercentDrag}
-            />
-          </div>
-        );
-      })()}
-
-            {activeGradFx && effectPopupPos && (() => {
-        const fx = activeGradFx;
-        const Icon = GRAD_FX_ICON[fx.type] ?? Drop;
-        const set = (patch) => updateGradFx(fx.id, patch);
-        return (
-          <div
-            ref={effectPopupRef}
-            style={{ position: "fixed", top: effectPopupPos.top, right: effectPopupPos.right, maxHeight: "82vh" }}
-            className="panel-enter w-[240px] px-3 pb-3 flex flex-col gap-2 overflow-y-auto custom-scroll bg-[#FAF9FA] dark:bg-[#171717] border border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10 rounded-2xl shadow-[0_4px_8px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_12px_rgba(0,0,0,0.4)] z-[9000]"
-          >
-            <div className="-mx-3 mb-1 flex items-center justify-between h-11 pl-4 pr-2 shrink-0 sticky top-0 z-10 bg-[#FAF9FA] dark:bg-[#171717] border-b border-[#3A3A3A]/10 dark:border-[#FAF9FA]/10">
-              <span className="flex items-center gap-2 text-[14px] font-medium tracking-[-0.005em] text-[#737373] dark:text-[#ABABAB]">
-                <Icon size={16} weight="regular" className="shrink-0" />
-                Filter
-              </span>
-              <button
-                type="button"
-                onClick={closeEffectPopup}
-                aria-label="Close"
-                className="group flex items-center justify-center w-7 h-7 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-              >
-                <X size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover:text-[#3A3A3A] dark:group-hover:text-[#FAF9FA] transition-colors" />
-              </button>
-            </div>
-            <PopupDropdown value={fx.type} options={GRAD_FX_OPTIONS} onChange={(t) => changeGradFxType(fx.id, t)} />
-            <div className={`flex flex-col gap-2 transition-opacity duration-200 ${fx.visible ? "opacity-100" : "opacity-40"}`}>
-              {fx.type === "grain" ? (
-                <>
-                  <PopupDropdown value={grainType} options={GRAIN_TYPES} onChange={setGrainType} />
-                  <Scrubber label="Amount" value={grainAmount} min={1} max={100} onChange={setGrainAmount} />
-                  {grainType !== "noise" && (
-                    <>
-                      <Scrubber label="Scale" value={grainScale} min={20} max={300} onChange={setGrainScale} />
-                      <PopupDropdown value={grainBlend} options={GRAIN_BLENDS} onChange={setGrainBlend} />
-                    </>
-                  )}
-                </>
-              ) : fx.type === "halftone" ? (
-                <>
-                  <PopupDropdown value={fx.halftoneType ?? 0} options={HALFTONE_PATTERNS} onChange={(halftoneType) => set({ halftoneType })} />
-                  <PopupDropdown value={fx.colorMode ?? 0} options={HALFTONE_COLOR_MODES} onChange={(colorMode) => set({ colorMode })} />
-                  <Scrubber label="Dot size" value={fx.dotSize ?? 20} min={4} max={120} onChange={(dotSize) => set({ dotSize })} />
-                  <Scrubber label="Dot scale" value={fx.dotScale ?? 100} min={0} max={200} onChange={(dotScale) => set({ dotScale })} />
-                  <Scrubber label="Softness" value={fx.softness ?? 0} min={0} max={100} onChange={(softness) => set({ softness })} />
-                  <Scrubber label="Rotation" value={fx.angle} min={-180} max={180} onChange={(angle) => set({ angle })} />
-                  <Scrubber label="Center X" value={fx.cx ?? 50} min={0} max={100} onChange={(cx) => set({ cx })} />
-                  <Scrubber label="Center Y" value={fx.cy ?? 50} min={0} max={100} onChange={(cy) => set({ cy })} />
-                </>
-              ) : fx.type === "dither" ? (
-                <>
-                  <PopupDropdown value={fx.ditherStyle ?? "Bayer 16x16"} options={DITHER_STYLES} onChange={(ditherStyle) => set({ ditherStyle })} />
-                  <Scrubber label="Size" value={fx.pixelSize ?? 2} min={1} max={8} onChange={(pixelSize) => set({ pixelSize })} />
-                  <Scrubber label="Levels" value={fx.levels ?? 3} min={2} max={8} onChange={(levels) => set({ levels })} />
-                  <Scrubber label="Brightness" value={fx.brightness ?? 100} min={0} max={200} onChange={(brightness) => set({ brightness })} />
-                  <Scrubber label="Contrast" value={fx.contrast ?? 100} min={50} max={200} onChange={(contrast) => set({ contrast })} />
-                  <ToggleRow label="Mono" checked={!!fx.mono} onChange={(mono) => set({ mono })} />
-                  {fx.mono && (
-                    <ColorOpacityField
-                      hex={fx.monoHex ?? "FFFFFF"}
-                      opacity={100}
-                      onHexChange={(monoHex) => set({ monoHex })}
-                      onOpacityChange={() => {}}
-                      onSwatchClick={() => handleSwatchClick("gfx-mono")}
-                      makePercentDrag={makePercentDrag}
-                    />
-                  )}
-                </>
-              ) : fx.type === "lens" ? (
-                <>
-                  <PopupDropdown value={fx.lensMode ?? 0} options={LENS_MODES} onChange={(lensMode) => set({ lensMode })} />
-                  <PopupDropdown value={fx.lensQuality ?? 1} options={LENS_QUALITY} onChange={(lensQuality) => set({ lensQuality })} />
-                  <Scrubber label="Distortion" value={fx.distortion ?? 50} min={0} max={100} onChange={(distortion) => set({ distortion })} />
-                  <Scrubber label="Aberration" value={fx.aberration ?? 20} min={0} max={100} onChange={(aberration) => set({ aberration })} />
-                  <Scrubber label="Center X" value={fx.cx ?? 50} min={0} max={100} onChange={(cx) => set({ cx })} />
-                  <Scrubber label="Center Y" value={fx.cy ?? 50} min={0} max={100} onChange={(cy) => set({ cy })} />
-                </>
-              ) : fx.type === "warp" ? (
-                <>
-                  <PopupDropdown value={fx.warpMode ?? 0} options={WARP_MODES} onChange={(warpMode) => set({ warpMode })} />
-                  <Scrubber label="Amplitude" value={fx.amplitude ?? 15} min={0} max={100} onChange={(amplitude) => set({ amplitude })} />
-                  <Scrubber label="Scale" value={fx.warpScale ?? 20} min={0} max={100} onChange={(warpScale) => set({ warpScale })} />
-                  <Scrubber label="Center X" value={fx.cx ?? 50} min={0} max={100} onChange={(cx) => set({ cx })} />
-                  <Scrubber label="Center Y" value={fx.cy ?? 50} min={0} max={100} onChange={(cy) => set({ cy })} />
-                </>
-              ) : fx.type === "pixelate" ? (
-                <>
-                  <PopupDropdown value={fx.pixelShape ?? 0} options={PIXEL_SHAPES} onChange={(pixelShape) => set({ pixelShape })} />
-                  <Scrubber label="Size" value={fx.size ?? 10} min={2} max={100} onChange={(size) => set({ size })} />
-                  <Scrubber label="Stretch" value={fx.stretch ?? 100} min={0} max={2000} onChange={(stretch) => set({ stretch })} />
-                  <Scrubber label="Gap" value={fx.gap ?? 0} min={0} max={50} onChange={(gap) => set({ gap })} />
-                  <Scrubber label="Color trim" value={fx.colorTrim ?? 2} min={2} max={16} onChange={(colorTrim) => set({ colorTrim })} />
-                  <Scrubber label="Average color" value={fx.averageColor ?? 80} min={0} max={100} onChange={(averageColor) => set({ averageColor })} />
-                  <PopupDropdown value={fx.dissolveMode ?? 0} options={DISSOLVE_MODES} onChange={(dissolveMode) => set({ dissolveMode })} />
-                  <Scrubber label="Dissolve" value={fx.dissolve ?? 0} min={0} max={100} onChange={(dissolve) => set({ dissolve })} />
-                  <Scrubber label="Falloff" value={fx.falloff ?? 0} min={0} max={100} onChange={(falloff) => set({ falloff })} />
-                  <Scrubber label="Center X" value={fx.cx ?? 50} min={0} max={100} onChange={(cx) => set({ cx })} />
-                  <Scrubber label="Center Y" value={fx.cy ?? 50} min={0} max={100} onChange={(cy) => set({ cy })} />
-                  <Scrubber label="Radius" value={fx.radius ?? 75} min={0} max={200} onChange={(radius) => set({ radius })} />
-                  <Scrubber label="Angle" value={fx.angle ?? 90} min={-180} max={180} onChange={(angle) => set({ angle })} />
-                  <ToggleRow label="Knockout" checked={fx.knockout ?? true} onChange={(knockout) => set({ knockout })} />
-                </>
-              ) : fx.type === "hatching" ? (
-                <>
-                  <PopupDropdown value={fx.hatchMode ?? 1} options={HATCH_PATTERNS} onChange={(hatchMode) => set({ hatchMode })} />
-                  <Scrubber label="Density" value={fx.density ?? 100} min={0} max={200} onChange={(density) => set({ density })} />
-                  <Scrubber label="Softness" value={fx.softness ?? 0} min={0} max={100} onChange={(softness) => set({ softness })} />
-                  <Scrubber label="Frequency" value={fx.waveFreq ?? 28} min={0} max={200} onChange={(waveFreq) => set({ waveFreq })} />
-                  <Scrubber label="Amplitude" value={fx.waveAmp ?? 23} min={0} max={1000} onChange={(waveAmp) => set({ waveAmp })} />
-                  <Scrubber label="Offset X" value={fx.offsetX ?? 0} min={0} max={100} onChange={(offsetX) => set({ offsetX })} />
-                  <Scrubber label="Offset Y" value={fx.offsetY ?? 0} min={0} max={100} onChange={(offsetY) => set({ offsetY })} />
-                  <ColorOpacityField
-                    hex={fx.bgHex ?? "0A5D37"}
-                    opacity={fx.bgOpacity ?? 100}
-                    labelText="Background"
-                    onHexChange={(bgHex) => set({ bgHex })}
-                    onOpacityChange={(bgOpacity) => set({ bgOpacity })}
-                    onSwatchClick={() => handleSwatchClick("gfx-bg")}
-                    makePercentDrag={makePercentDrag}
-                  />
-                  <ColorOpacityField
-                    hex={fx.fgHex ?? "C7F8F8"}
-                    opacity={fx.fgOpacity ?? 100}
-                    labelText="Foreground"
-                    onHexChange={(fgHex) => set({ fgHex })}
-                    onOpacityChange={(fgOpacity) => set({ fgOpacity })}
-                    onSwatchClick={() => handleSwatchClick("gfx-fg")}
-                    makePercentDrag={makePercentDrag}
-                  />
-                  <Scrubber label="Center X" value={fx.cx ?? 50} min={0} max={100} onChange={(cx) => set({ cx })} />
-                  <Scrubber label="Center Y" value={fx.cy ?? 50} min={0} max={100} onChange={(cy) => set({ cy })} />
-                  <Scrubber label="Line width" value={fx.lineWidth ?? 8} min={1} max={100} onChange={(lineWidth) => set({ lineWidth })} />
-                  <Scrubber label="Angle" value={fx.angle ?? 90} min={-180} max={180} onChange={(angle) => set({ angle })} />
-                </>
-              ) : fx.type === "pistons" ? (
-                <>
-                  <Scrubber label="Columns" value={fx.cols ?? 60} min={10} max={150} onChange={(cols) => set({ cols })} />
-                  <Scrubber label="Gap" value={fx.gap ?? 18} min={2} max={50} onChange={(gap) => set({ gap })} />
-                  <Scrubber label="Min bar width" value={fx.minBar ?? 5} min={0} max={50} onChange={(minBar) => set({ minBar })} />
-                  <Scrubber label="Highlight" value={fx.highlight ?? 25} min={0} max={60} onChange={(highlight) => set({ highlight })} />
-                </>
-              ) : fx.type === "asciiwave" ? (
-                <>
-                  <Scrubber label="Rows" value={fx.rows ?? 20} min={5} max={60} onChange={(rows) => set({ rows })} />
-                  <Scrubber label="Amplitude" value={fx.amplitude ?? 60} min={0} max={100} onChange={(amplitude) => set({ amplitude })} />
-                  <Scrubber label="Frequency" value={fx.frequency ?? 20} min={0} max={100} onChange={(frequency) => set({ frequency })} />
-                  <Scrubber label="Angle" value={fx.angle ?? 38} min={-90} max={90} onChange={(angle) => set({ angle })} />
-                  <Scrubber label="Thickness" value={fx.thickness ?? 9} min={1} max={50} onChange={(thickness) => set({ thickness })} />
-                  <Scrubber label="Softness" value={fx.softness ?? 60} min={0} max={100} onChange={(softness) => set({ softness })} />
-                  <Scrubber label="Phase" value={fx.phase ?? 0} min={0} max={100} onChange={(phase) => set({ phase })} />
-                  <ColorOpacityField
-                    hex={fx.waveHex ?? "1166D9"}
-                    opacity={100}
-                    labelText="Wave color"
-                    onHexChange={(waveHex) => set({ waveHex })}
-                    onOpacityChange={() => {}}
-                    onSwatchClick={() => handleSwatchClick("gfx-wave")}
-                    makePercentDrag={makePercentDrag}
-                  />
-                  <ColorOpacityField
-                    hex={fx.waveBgHex ?? "060611"}
-                    opacity={100}
-                    labelText="Background"
-                    onHexChange={(waveBgHex) => set({ waveBgHex })}
-                    onOpacityChange={() => {}}
-                    onSwatchClick={() => handleSwatchClick("gfx-wavebg")}
-                    makePercentDrag={makePercentDrag}
-                  />
-                </>
-              ) : fx.type === "collapsinggrid" ? (
-                <>
-                  <Scrubber label="Grid size" value={fx.gridSize ?? 10} min={2} max={40} onChange={(gridSize) => set({ gridSize })} />
-                  <Scrubber label="Collapse" value={fx.collapse ?? 30} min={0} max={100} onChange={(collapse) => set({ collapse })} />
-                  <Scrubber label="Gap size" value={fx.gapSize ?? 5} min={0} max={50} onChange={(gapSize) => set({ gapSize })} />
-                  <Scrubber label="Corner radius" value={fx.cornerRadius ?? 10} min={0} max={50} onChange={(cornerRadius) => set({ cornerRadius })} />
-                  <ToggleRow label="Varying corners" checked={!!fx.varyCorners} onChange={(varyCorners) => set({ varyCorners })} />
-                  <ColorOpacityField
-                    hex={fx.bgHex ?? "000000"}
-                    opacity={fx.bgOpacity ?? 100}
-                    labelText="Gap color"
-                    onHexChange={(bgHex) => set({ bgHex })}
-                    onOpacityChange={(bgOpacity) => set({ bgOpacity })}
-                    onSwatchClick={() => handleSwatchClick("gfx-bg")}
-                    makePercentDrag={makePercentDrag}
-                  />
-                </>
-              ) : fx.type === "patternrefraction" ? (
-                <>
-                  <PopupDropdown value={fx.patternType ?? 0} options={REFRACT_PATTERNS} onChange={(patternType) => set({ patternType })} />
-                  <Scrubber label="Strength" value={fx.strength ?? 50} min={-100} max={100} onChange={(strength) => set({ strength })} />
-                  <Scrubber label="Smoothness" value={fx.smoothness ?? 0} min={0} max={100} onChange={(smoothness) => set({ smoothness })} />
-                  <Scrubber label="Frost" value={fx.frost ?? 0} min={0} max={100} onChange={(frost) => set({ frost })} />
-                  <Scrubber label="Dispersion" value={fx.dispersion ?? 4} min={-100} max={100} onChange={(dispersion) => set({ dispersion })} />
-                  <PopupDropdown value={fx.wrapMode ?? 0} options={WRAP_MODES} onChange={(wrapMode) => set({ wrapMode })} />
-                  <Scrubber label="Center X" value={fx.cx ?? 50} min={0} max={100} onChange={(cx) => set({ cx })} />
-                  <Scrubber label="Center Y" value={fx.cy ?? 50} min={0} max={100} onChange={(cy) => set({ cy })} />
-                  <Scrubber label="Size" value={fx.radius ?? 8} min={0} max={100} onChange={(radius) => set({ radius })} />
-                  <Scrubber label="Angle" value={fx.angle ?? 45} min={-180} max={180} onChange={(angle) => set({ angle })} />
-                </>
-              ) : fx.type === "banknote" ? (() => {
-                const D = FX_DEFAULTS.banknote;
-                const on = (k) => fx[k] ?? D[k];
-                const S = (label, k, min, max) => (
-                  <Scrubber key={k} label={label} value={on(k)} min={min} max={max} onChange={(v) => set({ [k]: v })} />
-                );
-                const H = (t) => (
-                  <span className="pt-2 text-[12px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]">{t}</span>
-                );
-                return (
-                  <>
-                    {H("Ink & paper")}
-                    <ColorOpacityField
-                      hex={on("inkHex")} opacity={on("inkOpacity")} labelText="Main ink"
-                      onHexChange={(inkHex) => set({ inkHex })} onOpacityChange={(inkOpacity) => set({ inkOpacity })}
-                      onSwatchClick={() => handleSwatchClick("gfx-ink")} makePercentDrag={makePercentDrag}
-                    />
-                    <ColorOpacityField
-                      hex={on("paperHex")} opacity={on("paperOpacity")} labelText="Paper"
-                      onHexChange={(paperHex) => set({ paperHex })} onOpacityChange={(paperOpacity) => set({ paperOpacity })}
-                      onSwatchClick={() => handleSwatchClick("gfx-paper")} makePercentDrag={makePercentDrag}
-                    />
-
-                    {H("Lines")}
-                    {S("Spacing", "spacing", 8, 120)}
-                    {S("Line weight", "lineWeight", 40, 160)}
-                    {S("Angle", "angle", -90, 90)}
-                    {S("Contour flow", "flow", 0, 160)}
-                    {S("Crosshatching", "crosshatch", 0, 100)}
-
-                    {H("Guilloche")}
-                    {S("Strength", "guilloche", 0, 100)}
-                    <PopupDropdown value={on("placement")} options={BANKNOTE_PLACEMENTS} onChange={(placement) => set({ placement })} />
-                    {on("placement") === 1 && S("Upper region reach", "patternExtent", 0, 100)}
-                    {S("Scale", "patternScale", 40, 300)}
-                    {S("Curvature", "curvature", 0, 160)}
-
-                    {H("Tone")}
-                    {S("Exposure", "exposure", -200, 200)}
-                    {S("Contrast", "contrast", 50, 200)}
-                    {S("Tone curve", "gamma", 40, 200)}
-                    {S("Detail", "detail", 0, 200)}
-
-                    {H("Print")}
-                    {S("Paper grain", "grain", 0, 100)}
-                    {S("Ink wear", "wear", 0, 100)}
-                    {S("Fine stippling", "stipple", 0, 100)}
-
-                    {H("Color accent")}
-                    <ToggleRow label="Preserve selected hue" checked={!!on("preserveHue")} onChange={(preserveHue) => set({ preserveHue })} />
-                    {on("preserveHue") && (
-                      <>
-                        {S("Hue", "hue", 0, 360)}
-                        {S("Tolerance", "tolerance", 1, 180)}
-                        {S("Feather", "feather", 1, 60)}
-                        {S("Min saturation", "minSaturation", 0, 90)}
-                        {S("Accent strength", "accentStrength", 0, 100)}
-                        {S("Keep shadows in ink", "shadowProtection", 0, 100)}
-                        <PopupDropdown value={on("accentMode")} options={BANKNOTE_ACCENT_MODES} onChange={(accentMode) => set({ accentMode })} />
-                        {on("accentMode") === 1 && (
-                          <ColorOpacityField
-                            hex={on("accentHex")} opacity={on("accentOpacity")} labelText="Accent ink"
-                            onHexChange={(accentHex) => set({ accentHex })} onOpacityChange={(accentOpacity) => set({ accentOpacity })}
-                            onSwatchClick={() => handleSwatchClick("gfx-accent")} makePercentDrag={makePercentDrag}
-                          />
-                        )}
-                        <ToggleRow label="Preview hue mask" checked={!!on("maskPreview")} onChange={(maskPreview) => set({ maskPreview })} />
-                      </>
-                    )}
-
-                    {H("Finish")}
-                    <ToggleRow label="Keep transparency" checked={!!on("keepAlpha")} onChange={(keepAlpha) => set({ keepAlpha })} />
-                    {S("Effect amount", "amount", 0, 100)}
-                  </>
-                );
-              })() : fx.type === "glitch" ? (() => {
-                const D = FX_DEFAULTS.glitch;
-                const on = (k) => fx[k] ?? D[k];
-                const S = (label, k, min, max) => (
-                  <Scrubber key={k} label={label} value={on(k)} min={min} max={max} onChange={(v) => set({ [k]: v })} />
-                );
-                const T = (label, k) => <ToggleRow key={k} label={label} checked={!!on(k)} onChange={(v) => set({ [k]: v })} />;
-                const H = (t) => (
-                  <span className="pt-2 text-[12px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]">{t}</span>
-                );
-                const speeds = fx.rollingSpeeds ?? D.rollingSpeeds;
-                return (
-                  <>
-                    {H("Master")}
-                    {S("Strength", "strength", 0, 100)}
-                    {S("Loop (s)", "loopSeconds", 1, 20)}
-                    {S("Effect mix", "effectMix", 0, 100)}
-                    <PopupDropdown value={on("edgeMode")} options={EDGE_MODES} onChange={(edgeMode) => set({ edgeMode })} />
-
-                    {H("Timing")}
-                    {S("Phase", "phase", 0, 100)}
-                    {S("Bursts per loop", "bursts", 1, 12)}
-                    {S("Burst duration", "burstDuration", 5, 400)}
-                    {S("Irregularity", "irregularity", 0, 100)}
-                    {S("Seed", "seed", 0, 9999)}
-
-                    {T("Tearing", "tearing")}
-                    {on("tearing") && (
-                      <>
-                        {S("Displacement", "tearAmount", 0, 40)}
-                        {S("Band thickness", "bandThickness", 2, 200)}
-                        {S("Band density", "bandDensity", 1, 48)}
-                        {S("Edge softness", "edgeSoftness", 0, 100)}
-                      </>
-                    )}
-
-                    {T("Fragments", "fragmentation")}
-                    {on("fragmentation") && (
-                      <>
-                        {S("Band extent", "blockSize", 2, 50)}
-                        {S("Displacement", "fragmentAmount", 0, 40)}
-                        {S("Coverage", "coverage", 0, 100)}
-                      </>
-                    )}
-
-                    {T("Color separation", "colorSplit")}
-                    {on("colorSplit") && (
-                      <>
-                        {S("Split distance", "splitDistance", 0, 30)}
-                        {S("Split angle", "splitAngle", -180, 180)}
-                      </>
-                    )}
-
-                    {T("Scanlines", "scanlines")}
-                    {on("scanlines") && (
-                      <>
-                        {S("Strength", "scanStrength", 0, 100)}
-                        {S("Spacing", "scanSpacing", 2, 24)}
-                      </>
-                    )}
-
-                    {T("Noise", "noiseEnabled")}
-                    {on("noiseEnabled") && (
-                      <>
-                        {S("Amount", "noiseAmount", 0, 50)}
-                        {S("Grain size", "grainSize", 10, 160)}
-                      </>
-                    )}
-
-                    {T("Flicker", "flicker")}
-                    {on("flicker") && S("Strength", "flickerStrength", 0, 50)}
-
-                    {T("Diagonal buzz", "diagonalEnabled")}
-                    {on("diagonalEnabled") && (
-                      <>
-                        {S("Amount", "diagonalAmount", 0, 100)}
-                        {S("Angle", "diagonalAngle", -180, 180)}
-                        {S("Width", "diagonalWidth", 1, 50)}
-                      </>
-                    )}
-
-                    {T("Rolling bands", "rollingEnabled")}
-                    {on("rollingEnabled") && (
-                      <>
-                        <PopupDropdown value={on("rollingDirection")} options={ROLL_DIRECTIONS} onChange={(rollingDirection) => set({ rollingDirection })} />
-                        {S("Master speed", "rollingPasses", 1, 8)}
-                        {S("Concurrent bands", "rollingCount", 3, 6)}
-                        {S("Core width", "rollingCoreWidth", 10, 400)}
-                        {S("Falloff", "rollingHaloExtent", 5, 200)}
-                        {S("Displacement", "rollingDisplacement", 0, 120)}
-                        {S("Color tearing", "rollingColorTearing", 0, 240)}
-                        {S("Static strength", "rollingStaticStrength", 0, 50)}
-                        {Array.from({ length: on("rollingCount") }, (_, i) => (
-                          <Scrubber
-                            key={`rs${i}`}
-                            label={`Line ${i + 1} speed`}
-                            value={speeds[i] ?? 1}
-                            min={1}
-                            max={8}
-                            onChange={(v) => set({ rollingSpeeds: Array.from({ length: 6 }, (_, j) => (j === i ? v : speeds[j] ?? 1)) })}
-                          />
-                        ))}
-                      </>
-                    )}
-                  </>
-                );
-              })() : (
-                <>
-                  <Scrubber label="Amount" value={fx.amount} min={0} max={100} onChange={(amount) => set({ amount })} />
-                  <Scrubber label="Scale" value={fx.scale} min={1} max={100} onChange={(scale) => set({ scale })} />
-                  <Scrubber label="Angle" value={fx.angle} min={-180} max={180} onChange={(angle) => set({ angle })} />
-                </>
-              )}
-            </div>
-          </div>
-        );
-      })()}
 
       {cropModalOpen && uploadedMediaThumb && uploadedImageDims && (
         <CropModal

@@ -42,7 +42,7 @@ const fxLayout = (fxList = []) => {
       startBlur: x.startBlur ?? 0, x0: x.x0, y0: x.y0, x1: x.x1, y1: x.y1,
     }));
   // shared effects (glow, chromatic, fish eye, vignette, liquid glass) go to the frames as they are
-  const fx = fxList.filter((x) => x.on && SHARED_FX[x.type]).map(({ id, on, ...rest }) => rest);
+  const fx = fxList.filter((x) => x.on && (SHARED_FX[x.type] || x.type === "dropShadow")).map(({ id, on, ...rest }) => rest);
   return { fade, blurs, fx };
 };
 

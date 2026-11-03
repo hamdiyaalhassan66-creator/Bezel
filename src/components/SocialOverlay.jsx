@@ -49,8 +49,10 @@ function chromeOps(f, w, h, auto) {
   const socialColor = s.on ? (darkText ? "#000000" : "#FFFFFF") : null;
   const b = f.browser?.on ? f.browser : null;
   const barColor = socialColor ?? (b ? (b.theme === "dark" ? "#FFFFFF" : "#000000") : null);
+  const ratio = w / h;
+  const layout = ratio >= 1 ? "desktop" : ratio >= 0.6 ? "tablet" : "phone";
   return [{
-    t: "chrome", w, h,
+    t: "chrome", w, h, layout,
     statusBar: !!f.statusBar,
     homeIndicator: !!f.homeIndicator,
     color: barColor ?? "#FFFFFF",
@@ -74,7 +76,7 @@ function ChromeCanvas({ o }) {
     const ctx = c.getContext("2d");
     ctx.scale(dpr, dpr);
     paintPhoneChrome(ctx, o.w, o.h, o);
-    }, [o.w, o.h, o.statusBar, o.homeIndicator, o.color, o.statusColor, o.homeColor, o.browser, o.browserTheme, o.browserTabs, o.browserUrl]);
+    }, [o.w, o.h, o.layout, o.statusBar, o.homeIndicator, o.color, o.statusColor, o.homeColor, o.browser, o.browserTheme, o.browserTabs, o.browserUrl]);
   return <canvas ref={ref} className="absolute inset-0" style={{ width: o.w, height: o.h }} />;
 }
 

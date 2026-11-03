@@ -46,7 +46,17 @@ export function useAltScrub({ value, min = -Infinity, max = Infinity, onChange }
     window.addEventListener("pointercancel", onUp);
   };
 
+  // Dragging the label letter scrubs without Alt (Shift = 10x)
+  const startLabelDrag = (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault(); // no focus / text selection while scrubbing
+    e.stopPropagation();
+    document.activeElement?.blur?.(); // so the field re-syncs to the scrubbed value
+    startDrag({ ...e, button: 0, altKey: true, clientX: e.clientX, preventDefault() {}, stopPropagation() {} });
+  };
+
   return {
+    startLabelDrag,
     cursorClass: hovering && altHeld ? "!cursor-ew-resize [&_*]:!cursor-ew-resize" : "",
     props: {
       onPointerEnter: (e) => {
@@ -80,7 +90,12 @@ export function OffsetField({ label, value, onChange, dimmed = false, min = -Inf
   return (
     <label {...altScrub.props} className={`flex flex-1 min-w-0 ${className} items-center gap-2 p-2 box-border cursor-text bg-[#EDEDED] dark:bg-[#292929] hover:bg-[#E3E3E3] dark:hover:bg-[#333333] focus-within:bg-[#E3E3E3] dark:focus-within:bg-[#333333] rounded-lg border border-transparent focus-within:border-[#FF47BC] transition-[colors,opacity] ${dimmed ? "opacity-50 focus-within:opacity-100" : ""} ${altScrub.cursorClass}`}>
       {!unit && (
-        <span className="shrink-0 text-[12px] leading-[14px] font-medium tracking-[-0.005em] text-[#737373] dark:text-[#ABABAB]">{label}</span>
+        <span
+          onPointerDown={altScrub.startLabelDrag}
+          className="self-stretch flex items-center -ml-2 -my-2 pl-2 pr-1 shrink-0 select-none touch-none cursor-ew-resize text-[12px] leading-[14px] font-medium tracking-[-0.005em] text-[#737373] dark:text-[#ABABAB]"
+        >
+          {label}
+        </span>
       )}
       <input
         value={text}

@@ -17,11 +17,11 @@ export default function DimensionInput({ label, value, onChange, className = "w-
   return (
     <div {...altScrub.props} className={`flex items-center gap-2 px-2 py-1.5 bg-[#EDEDED] dark:bg-[#292929] rounded-lg ${className} ${altScrub.cursorClass}`}>
       <span
+        ref={(el) => el?.style.setProperty("cursor", "ew-resize", "important")} // beats the wrapper's cursor rules, so it shows without Alt
         onPointerDown={(e) => {
           inputRef.current?.blur(); // so the field re-syncs to the scrubbed value
           makeScrubDrag({ value: Math.round(value), onChange, min, max, inputRef })(e);
         }}
-        style={{ cursor: "ew-resize" }}
         className="self-stretch flex items-center -ml-2 -my-1.5 pl-2 pr-1 py-1.5 text-[13px] font-medium text-[#737373] dark:text-[#ABABAB] shrink-0 select-none touch-none"
       >
         {label}

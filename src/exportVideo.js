@@ -214,4 +214,5 @@ export async function encodeVideoFrames(opts) {
   a.download = `${opts.name}.${spec.ext}`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  return blob.size;
 }

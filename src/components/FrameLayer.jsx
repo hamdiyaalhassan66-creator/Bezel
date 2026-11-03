@@ -104,13 +104,19 @@ export function FrameLayer({ depthTint, nativeSizeOf, onFrameClick, markIds = []
   const [guides, setGuides] = useState({ v: false, h: false }); // v = vertical line (centered in X), h = horizontal line (centered in Y)
   const [marquee, setMarquee] = useState(null); // { left, top, width, height } while Shift-dragging
   const [nativeGuide, setNativeGuide] = useState(null); // { l, t, r, b, mw, mh, w, h } while a resize matches the image's original size
+  const [matchGuide, setMatchGuide] = useState(null); // { l, t, r, b, others: [rect] } while a resize matches another frame's height
   const [altHeld, setAltHeld] = useState(false); // Alt / Option held: show distances to the canvas edges
+  const [overOther, setOverOther] = useState(false); // cursor is over a frame that isn't selected: App.jsx shows frame-to-frame distances instead
   useEffect(() => {
     const sync = (e) => {
       if (e.key === "Alt") e.preventDefault(); // stops a lone Alt press from focusing the browser menu, which swallows later key events
       setAltHeld(e.altKey);
     };
-    const syncPointer = (e) => setAltHeld(e.altKey); // pointer events always carry the real modifier state
+    const syncPointer = (e) => {
+      setAltHeld(e.altKey); // pointer events always carry the real modifier state
+      const hit = e.target.closest?.("[data-frame-id]");
+      setOverOther(!!hit && !selectedRef.current.includes(Number(hit.dataset.frameId)));
+    };
     const off = () => setAltHeld(false); // window lost focus while Alt was down
     window.addEventListener("keydown", sync, true);
     window.addEventListener("keyup", sync, true);
@@ -167,6 +173,7 @@ export function FrameLayer({ depthTint, nativeSizeOf, onFrameClick, markIds = []
       setGuides({ v: false, h: false });
       setMarquee(null);
       setNativeGuide(null);
+      setMatchGuide(null);
     }
     let live = true;
     const end = (ev, silent) => {
@@ -221,7 +228,8 @@ export function FrameLayer({ depthTint, nativeSizeOf, onFrameClick, markIds = []
     const sb = start.map((f) => boundsOf(f, b));
     const gl = Math.min(...sb.map((x) => x.l)), gr = Math.max(...sb.map((x) => x.r));
     const gt = Math.min(...sb.map((x) => x.t)), gB = Math.max(...sb.map((x) => x.b));
-    const others = framesRef.current.filter((f) => !f.hidden && !ids.includes(f.id)).map((f) => boundsOf(f, b));
+    // while Alt-duplicating, the originals stay put, so they are targets too
+    const others = framesRef.current.filter((f) => !f.hidden && ((e.altKey && !e.shiftKey) || !ids.includes(f.id))).map((f) => boundsOf(f, b));
     const startX = e.clientX;
     const startY = e.clientY;
     let moved = false;
@@ -257,23 +265,23 @@ export function FrameLayer({ depthTint, nativeSizeOf, onFrameClick, markIds = []
         return best;
       };
       if (!v) {
-        const d = nearest([gl + dx, gr + dx], others.flatMap((o) => [o.l, o.r]));
+        const d = nearest([gl + dx, (gl + gr) / 2 + dx, gr + dx], others.flatMap((o) => [o.l, (o.l + o.r) / 2, o.r]));
         if (d !== null) dx += d;
       }
       if (!h) {
-        const d = nearest([gt + dy, gB + dy], others.flatMap((o) => [o.t, o.b]));
+        const d = nearest([gt + dy, (gt + gB) / 2 + dy, gB + dy], others.flatMap((o) => [o.t, (o.t + o.b) / 2, o.b]));
         if (d !== null) dy += d;
       }
 
       // One guide per aligned edge, reaching the frames it lines up with
       const EPS = 0.5;
       const lines = [];
-      [gl + dx, gr + dx].forEach((x) => {
-        const hit = others.filter((o) => Math.abs(o.l - x) < EPS || Math.abs(o.r - x) < EPS);
+      [gl + dx, (gl + gr) / 2 + dx, gr + dx].forEach((x) => {
+        const hit = others.filter((o) => [o.l, (o.l + o.r) / 2, o.r].some((v) => Math.abs(v - x) < EPS));
         if (hit.length) lines.push({ x1: x, x2: x, y1: Math.min(gt + dy, ...hit.map((o) => o.t)), y2: Math.max(gB + dy, ...hit.map((o) => o.b)) });
       });
-      [gt + dy, gB + dy].forEach((y) => {
-        const hit = others.filter((o) => Math.abs(o.t - y) < EPS || Math.abs(o.b - y) < EPS);
+      [gt + dy, (gt + gB) / 2 + dy, gB + dy].forEach((y) => {
+        const hit = others.filter((o) => [o.t, (o.t + o.b) / 2, o.b].some((v) => Math.abs(v - y) < EPS));
         if (hit.length) lines.push({ y1: y, y2: y, x1: Math.min(gl + dx, ...hit.map((o) => o.l)), x2: Math.max(gr + dx, ...hit.map((o) => o.r)) });
       });
       setGuides({ v, h, lines });
@@ -317,7 +325,10 @@ export function FrameLayer({ depthTint, nativeSizeOf, onFrameClick, markIds = []
     const nat = sel.length === 1 && !sel[0].r && !sel[0].social?.on ? nativeSizeOf?.(sel[0]) ?? null : null;
     const tw = nat ? nat.w * items[0].s0 * short : 0; // original width / height in canvas px at the frame's scale
     const th = nat ? nat.h * items[0].s0 * short : 0;
-    console.log("native guide", { hasProp: !!nativeSizeOf, nat, tw, th, canvas: b });
+    // other visible frames, for height matching (single selection only)
+    const otherRects = sel.length === 1
+      ? framesRef.current.filter((f) => f.id !== sel[0].id && !f.hidden && !f.noHit).map((f) => frameRect(f, b))
+      : [];
 
     const onMove = (ev) => {
       const dx = ev.clientX - startX;
@@ -349,6 +360,18 @@ export function FrameLayer({ depthTint, nativeSizeOf, onFrameClick, markIds = []
           }
         }
       }
+      // snap the height to another frame's height (hold Ctrl / Cmd to bypass; not with a locked ratio)
+      if (otherRects.length && (key.includes("n") || key.includes("s")) && !(aspectRef.current || ev.shiftKey) && !ev.ctrlKey && !ev.metaKey) {
+        const cur = B - T;
+        if (!(nat && Math.abs(cur - th) < 0.5)) { // the image-size snap wins if it already matched
+          let best = null;
+          otherRects.forEach((o) => {
+            const d = o.height - cur;
+            if (Math.abs(d) < SNAP && (best === null || Math.abs(d) < Math.abs(best))) best = d;
+          });
+          if (best !== null) { if (key.includes("s")) B = T + (cur + best); else T = B - (cur + best); }
+        }
+      }
       if (aspectRef.current || ev.shiftKey) {
         const w = R - L, h = B - T;
         if (key.length === 2) {
@@ -372,6 +395,10 @@ export function FrameLayer({ depthTint, nativeSizeOf, onFrameClick, markIds = []
         const fh = Math.round((B - T) / (items[0].s0 * short));
         setNativeGuide(mw || mh || mr ? { l: L, t: T, r: R, b: B, mw, mh, mr, w: nat.w, h: nat.h, fw, fh, dim: key === "e" || key === "w" ? "w" : "h" } : null);
       }
+      if (otherRects.length && (key.includes("n") || key.includes("s"))) {
+        const hits = otherRects.filter((o) => Math.abs(o.height - (B - T)) < 0.5);
+        setMatchGuide(hits.length ? { l: L, t: T, r: R, b: B, others: hits } : null);
+      } else if (otherRects.length) setMatchGuide(null);
       const kx = (R - L) / gw;
       const ky = (B - T) / gh;
       onFramesChange((prev) =>
@@ -393,7 +420,10 @@ export function FrameLayer({ depthTint, nativeSizeOf, onFrameClick, markIds = []
         })
       );
     };
-    trackDrag(onMove, () => setNativeGuide(null));
+    trackDrag(onMove, () => {
+      setNativeGuide(null);
+      setMatchGuide(null);
+    });
   };
 
   const startMarquee = (e) => {
@@ -504,7 +534,7 @@ export function FrameLayer({ depthTint, nativeSizeOf, onFrameClick, markIds = []
 
   // Alt held: distance from the selection's bounds to each canvas edge (canvas px, like the Size fields)
   const measureSegs = (() => {
-    if (!altHeld || !box || locked || !selectedIds.length) return [];
+    if (!altHeld || overOther || !box || locked || !selectedIds.length) return [];
     const bounds = frames
       .filter((f) => selectedIds.includes(f.id) && !f.hidden)
       .map((f) => {
@@ -988,6 +1018,23 @@ const bandMaps = useMemo(
           </div>
         );
       })()}
+      {matchGuide && (
+        <div aria-hidden className="absolute inset-0 z-30 pointer-events-none">
+          {matchGuide.others.map((o, i) => {
+            const x0 = Math.min(matchGuide.l, o.left);
+            const x1 = Math.max(matchGuide.r, o.left + o.width);
+            const ys = [...new Set([matchGuide.t, matchGuide.b, o.top, o.top + o.height].map((y) => Math.round(y * 2) / 2))];
+            return (
+              <React.Fragment key={i}>
+                <div className="absolute" style={{ left: o.left, top: o.top, width: o.width, height: o.height, outline: `2px solid ${GUIDE}` }} />
+                {ys.map((y) => (
+                  <div key={y} className="absolute" style={{ left: x0, top: y - 0.5, width: x1 - x0, height: 1, background: GUIDE }} />
+                ))}
+              </React.Fragment>
+            );
+          })}
+        </div>
+      )}
       {guides.v && <div className="absolute z-30 top-0 bottom-0 left-1/2 w-px pointer-events-none" style={{ background: GUIDE }} />}
       {guides.h && <div className="absolute z-30 left-0 right-0 top-1/2 h-px pointer-events-none" style={{ background: GUIDE }} />}
       {guides.lines?.map((l, i) => (

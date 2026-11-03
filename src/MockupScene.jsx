@@ -3869,9 +3869,36 @@ function loadEnvironmentTexture(renderer, key) {
 // to sample, it picks black/white from the social UI's theme.
 export function paintPhoneChrome(ctx, w, h, {
   statusBar, homeIndicator, color = "#FFFFFF", statusColor, homeColor, deviceLabel = "iPhone 16 Pro Max",
-  browser = "none", browserTheme = "light", browserTabs = "top", browserUrl = "",
+  browser = "none", browserTheme = "light", browserTabs = "top", browserUrl = "", layout = "phone",
 }) {
   const { w: lw, h: baseH } = SCREEN_LOGICAL_PT[deviceLabel] ?? SCREEN_LOGICAL_PT.default;
+  if (layout !== "phone") {
+    const LW = layout === "tablet" ? 820 : 1440; // logical width the desktop / tablet bars are designed for
+    const kb = w / LW;
+    const dark = browserTheme === "dark";
+    const url = (browserUrl || DEFAULT_BROWSER_URL).trim();
+    ctx.save();
+    ctx.scale(kb, kb);
+    if (browser !== "none") {
+      if (layout === "tablet") {
+        if (browser === "arc") {
+          ctx.fillStyle = ARC_COLORS(dark).from;
+          ctx.fillRect(0, 0, LW, TABLET_STATUS_H);
+          drawArcHeader(ctx, LW, TABLET_STATUS_H, dark, url, true);
+        } else if (browser === "edge") drawTabletEdge(ctx, LW, dark, url);
+        else drawTabletBrowser(ctx, LW, browser, dark, url);
+      } else {
+        const drawHeader = { safari: drawSafariHeader, chrome: drawChromeHeader, arc: drawArcHeader, edge: drawEdgeHeader }[browser];
+        drawHeader?.(ctx, LW, 0, dark, url);
+      }
+    }
+    if (layout === "tablet") {
+      if (statusBar) drawTabletStatusBar(ctx, LW, statusColor ?? color);
+      if (homeIndicator) drawTabletHomeIndicator(ctx, LW, h / kb, homeColor ?? color);
+    }
+    ctx.restore();
+    return; // desktop frames get no phone status bar / home indicator
+  }
   const k = Math.min(w / lw, h / baseH);
   if (browser !== "none") {
     // bars span the full frame width, so they scale by width rather than by the centered phone layout
@@ -8017,7 +8044,7 @@ setStrapStyle(key) {
       });
     },
 
-    exportAt(targetWidth, mime = "image/png", ext = "png", targetHeight, transparent = false) {
+    exportAt(targetWidth, mime = "image/png", ext = "png", targetHeight, transparent = false, dryRun = false) {
       const s = stateRef.current;
       const mount = mountRef.current;
       if (!s.renderer || !mount) return;
@@ -8053,10 +8080,15 @@ setStrapStyle(key) {
       refreshBackText();
       s.renderer.render(s.scene, s.camera);
 
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `mockup-${exportWidth}x${exportHeight}.${ext}`;
-      a.click();
+      if (!dryRun) {
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `mockup-${exportWidth}x${exportHeight}.${ext}`;
+        a.click();
+      }
+      // decoded size of the data URL = the real file size
+      const b64 = url.length - url.indexOf(",") - 1;
+      return { bytes: Math.round((b64 * 3) / 4), px: exportWidth * exportHeight };
     },
     // Video export: resize the renderer once, grab frames, then restore.
     beginCapture(w, h) {
