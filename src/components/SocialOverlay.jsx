@@ -4,6 +4,14 @@ import { modeOf, DEFAULT_SOCIAL, ICONS, socialOps } from "../lib/social.js";
 
 const chromeKey = (f) => (f.img ? `${f.img.cropUrl ?? f.img.url}|${(f.w / f.h).toFixed(2)}` : null);
 
+// Status bar height in the 440 x 956 phone layout. Tune this to match paintPhoneChrome.
+const STATUS_H = 54;
+// Pixels the image is pushed down by the status bar (0 when it's off or covered by social / browser UI).
+function statusInset(f, w, h) {
+  if (!f.statusBar || f.social?.on || f.browser?.on || w / h >= 1) return 0;
+  return STATUS_H * Math.min(w / 440, h / 956);
+}
+
 // Draws the image as object-cover at the frame's aspect, then averages the pixels behind
 // the status bar and home indicator (same 440 x 956 layout paintPhoneChrome uses).
 function sampleChromeColors(img, fw, fh) {
@@ -56,7 +64,7 @@ function chromeOps(f, w, h, auto) {
     statusBar: !!f.statusBar,
     homeIndicator: !!f.homeIndicator,
     color: barColor ?? "#FFFFFF",
-    statusColor: barColor ?? auto?.status ?? "#FFFFFF",
+    statusColor: barColor ?? (statusInset(f, w, h) ? "#FFFFFF" : auto?.status ?? "#FFFFFF"),
     homeColor: barColor ?? auto?.home ?? "#FFFFFF",
     browser: b ? b.type : "none",
     browserTheme: b?.theme ?? "light",
@@ -317,4 +325,4 @@ function paintSocial(ctx, ops, ox, oy, imgs) {
   });
 }
 
-export { chromeKey, sampleChromeColors, chromeOps, ChromeCanvas, SocialOverlay, paintSocial };
+export { chromeKey, sampleChromeColors, chromeOps, ChromeCanvas, SocialOverlay, paintSocial, statusInset };

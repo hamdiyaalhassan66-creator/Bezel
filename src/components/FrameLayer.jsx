@@ -3,7 +3,7 @@ import { isDefaultCamera, getFrameCamera, frameCameraCss, hexRgba } from "../lib
 import { fishEyeMap, vignetteStops, glassProfile, glassVec, frostLayers } from "../lib/canvasFx.js";
 import { backFillOf, backOpacityOf, frameAppearanceOf, frameRect, cloneFrame } from "../lib/frameModel.js";
 import { frameDim, DIM_TRANSITION } from "../lib/frameFade.js";
-import { chromeKey, chromeOps, ChromeCanvas, SocialOverlay } from "./SocialOverlay.jsx";
+import { chromeKey, chromeOps, ChromeCanvas, SocialOverlay, statusInset } from "./SocialOverlay.jsx";
 import { RESIZE_HANDLES } from "../constants/canvasControls.js";
 import { PB_BANDS, pbBandBlur, pbMask, pbParams, pbPts } from "../lib/progressiveBlur.js";
 import { PbHandles } from "./PbHandles.jsx";
@@ -753,7 +753,10 @@ const bandMaps = useMemo(
                     : {}),
                 }}
                >
-                <div className="absolute inset-0" style={{ transform: flipCss }}>
+                {statusInset(f, r.width, r.height) > 0 && (
+                  <div className="absolute left-0 right-0 top-0 bg-black" style={{ height: statusInset(f, r.width, r.height) }} />
+                )}
+                <div className="absolute left-0 right-0 bottom-0" style={{ top: statusInset(f, r.width, r.height), transform: flipCss }}>
                 {backVisible ? (
                   // scaleX(-1) undoes the mirroring you get from behind, so a gradient reads as authored
                   <div className="w-full h-full" style={{ background: backFillOf(f), opacity: backOpacityOf(f), transform: "scaleX(-1)" }} />
@@ -774,6 +777,7 @@ const bandMaps = useMemo(
                       draggable={false}
                       onLoadedMetadata={onVideoReady}
                       className="w-full h-full object-cover select-none pointer-events-none"
+                      style={statusInset(f, r.width, r.height) > 0 ? { objectPosition: "top" } : undefined}
                     />
                   ) : (f.effects ?? []).find((e) => e.visible && e.type === "chromatic" && e.amount > 0) ? (
                     (() => {
@@ -781,7 +785,13 @@ const bandMaps = useMemo(
                       return <ChromaticImage url={imgUrl} amount={ca.amount} angle={ca.angle ?? 0} />;
                     })()
                   ) : (
-                    <img src={imgUrl} alt="" draggable={false} className="w-full h-full object-cover select-none pointer-events-none" />
+                    <img
+                      src={imgUrl}
+                      alt=""
+                      draggable={false}
+                      className="w-full h-full object-cover select-none pointer-events-none"
+                      style={statusInset(f, r.width, r.height) > 0 ? { objectPosition: "top" } : undefined}
+                    />
                   )
                 ) : (
                   <img src={`${import.meta.env.BASE_URL}mockup-defaults/frame.png`} alt="" draggable={false} className="w-full h-full object-cover select-none pointer-events-none" />

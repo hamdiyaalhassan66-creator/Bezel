@@ -1,5 +1,5 @@
 import { paintPhoneChrome, paintTextItem } from "../MockupScene.jsx";
-import { chromeOps, sampleChromeColors, paintSocial } from "../components/SocialOverlay.jsx";
+import { chromeOps, sampleChromeColors, paintSocial, statusInset } from "../components/SocialOverlay.jsx";
 import { socialOps } from "./social.js";
 import {
   isDefaultCamera, getFrameCamera, drawWarped, paintSheen, isFrameBackFacing, makeCanvasGradient,
@@ -238,7 +238,22 @@ export async function renderFrameCanvas(S, width, transparent = false, height = 
             lctx.scale(fr.flipX ? -1 : 1, fr.flipY ? -1 : 1);
             lctx.translate(-(sx + sw / 2), -(sy + sh / 2));
           }
-          drawCover(srcImg, sx, sy, sw, sh, lctx);
+          const inset = statusInset(fr, sw, sh);
+          if (inset > 0) {
+            lctx.fillStyle = "#000";
+            lctx.fillRect(sx, sy, sw, inset);
+          }
+          lctx.beginPath();
+          lctx.rect(sx, sy + inset, sw, sh - inset);
+          lctx.clip();
+          if (inset > 0) {
+            // top-aligned: the image's top edge sits right under the bar, extra height is cropped off the bottom
+            const iw = srcImg.naturalWidth || srcImg.videoWidth, ih = srcImg.naturalHeight || srcImg.videoHeight;
+            const sc = Math.max(sw / iw, (sh - inset) / ih);
+            lctx.drawImage(srcImg, sx + (sw - iw * sc) / 2, sy + inset, iw * sc, ih * sc);
+          } else {
+            drawCover(srcImg, sx, sy, sw, sh, lctx);
+          }
           lctx.restore();
           const ca = fr.effects.find((e) => e.visible && e.type === "chromatic" && e.amount > 0);
           if (ca && !fr.img?.video) {
