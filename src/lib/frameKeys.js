@@ -87,10 +87,17 @@ function sampleFrameKeys(keys, t, ease = smoothstep) {
         const f = a.ease ? vidEaseFn(a.ease, ease) : ease;
         const u = f((t - a.t) / Math.max(1e-6, b.t - a.t));
         const o = {};
-        ["x", "y", "w", "h", "s", "r", "rx", "ry", "z", "sh", ...CLIP_KEYS].forEach((p) => {
+        ["x", "y", "r", "rx", "ry", "z", "sh", ...CLIP_KEYS].forEach((p) => {
           const va = a.frames[id][p] ?? 0, vb = b.frames[id][p] ?? 0;
           o[p] = va + (vb - va) * u;
         });
+        // size: blend the on-screen size (w * s), then derive w / h / s from it
+        const A = a.frames[id], B = b.frames[id];
+        const mix = (p, q) => p + (q - p) * u;
+        const SW = mix(A.w * A.s, B.w * B.s), SH = mix(A.h * A.s, B.h * B.s);
+        o.h = Math.max(1, mix(A.h, B.h));
+        o.s = SH / o.h;
+        o.w = SW / o.s;
         return void (out[id] = o);
       }
     }
