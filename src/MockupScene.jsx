@@ -4265,15 +4265,20 @@ function getPhoneBrowserMetrics(deviceLabel, overlays) {
 function getContentInsetsPt(deviceLabel, overlays) {
   if (TABLET_DEVICES[deviceLabel]) {
     const b = overlays?.browser ?? "none";
-    return b === "none" ? { top: 0, bottom: 0 } : { top: TABLET_STATUS_H + TABLET_BROWSER_H[b], bottom: 0 };
+    return b === "none"
+      ? { top: overlays?.statusBar ? TABLET_STATUS_H : 0, bottom: 0 }
+      : { top: TABLET_STATUS_H + TABLET_BROWSER_H[b], bottom: 0 };
   }
   if (NO_SCREEN_CHROME[deviceLabel]) {
     return { top: getDesktopContentTopPt(deviceLabel, overlays), bottom: 0 };
   }
   const m = getPhoneBrowserMetrics(deviceLabel, overlays);
-  return m
-    ? { top: m.safeTop + m.topBar, bottom: m.bottomBar + m.safeBottom }
-    : { top: 0, bottom: 0 };
+  if (m) return { top: m.safeTop + m.topBar, bottom: m.bottomBar + m.safeBottom };
+  if (overlays?.statusBar && !WATCH_DEVICES[deviceLabel]) {
+    const sa = PHONE_SAFE_AREA[deviceLabel] ?? PHONE_SAFE_AREA.default;
+    return { top: sa.top, bottom: 0 };
+  }
+  return { top: 0, bottom: 0 };
 }
 
 function scaledGlyph(ctx, cx, cy, s, draw) {
