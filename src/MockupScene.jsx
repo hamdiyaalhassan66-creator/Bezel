@@ -3878,7 +3878,7 @@ function loadEnvironmentTexture(renderer, key) {
 // to sample, it picks black/white from the social UI's theme.
 export function paintPhoneChrome(ctx, w, h, {
   statusBar, homeIndicator, color = "#FFFFFF", statusColor, homeColor, deviceLabel = "iPhone 16 Pro Max",
-  browser = "none", browserTheme = "light", browserTabs = "top", browserUrl = "", layout = "phone",
+  browser = "none", browserTheme = "light", browserTabs = "top", browserUrl = "", browserFavicon = "", layout = "phone",
 }) {
   const { w: lw, h: baseH } = SCREEN_LOGICAL_PT[deviceLabel] ?? SCREEN_LOGICAL_PT.default;
   if (layout !== "phone") {
@@ -3895,10 +3895,11 @@ export function paintPhoneChrome(ctx, w, h, {
           ctx.fillRect(0, 0, LW, TABLET_STATUS_H);
           drawArcHeader(ctx, LW, TABLET_STATUS_H, dark, url, true);
         } else if (browser === "edge") drawTabletEdge(ctx, LW, dark, url);
-        else drawTabletBrowser(ctx, LW, browser, dark, url);
+        else drawTabletBrowser(ctx, LW, browser, dark, url, browserFavicon);
       } else {
         const drawHeader = { safari: drawSafariHeader, chrome: drawChromeHeader, arc: drawArcHeader, edge: drawEdgeHeader }[browser];
-        drawHeader?.(ctx, LW, 0, dark, url);
+        if (browser === "chrome") drawChromeHeader(ctx, LW, 0, dark, url, browserFavicon);
+        else drawHeader?.(ctx, LW, 0, dark, url);
       }
     }
     if (layout === "tablet") {
@@ -4583,6 +4584,66 @@ function drawGlobeGlyph(ctx, cx, cy, color, r = 7) {
   ctx.restore();
 }
 
+// Favicon for the Chrome tab. Painting is synchronous, so images load into a cache and listeners repaint when one arrives.
+const faviconCache = new Map();
+const faviconListeners = new Set();
+export const onFaviconReady = (fn) => {
+  faviconListeners.add(fn);
+  return () => faviconListeners.delete(fn);
+};
+export function preloadFavicon(url) {
+  if (!url) return Promise.resolve(null);
+  const hit = faviconCache.get(url);
+  if (hit) return hit.complete ? Promise.resolve(hit) : new Promise((r) => hit.addEventListener("load", () => r(hit), { once: true }));
+  return new Promise((resolve) => {
+    const im = new Image();
+    im.onload = () => {
+      faviconListeners.forEach((fn) => fn());
+      resolve(im);
+    };
+    im.onerror = () => resolve(null);
+    im.src = url;
+    faviconCache.set(url, im);
+  });
+}
+function getFavicon(url) {
+  if (!url) return null;
+  const im = faviconCache.get(url);
+  if (im) return im.complete && im.naturalWidth ? im : null;
+  preloadFavicon(url);
+  return null;
+}
+// Square, cover-cropped, 64px data URL, so it stays small in saved projects
+export function fileToFavicon(file) {
+  return new Promise((resolve) => {
+    const src = URL.createObjectURL(file);
+    const im = new Image();
+    im.onload = () => {
+      const c = document.createElement("canvas");
+      c.width = c.height = 64;
+      const sc = Math.max(64 / im.naturalWidth, 64 / im.naturalHeight);
+      const dw = im.naturalWidth * sc, dh = im.naturalHeight * sc;
+      c.getContext("2d").drawImage(im, (64 - dw) / 2, (64 - dh) / 2, dw, dh);
+      URL.revokeObjectURL(src);
+      resolve(c.toDataURL("image/png"));
+    };
+    im.onerror = () => {
+      URL.revokeObjectURL(src);
+      resolve(null);
+    };
+    im.src = src;
+  });
+}
+function drawTabIcon(ctx, cx, cy, color, favicon) {
+  const im = getFavicon(favicon);
+  if (!im) return drawGlobeGlyph(ctx, cx, cy, color, 6.5);
+  ctx.save();
+  roundedRectPath(ctx, cx - 8, cy - 8, 16, 16, 3);
+  ctx.clip();
+  ctx.drawImage(im, cx - 8, cy - 8, 16, 16);
+  ctx.restore();
+}
+
 function drawCloseGlyph(ctx, cx, cy, color, r = 3.6) {
   ctx.save();
   setIconStyle(ctx, color, 1.4);
@@ -4694,7 +4755,7 @@ function drawSafariHeader(ctx, W, y0, dark, url) {
   ctx.restore();
 }
 
-function drawChromeHeader(ctx, W, y0, dark, url) {
+function drawChromeHeader(ctx, W, y0, dark, url, favicon = "") {
   const STRIP = 41;
   const H = BROWSER_HEADER_H.chrome;
   const c = dark
@@ -4721,7 +4782,7 @@ function drawChromeHeader(ctx, W, y0, dark, url) {
   ctx.lineTo(tx + tw, ty + th - 8); ctx.quadraticCurveTo(tx + tw, ty + th, tx + tw + 8, ty + th); // right foot
   ctx.closePath();
   ctx.fill();
-  drawGlobeGlyph(ctx, tx + 20, ty + th / 2 - 0.5, c.icon, 6.5);
+  drawTabIcon(ctx, tx + 20, ty + th / 2 - 0.5, c.icon, favicon);
   ctx.font = `400 12px ${DESKTOP_UI_FONT}`;
   ctx.textBaseline = "middle";
   ctx.textAlign = "left";
@@ -5022,7 +5083,8 @@ function drawDesktopChrome(ctx, W, H, deviceLabel, overlays) {
   }
   if (browser !== "none") {
     const drawHeader = { safari: drawSafariHeader, chrome: drawChromeHeader, arc: drawArcHeader, edge: drawEdgeHeader }[browser];
-    drawHeader(ctx, lw, headerY, pageDark, url);
+    if (browser === "chrome") drawChromeHeader(ctx, lw, headerY, pageDark, url, overlays?.browserFavicon);
+    else drawHeader(ctx, lw, headerY, pageDark, url);
   }
   if (menuBar) {
     drawMenuBar(ctx, lw, "#FFFFFF", browser); // always sits on the black notch strip
@@ -5058,7 +5120,7 @@ function drawTabletStatusBar(ctx, lw, color) {
 
 // Safari / Chrome header for tablets. Covers the status bar strip too, so the header colour
 // runs to the top edge like the real thing.
-function drawTabletBrowser(ctx, lw, browser, dark, url) {
+function drawTabletBrowser(ctx, lw, browser, dark, url, favicon = "") {
   const top = TABLET_STATUS_H;
   const H = TABLET_BROWSER_H[browser];
   ctx.save();
@@ -5117,7 +5179,7 @@ function drawTabletBrowser(ctx, lw, browser, dark, url) {
     ctx.lineTo(tx + tw, ty + th - 8); ctx.quadraticCurveTo(tx + tw, ty + th, tx + tw + 8, ty + th);
     ctx.closePath();
     ctx.fill();
-    drawGlobeGlyph(ctx, tx + 20, ty + th / 2 - 0.5, c.icon, 6.5);
+    drawTabIcon(ctx, tx + 20, ty + th / 2 - 0.5, c.icon, favicon);
     ctx.font = `400 12px ${DESKTOP_UI_FONT}`;
     ctx.textBaseline = "middle";
     ctx.textAlign = "left";
@@ -5202,7 +5264,7 @@ function drawTabletChrome(ctx, W, H, deviceLabel, overlays) {
   ctx.scale(kx, ky);
   if (browser === "arc") drawTabletArc(ctx, lw, dark, url);
   else if (browser === "edge") drawTabletEdge(ctx, lw, dark, url);
-  else if (browser !== "none") drawTabletBrowser(ctx, lw, browser, dark, url);
+  else if (browser !== "none") drawTabletBrowser(ctx, lw, browser, dark, url, overlays?.browserFavicon);
   if (overlays.statusBar) drawTabletStatusBar(ctx, lw, statusColor);
   if (overlays.homeIndicator) drawTabletHomeIndicator(ctx, lw, lh, homeColor);
   ctx.restore();
@@ -6606,6 +6668,8 @@ s.materials.frame.forEach((m) => { m.color.copy(blend(frameBase)); m.needsUpdate
     s.materials.cameraRing?.forEach((m) => { m.color.copy(deriveRingColor(blend(ringBase))); m.needsUpdate = true; });
     applyDebugPerNodeColors();
   }
+
+  useEffect(() => onFaviconReady(() => refreshScreenTexture()), []);
 
   useEffect(() => {
     onDefaultScreenLoaded = () => {

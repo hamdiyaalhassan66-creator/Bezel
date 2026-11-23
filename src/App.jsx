@@ -1,5 +1,5 @@
 import React, { useRef, useState, useCallback, useEffect, useLayoutEffect } from "react";
-import MockupScene, { paintPhoneChrome, paintTextItem, getStrapStyles } from "./MockupScene.jsx";
+import MockupScene, { paintPhoneChrome, paintTextItem, getStrapStyles, fileToFavicon } from "./MockupScene.jsx";
 import ColorPicker from "./ColorPicker.jsx";
 import GradientPicker from "./GradientPicker.jsx";
 import CropModal from "./CropModal.jsx";
@@ -1278,6 +1278,7 @@ useEffect(() => {
   const [browserTheme, setBrowserTheme] = useState("light");
   const [safariTabs, setSafariTabs] = useState("top");
   const [browserUrl, setBrowserUrl] = useState("bezel.app");
+  const [browserFavicon, setBrowserFavicon] = useState("");
 
   // Social media UI on the mockup's screen
   const [mockupSocial, setMockupSocial] = useState(DEFAULT_SOCIAL);
@@ -2212,12 +2213,13 @@ useEffect(() => {
         socialPaint: showSocial && !isWatch ? (ctx, w, h, media) => paintMockupSocial(mockupSocial, ctx, w, h, media) : null,
         browserTheme,
         browserUrl,
+        browserFavicon,
         browserTabs: safariTabs,
         orientation: deviceOrientation,
       });
     }, 120);
     return () => clearTimeout(t);
-  }, [showStatusBar, showHomeIndicator, showMenuBar, showBrowser, browserType, browserTheme, browserUrl, safariTabs, deviceOrientation, showSocial, mockupSocial, socialImgTick, fontTick, isWatch]);
+  }, [showStatusBar, showHomeIndicator, showMenuBar, showBrowser, browserType, browserTheme, browserUrl, browserFavicon, safariTabs, deviceOrientation, showSocial, mockupSocial, socialImgTick, fontTick, isWatch]);
 
   useEffect(() => {
     if (isEditingTitle && projectTitleInputRef.current) {
@@ -2865,6 +2867,7 @@ handlePositionXChange(0);
     setSafariTabs("top");
     setBrowserTheme("light");
     setBrowserUrl("bezel.app");
+    setBrowserFavicon("");
 
     // Camera
     setCameraTab("manual");
@@ -5936,6 +5939,44 @@ const chrome = {
                         </div>
                       )}
                     </>
+                  )}
+
+                                    {showBrowser && browserType === "chrome" && !isWatch && (
+                    <div className="flex flex-col gap-2">
+                      <label className="text-[12px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]">Favicon</label>
+                      <div className="flex items-center gap-2">
+                        <label className="flex-1 h-8 flex items-center justify-center gap-2 rounded-2xl border border-[#3A3A3A]/10 dark:border-[#FCFCFC]/10 bg-white dark:bg-[#292929] hover:bg-[#F5F5F5] dark:hover:bg-[#333333] text-[13px] leading-5 font-medium tracking-[0.01em] text-[#3A3A3A] dark:text-[#FCFCFC] cursor-pointer transition-colors">
+                          {browserFavicon ? (
+                            <img src={browserFavicon} alt="" className="w-4 h-4 rounded-[3px]" />
+                          ) : (
+                            <UploadSimple size={14} weight="regular" />
+                          )}
+                          {browserFavicon ? "Replace favicon" : "Upload favicon"}
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={async (e) => {
+                              const f = e.target.files?.[0];
+                              e.target.value = "";
+                              if (!f) return;
+                              const url = await fileToFavicon(f);
+                              if (url) setBrowserFavicon(url);
+                            }}
+                          />
+                        </label>
+                        {browserFavicon && (
+                          <button
+                            type="button"
+                            aria-label="Remove favicon"
+                            onClick={() => setBrowserFavicon("")}
+                            className="group flex items-center justify-center w-8 h-8 shrink-0 rounded-lg hover:bg-[#F04438]/10 transition-colors"
+                          >
+                            <X size={16} weight="regular" className="text-[#737373] dark:text-[#ABABAB] group-hover:text-[#F04438] transition-colors" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
                   )}
 
                   <ToggleRow

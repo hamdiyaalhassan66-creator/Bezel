@@ -1,5 +1,5 @@
-import React, { useRef, useLayoutEffect } from "react";
-import { paintPhoneChrome, getFrameBrowserTopPt } from "../MockupScene.jsx";
+import React, { useRef, useState, useEffect, useLayoutEffect } from "react";
+import { paintPhoneChrome, getFrameBrowserTopPt, onFaviconReady } from "../MockupScene.jsx";
 import { modeOf, DEFAULT_SOCIAL, ICONS, socialOps } from "../lib/social.js";
 
 const chromeKey = (f) => (f.img ? `${f.img.cropUrl ?? f.img.url}|${(f.w / f.h).toFixed(2)}` : null);
@@ -77,11 +77,14 @@ function chromeOps(f, w, h, auto) {
     browserTheme: b?.theme ?? "light",
     browserTabs: b?.tabs ?? "top",
     browserUrl: b?.url ?? "",
+    browserFavicon: b?.favicon ?? "",
   }];
 }
 
 function ChromeCanvas({ o }) {
   const ref = useRef(null);
+  const [tick, setTick] = useState(0);
+  useEffect(() => onFaviconReady(() => setTick((n) => n + 1)), []);
   useLayoutEffect(() => {
     const c = ref.current;
     if (!c) return;
@@ -91,7 +94,7 @@ function ChromeCanvas({ o }) {
     const ctx = c.getContext("2d");
     ctx.scale(dpr, dpr);
     paintPhoneChrome(ctx, o.w, o.h, o);
-    }, [o.w, o.h, o.layout, o.statusBar, o.homeIndicator, o.color, o.statusColor, o.homeColor, o.browser, o.browserTheme, o.browserTabs, o.browserUrl]);
+  }, [o.w, o.h, o.layout, o.statusBar, o.homeIndicator, o.color, o.statusColor, o.homeColor, o.browser, o.browserTheme, o.browserTabs, o.browserUrl, o.browserFavicon, tick]);
   return <canvas ref={ref} className="absolute inset-0" style={{ width: o.w, height: o.h }} />;
 }
 

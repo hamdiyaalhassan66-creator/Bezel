@@ -27,7 +27,7 @@ export const GFX_COLOR = {
 export const nativeSizeOf = (f) =>
   f?.img ? (f.img.crop ? { w: f.img.crop.width, h: f.img.crop.height } : { w: f.img.nw, h: f.img.nh }) : null;
 
-export const FRAME_BROWSER_DEFAULT = { on: false, type: "safari", theme: "light", tabs: "top", url: "bezel.app" };
+export const FRAME_BROWSER_DEFAULT = { on: false, type: "safari", theme: "light", tabs: "top", url: "bezel.app", favicon: "" };
 
 export const NAV = (() => {
   try { return JSON.parse(localStorage.getItem("bezel:nav")) ?? {}; } catch { return {}; }

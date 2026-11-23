@@ -1,4 +1,4 @@
-import { paintPhoneChrome, paintTextItem } from "../MockupScene.jsx";
+import { paintPhoneChrome, paintTextItem, preloadFavicon } from "../MockupScene.jsx";
 import { chromeOps, sampleChromeColors, paintSocial, statusInset } from "../components/SocialOverlay.jsx";
 import { socialOps } from "./social.js";
 import {
@@ -278,6 +278,7 @@ export async function renderFrameCanvas(S, width, transparent = false, height = 
           paintSocial(lctx, sops, sx, sy, imgs);
         }
 if (!backFacing && (fr.statusBar || fr.homeIndicator || fr.browser?.on)) {
+  if (fr.browser?.favicon) await preloadFavicon(fr.browser.favicon);
   const auto = srcImg ? sampleChromeColors(srcImg, fr.w, fr.h) : null;
   const cop = chromeOps(fr, sw, sh, auto)[0];
   lctx.save();
