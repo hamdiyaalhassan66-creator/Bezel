@@ -80,7 +80,21 @@ async function encodeWebCodecs(kind, { width, height, fps, count, transparent, r
     delete config.alpha; // this browser can't encode alpha, fall back to opaque
     useAlpha = false;
   }
-  if (!(await VideoEncoder.isConfigSupported(config)).supported) {
+  let supported = (await VideoEncoder.isConfigSupported(config)).supported;
+  if (!supported) {
+    // some encoders reject quantizer mode or the level 5.1 profile, so retry with looser settings
+    const fallbacks = isMp4
+      ? [{ bitrateMode: "variable" }, { bitrateMode: "variable", codec: "avc1.640034" }, { bitrateMode: "variable", codec: "avc1.4d0034" }]
+      : [{ bitrateMode: "variable" }];
+    for (const patch of fallbacks) {
+      if ((await VideoEncoder.isConfigSupported({ ...config, ...patch })).supported) {
+        Object.assign(config, patch);
+        supported = true;
+        break;
+      }
+    }
+  }
+  if (!supported) {
     throw new Error(`${isMp4 ? "H.264" : "VP9"} at ${width}x${height} isn't supported here. Try a lower resolution.`);
   }
 
