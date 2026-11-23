@@ -16,6 +16,7 @@ import { applyFishEye, paintGlassBands, paintVignette } from "./canvasFx.js";
 import { isShadowFx } from "./sharedEffects.js";
 import { vidClamp } from "./videoMath.js";
 import { depthTintOf } from "./appConstants.js";
+import { bgKey } from "./bgAnim.js";
 
 // ov (video export only): { cam, pose, texts, bg } for the frame being rendered
 export async function renderFrameCanvas(S, width, transparent = false, height = null, ov = null) {

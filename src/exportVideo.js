@@ -120,7 +120,6 @@ async function encodeWebCodecs(kind, { width, height, fps, count, transparent, r
 
   for (let i = 0; i < count; i++) {
     const canvas = await renderFrame(i);
-    if (i === 0) console.log("renderFrame returned:", canvas, canvas?.constructor?.name, canvas?.width, canvas?.height);
     if (!canvas || !canvas.width || !canvas.height) {
       throw new Error(`renderFrame(${i}) returned an invalid canvas (${canvas?.width}x${canvas?.height})`);
     }
