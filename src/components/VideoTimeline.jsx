@@ -324,7 +324,8 @@ useEffect(() => {
   const headRef = useRef(null);
   const tcRef = useRef(null);
   const cntRef = useRef(null);
-  const dragId = useRef(null);
+const dragId = useRef(null);
+const dragBgId = useRef(null);
   // eased playhead: shown = what's drawn, from/to/t0 = the current tween, held = pointer still down
   const glideRef = useRef({ on: false, held: false, shown: 0, from: 0, to: 0, t0: 0 });
   const live = useRef(v);
@@ -905,9 +906,14 @@ const textDown = (c, mode) =>
 const audioDown = (c, mode) =>
   clipRowDown(c, mode, () => v.onAudioSelect(c.id), (p) => v.onAudioPatch(c.id, p), "audio");
 
-const rowLabel = (key, text, selected, onClick, onContext, Icon, rename, hide) => (
+const rowLabel = (key, text, selected, onClick, onContext, Icon, rename, hide, reorder) => (
   <div
     key={key}
+    draggable={!!reorder && !rename?.editing}
+    onDragStart={reorder?.start}
+    onDragEnter={reorder?.enter}
+    onDragOver={reorder?.over}
+    onDragEnd={reorder?.end}
     onClick={onClick}
     onDoubleClick={rename?.start}
     onContextMenu={onContext}
@@ -1375,7 +1381,17 @@ const openEase = (e, sid, kid, prop = null) => {
       cancel: () => { bgCancelRef.current = true; },
       start: () => startBgRename(b),
     },
-    { hidden: !!b.hidden, toggle: () => v.onBgToggleHidden(b.id) }
+    { hidden: !!b.hidden, toggle: () => v.onBgToggleHidden(b.id) },
+    {
+      start: (e) => {
+        dragBgId.current = b.id;
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", String(b.id));
+      },
+      enter: () => dragBgId.current != null && dragBgId.current !== b.id && v.onBgReorder(dragBgId.current, b.id),
+      over: (e) => dragBgId.current != null && e.preventDefault(),
+      end: () => (dragBgId.current = null),
+    }
   )
 )}
 {v.texts.map((c) =>
