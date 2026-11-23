@@ -5293,6 +5293,10 @@ function paintScreenTexture(img, cropRect, deviceLabel, overlays) {
     sy = cropRect.y;
     sw = cropRect.width;
     sh = cropRect.height;
+    if (contentH < innerH - 0.5) {
+      // browser bars shrink the viewport: keep the crop's top edge and width, trim from the bottom
+      sh = Math.min(sw * (contentH / innerW), img.height - sy);
+    }
   } else {
     // sourceAspect describes the full display; rescale it when bars shrink the viewport.
     const targetAspect = (bm.sourceAspect ?? innerW / innerH) * (innerH / contentH);
