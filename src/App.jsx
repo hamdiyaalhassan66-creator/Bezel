@@ -1267,7 +1267,16 @@ useEffect(() => {
     };
   }, [customBgImageUrl]);
   const [colorPickerOpen, setColorPickerOpen] = useState(false);
-  const [savedColors, setSavedColors] = useState(["FFFFFF", "0A0A0A", "FF47BC"]);
+  const [savedColors, setSavedColors] = useState(() => {
+    try {
+      const v = JSON.parse(localStorage.getItem("bezel:saved-colors"));
+      if (Array.isArray(v)) return v;
+    } catch {}
+    return ["FFFFFF", "0A0A0A", "FF47BC"];
+  });
+  useEffect(() => {
+    try { localStorage.setItem("bezel:saved-colors", JSON.stringify(savedColors)); } catch {}
+  }, [savedColors]);
   const [lighting, setLighting] = useState("none");
   // Off by default so screenshots that already include a status bar / home indicator don't get a second one.
   const [showStatusBar, setShowStatusBar] = useState(false);
