@@ -138,6 +138,15 @@ export function getFrameScreenSpec(deviceLabel, orientation = "portrait") {
   return { ratio: w / h, kind };
 }
 
+// Height (in the layout's logical pt) the browser bar takes at the top of a Frame,
+// so the image can start below it instead of sitting underneath.
+export function getFrameBrowserTopPt(layout, browser, tabs) {
+  if (layout === "tablet") return TABLET_STATUS_H + (TABLET_BROWSER_H[browser] ?? 0);
+  if (layout === "desktop") return BROWSER_HEADER_H[browser] ?? 0;
+  const key = browser === "safari" && tabs === "top" ? "safariTop" : browser;
+  return PHONE_SAFE_AREA.default.top + (PHONE_BROWSER_LAYOUT[key]?.top ?? 0);
+}
+
 // Chrome is painted upright in the orientation the person sees; the mesh's UVs are always
 // portrait, so a landscape canvas is turned 90° clockwise before the per-device flips.
 // Devices whose landscape canvas needs to rotate the OPPOSITE direction

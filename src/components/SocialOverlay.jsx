@@ -1,5 +1,5 @@
 import React, { useRef, useLayoutEffect } from "react";
-import { paintPhoneChrome } from "../MockupScene.jsx";
+import { paintPhoneChrome, getFrameBrowserTopPt } from "../MockupScene.jsx";
 import { modeOf, DEFAULT_SOCIAL, ICONS, socialOps } from "../lib/social.js";
 
 const chromeKey = (f) => (f.img ? `${f.img.cropUrl ?? f.img.url}|${(f.w / f.h).toFixed(2)}` : null);
@@ -8,7 +8,14 @@ const chromeKey = (f) => (f.img ? `${f.img.cropUrl ?? f.img.url}|${(f.w / f.h).t
 const STATUS_H = 54;
 // Pixels the image is pushed down by the status bar (0 when it's off or covered by social / browser UI).
 function statusInset(f, w, h) {
-  if (!f.statusBar || f.social?.on || f.browser?.on || w / h >= 1) return 0;
+  if (f.social?.on) return 0;
+  const ratio = w / h;
+  if (f.browser?.on) {
+    const layout = ratio >= 1 ? "desktop" : ratio >= 0.6 ? "tablet" : "phone";
+    const lw = layout === "desktop" ? 1440 : layout === "tablet" ? 820 : 440; // same widths paintPhoneChrome scales by
+    return getFrameBrowserTopPt(layout, f.browser.type, f.browser.tabs) * (w / lw);
+  }
+  if (!f.statusBar || ratio >= 1) return 0;
   return STATUS_H * Math.min(w / 440, h / 956);
 }
 
