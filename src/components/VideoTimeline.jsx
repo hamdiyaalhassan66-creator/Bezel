@@ -1772,7 +1772,12 @@ const openEase = (e, sid, kid, prop = null) => {
           <span ref={tcRef} className="tabular-nums leading-[18px] text-[#FCFCFC]">00:00:00</span>
           <i className="absolute left-1/2 -bottom-[3px] -ml-1 w-2 h-2 rotate-45 rounded-[1px] bg-[#FF47BC]" />
         </div>
-        <div className="absolute left-0 top-[22px] bottom-0 w-px bg-[#FF47BC]" />
+        <div
+          onPointerDown={scrub}
+          className="absolute left-0 top-[22px] bottom-0 w-2 -translate-x-1/2 flex justify-center pointer-events-auto cursor-grab active:cursor-grabbing"
+        >
+          <i className="w-px h-full bg-[#FF47BC]" />
+        </div>
       </div>
     </div>
     </div>
