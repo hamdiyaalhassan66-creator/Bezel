@@ -1247,7 +1247,7 @@ useEffect(() => {
 
 // No background row selected + the user changes the background -> new row instead of losing the change.
 useEffect(() => {
-  if (!videoOn || selBg || vidPlaying || vidExporting) return;
+  if (!videoOn || selBg || (vidPlaying && !animTab) || vidExporting) return;
   if (bgKey(bgSnapshot()) === bgAppliedKeyRef.current) return; // came from a clip, not from the user
   vidAddBgFromEdit();
 }, [bgType, bgHex, bgOpacity, gradientType, gradientAngle, gradientOpacity, gradientStops, grainAmount, customBgImageUrl]);
