@@ -11,6 +11,8 @@ import { planeCss, planePoly, rigPerspective } from "../lib/plane3d.js";
 import { CurvedPlane } from "./CurvedPlane.jsx";
 import { isClipped, clipCss, featherCss } from "../lib/frameKeys.js";
 import { cornersOf } from "../lib/frameModel.js";
+import { SpacingGuides } from "./SpacingGuides.jsx";
+import { equalSpacingSnap, equalGaps } from "../lib/spacingGuides.js";
 
 // Chromium only: SVG url() filters inside backdrop-filter (refraction + dispersion).
 const URL_BACKDROP =
@@ -98,13 +100,14 @@ const boundsOf = (f, b) => {
   return { l: cx - hw, t: cy - hh, r: cx + hw, b: cy + hh };
 };
 
-export function FrameLayer({ depthTint, nativeSizeOf, onFrameClick, markIds = [], onFrameHover, frames, selectedIds, onSelect, onFramesChange, aspectLocked, environment, camera, cameraEase, background, textBehind, sizeRef, onPickFile, onRotate, onZoom, backVisible, chromeColors, nextFrameId, stageRef, animRef, onStageReady, groupOf, onFrameDoubleClick, videoMode, onVideoReady, locked, fishCanvasRef, useFishCanvas, playing, onContextMenu }) {
+export function FrameLayer({ depthTint, nativeSizeOf, onFrameClick, markIds = [], onFrameHover, frames, selectedIds, onSelect, onFramesChange, aspectLocked, environment, camera, cameraEase, background, textBehind, sizeRef, onPickFile, onRotate, onZoom, backVisible, chromeColors, nextFrameId, stageRef, animRef, onStageReady, groupOf, onFrameDoubleClick, videoMode, onVideoReady, locked, fishCanvasRef, useFishCanvas, playing, onContextMenu, labelScale = 1 }) {
   const wrapRef = useRef(null);
   const [box, setBox] = useState(null);
   const [guides, setGuides] = useState({ v: false, h: false }); // v = vertical line (centered in X), h = horizontal line (centered in Y)
   const [marquee, setMarquee] = useState(null); // { left, top, width, height } while Shift-dragging
   const [nativeGuide, setNativeGuide] = useState(null); // { l, t, r, b, mw, mh, w, h } while a resize matches the image's original size
   const [matchGuide, setMatchGuide] = useState(null); // { l, t, r, b, others: [rect] } while a resize matches another frame's height
+  const [spacing, setSpacing] = useState([]); // equal-gap guides while dragging a frame
   const [altHeld, setAltHeld] = useState(false); // Alt / Option held: show distances to the canvas edges
   const [overOther, setOverOther] = useState(false); // cursor is over a frame that isn't selected: App.jsx shows frame-to-frame distances instead
   useEffect(() => {
@@ -174,6 +177,7 @@ export function FrameLayer({ depthTint, nativeSizeOf, onFrameClick, markIds = []
       setMarquee(null);
       setNativeGuide(null);
       setMatchGuide(null);
+      setSpacing([]);
     }
     let live = true;
     const end = (ev, silent) => {
@@ -264,12 +268,24 @@ export function FrameLayer({ depthTint, nativeSizeOf, onFrameClick, markIds = []
         }));
         return best;
       };
+      let snapX = v, snapY = h;
       if (!v) {
         const d = nearest([gl + dx, (gl + gr) / 2 + dx, gr + dx], others.flatMap((o) => [o.l, (o.l + o.r) / 2, o.r]));
-        if (d !== null) dx += d;
+        if (d !== null) { dx += d; snapX = true; }
       }
       if (!h) {
         const d = nearest([gt + dy, (gt + gB) / 2 + dy, gB + dy], others.flatMap((o) => [o.t, (o.t + o.b) / 2, o.b]));
+        if (d !== null) { dy += d; snapY = true; }
+      }
+
+      // Equal spacing: snap so the gap to one neighbour matches the gap between two others
+      const mRect = () => ({ l: gl + dx, r: gr + dx, t: gt + dy, b: gB + dy });
+      if (!snapX) {
+        const d = equalSpacingSnap(mRect(), others, SNAP, "h");
+        if (d !== null) dx += d;
+      }
+      if (!snapY) {
+        const d = equalSpacingSnap(mRect(), others, SNAP, "v");
         if (d !== null) dy += d;
       }
 
@@ -285,6 +301,9 @@ export function FrameLayer({ depthTint, nativeSizeOf, onFrameClick, markIds = []
         if (hit.length) lines.push({ y1: y, y2: y, x1: Math.min(gl + dx, ...hit.map((o) => o.l)), x2: Math.max(gr + dx, ...hit.map((o) => o.r)) });
       });
       setGuides({ v, h, lines });
+      const mv = mRect();
+      const all = [...others, mv];
+      setSpacing([...equalGaps(all, "h", mv), ...equalGaps(all, "v", mv)]);
       onFramesChange((prev) =>
         prev.map((f) => {
           const s0 = targets.get(f.id);
@@ -294,6 +313,7 @@ export function FrameLayer({ depthTint, nativeSizeOf, onFrameClick, markIds = []
     };
     const onUp = () => {
       setGuides({ v: false, h: false });
+      setSpacing([]);
       if (!moved && !e.shiftKey && !inGroup && ids.length > grp.length) onSelect(grp); // click without dragging = pick just this one (and its group). Not for the empty group area, which has no frame to pick
     };
     trackDrag(onMove, onUp);
@@ -1045,6 +1065,7 @@ const bandMaps = useMemo(
           })}
         </div>
       )}
+      <SpacingGuides guides={spacing} k={labelScale} />
       {guides.v && <div className="absolute z-30 top-0 bottom-0 left-1/2 w-px pointer-events-none" style={{ background: GUIDE }} />}
       {guides.h && <div className="absolute z-30 left-0 right-0 top-1/2 h-px pointer-events-none" style={{ background: GUIDE }} />}
       {guides.lines?.map((l, i) => (

@@ -15,6 +15,7 @@ export function FrameAppearance({
   frameCorners, frameRadius, setFrameCorners, setFrameRadius,
   frameStroke, updateStroke,
   frameEffects, effectRowRefs, openEffectId, toggleEffectPopup, updateEffect, removeEffect, openFrameFxMenu,
+  frameGap, canSetGap, onFrameGapChange,
   handleSwatchClick, makePercentDrag,
 }) {
   return (
@@ -92,6 +93,21 @@ export function FrameAppearance({
                       />
                     )}
                   </div>
+
+                  {/* Gap (2+ frames selected) */}
+                  {canSetGap && (
+                    <div className="fx-enter flex flex-col gap-2">
+                      <label className="text-[13px] font-medium tracking-[0.01em] text-[#737373] dark:text-[#ABABAB]">Gap</label>
+                      <Scrubber
+                        label="Gap"
+                        value={frameGap}
+                        min={-200}
+                        max={400}
+                        hardMax={Infinity}
+                        onChange={onFrameGapChange}
+                      />
+                    </div>
+                  )}
 
                   {/* Stroke */}
 <div className="flex flex-col gap-2">

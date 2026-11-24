@@ -95,6 +95,8 @@ import { RenameModal } from "./components/RenameModal.jsx";
 import { useDismissable, CTX_ITEM } from "./components/timelineParts.jsx";
 import { FrameTemplateThumb, templateBackground, VideoTemplateCard, FrameVideoTemplateCard } from "./components/TemplateCards.jsx";
 import { SocialControls } from "./components/SocialControls.jsx";
+import { SpacingGuides } from "./components/SpacingGuides.jsx";
+import { equalGaps } from "./lib/spacingGuides.js";
 import { FrameLayer } from "./components/FrameLayer.jsx";
 import { VideoTimeline } from "./components/VideoTimeline.jsx";
 import { AppStyles } from "./components/AppStyles.jsx";
@@ -3825,6 +3827,16 @@ const reloadTabRef = useRef(
       deleteText: () => deleteTextLayer(),
       distribute: distributeSelected,
       align: alignSelected,
+      nudge: (dx, dy) => {
+        const box = frameSizeRef.current;
+        if (!box) return;
+        markFrameEdit();
+        const short = Math.min(box.w, box.h);
+        const ids = selectedIdsRef.current;
+        setFrames((prev) =>
+          prev.map((f) => (ids.includes(f.id) ? { ...f, x: f.x + dx / short, y: f.y + dy / short } : f))
+        );
+      },
       selectAllFrames: () => setSelectedIds(frames.map((f) => f.id)),
     };
   });
@@ -3923,6 +3935,14 @@ const reloadTabRef = useRef(
         if (!cmd && !e.altKey && e.shiftKey && h.framesSelected && (e.code === "KeyH" || e.code === "KeyV")) {
           e.preventDefault();
           h.flipSelected(e.code === "KeyH" ? "h" : "v");
+          return;
+        }
+        if (!cmd && !e.altKey && h.framesSelected && key.startsWith("Arrow")) {
+          const step = e.shiftKey ? 10 : 1;
+          const dx = key === "ArrowLeft" ? -step : key === "ArrowRight" ? step : 0;
+          const dy = key === "ArrowUp" ? -step : key === "ArrowDown" ? step : 0;
+          e.preventDefault();
+          h.nudge(dx, dy);
           return;
         }
         if (e.altKey && !cmd) {
@@ -4225,6 +4245,42 @@ const frameAppearance = (() => {
   };
 })();
 
+// Gap between selected frames: laid out along the axis the selection is spread over more
+const gapLayout = () => {
+  const box = frameSizeRef.current;
+  const sel = framesLatestRef.current.filter((f) => selectedIds.includes(f.id) && !f.hidden);
+  if (!box || sel.length < 2) return null;
+  const rects = sel.map((f) => ({ id: f.id, r: frameRect(f, box) }));
+  const spanX = Math.max(...rects.map((o) => o.r.left + o.r.width)) - Math.min(...rects.map((o) => o.r.left));
+  const spanY = Math.max(...rects.map((o) => o.r.top + o.r.height)) - Math.min(...rects.map((o) => o.r.top));
+  const horiz = spanX >= spanY;
+  const start = (o) => (horiz ? o.r.left : o.r.top);
+  const size = (o) => (horiz ? o.r.width : o.r.height);
+  rects.sort((a, b) => start(a) - start(b));
+  return { box, rects, horiz, start, size, k: (exportDims(1920)?.w ?? box.w) / box.w };
+};
+const frameGap = (() => {
+  const g = gapLayout();
+  if (!g) return 0;
+  const gaps = g.rects.slice(1).map((o, i) => g.start(o) - (g.start(g.rects[i]) + g.size(g.rects[i])));
+  return Math.round((gaps.reduce((a, b) => a + b, 0) / gaps.length) * g.k);
+})();
+const handleFrameGap = (target) => {
+  const g = gapLayout();
+  if (!g) return;
+  markFrameEdit();
+  const gapPx = target / g.k;
+  const short = Math.min(g.box.w, g.box.h);
+  const moves = new Map();
+  let end = g.start(g.rects[0]) + g.size(g.rects[0]);
+  g.rects.slice(1).forEach((o) => {
+    moves.set(o.id, (end + gapPx - g.start(o)) / short);
+    end = end + gapPx + g.size(o);
+  });
+  const key = g.horiz ? "x" : "y";
+  setFrames((prev) => prev.map((f) => (moves.has(f.id) ? { ...f, [key]: f[key] + moves.get(f.id) } : f)));
+};
+
 // Alt-measure: nearest neighbour (or canvas edge) on each side of the selection, in canvas px
 const altMeasures = (() => {
   const box = frameSizeRef.current;
@@ -4282,6 +4338,19 @@ const altMeasures = (() => {
   }
 
   return out;
+})();
+
+// 3+ selected frames with equal gaps: show the gaps, like Figma
+const selSpacing = (() => {
+  const box = frameSizeRef.current;
+  if (!box || toolbarMode !== "frame" || animTab || selectedIds.length < 3 || !isDefaultCamera(frameCam)) return [];
+  const rects = frames
+    .filter((f) => selectedIds.includes(f.id) && !f.hidden)
+    .map((f) => {
+      const r = frameRect(f, box);
+      return { l: r.left, r: r.left + r.width, t: r.top, b: r.top + r.height };
+    });
+  return [...equalGaps(rects, "h"), ...equalGaps(rects, "v")];
 })();
 
 const frameBackground = (
@@ -5084,6 +5153,7 @@ const chrome = {
                         onFrameClick={(id) => setAnimSel(id == null ? null : animAssetOf(id))}
                         onVideoReady={() => syncVideos(vidTimeRef.current, vidLive.current.playing)}
                         nativeSizeOf={nativeSizeOf}
+                        labelScale={(exportDims(1920)?.w ?? 1) / (frameSizeRef.current?.w || 1)}
                         depthTint={depthTintOf({ bgType, bgHex, gradientStops })}
                       />
                     )}
@@ -5154,6 +5224,8 @@ const chrome = {
     })}
   </div>
 )}
+
+<SpacingGuides guides={selSpacing} k={(exportDims(1920)?.w ?? 1) / (frameSizeRef.current?.w || 1)} />
 
 {textTool && (
                       <div
@@ -5806,6 +5878,9 @@ const chrome = {
   updateEffect={updateEffect}
   removeEffect={removeEffect}
   openFrameFxMenu={openFrameFxMenu}
+  frameGap={frameGap}
+  canSetGap={selectedFrames.length > 1}
+  onFrameGapChange={handleFrameGap}
   handleSwatchClick={handleSwatchClick}
   makePercentDrag={makePercentDrag}
 />
