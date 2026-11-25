@@ -2174,9 +2174,13 @@ setVidTexts((prev) => (prev.some((c) => c.tid === id) ? prev.filter((c) => c.tid
         try {
           const W = 1280, H = Math.max(2, Math.round((W * d.h) / d.w));
           const c = renderGradientFxCanvas(W, H, W / d.w);
-          if (toolbarMode === "frame") showFrameBgCanvas(c);
-          else {
+          if (toolbarMode === "frame") {
+            const bc = frameBgCanvasRef.current;
+            if (bc) bc.getContext("2d")?.clearRect(0, 0, bc.width, bc.height);
+            showFrameBgCanvas(c);
+          } else {
             hideFrameBgCanvas();
+            sceneRef.current?.setBackgroundCanvas?.(null);
             sceneRef.current?.setBackgroundCanvas?.(c);
           }
         } finally {
