@@ -66,12 +66,14 @@ function chromeOps(f, w, h, auto) {
   const barColor = socialColor ?? (b ? (b.theme === "dark" ? "#FFFFFF" : "#000000") : null);
   const ratio = w / h;
   const layout = ratio >= 1 ? "desktop" : ratio >= 0.6 ? "tablet" : "phone";
+  const themeColor = f.statusBarTheme === "light" ? "#000000" : f.statusBarTheme === "dark" ? "#FFFFFF" : null;
   return [{
     t: "chrome", w, h, layout,
     statusBar: !!f.statusBar,
+    dynamicIsland: !!f.dynamicIsland,
     homeIndicator: !!f.homeIndicator,
     color: barColor ?? "#FFFFFF",
-    statusColor: barColor ?? (statusInset(f, w, h) ? "#FFFFFF" : auto?.status ?? "#FFFFFF"),
+    statusColor: barColor ?? themeColor ?? (statusInset(f, w, h) ? "#FFFFFF" : auto?.status ?? "#FFFFFF"),
     homeColor: barColor ?? auto?.home ?? "#FFFFFF",
     browser: b ? b.type : "none",
     browserTheme: b?.theme ?? "light",
@@ -94,7 +96,7 @@ function ChromeCanvas({ o }) {
     const ctx = c.getContext("2d");
     ctx.scale(dpr, dpr);
     paintPhoneChrome(ctx, o.w, o.h, o);
-  }, [o.w, o.h, o.layout, o.statusBar, o.homeIndicator, o.color, o.statusColor, o.homeColor, o.browser, o.browserTheme, o.browserTabs, o.browserUrl, o.browserFavicon, tick]);
+  }, [o.w, o.h, o.layout, o.statusBar, o.dynamicIsland, o.homeIndicator, o.color, o.statusColor, o.homeColor, o.browser, o.browserTheme, o.browserTabs, o.browserUrl, o.browserFavicon, tick]);
   return <canvas ref={ref} className="absolute inset-0" style={{ width: o.w, height: o.h }} />;
 }
 

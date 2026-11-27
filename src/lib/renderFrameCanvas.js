@@ -277,15 +277,15 @@ export async function renderFrameCanvas(S, width, transparent = false, height = 
           }
           paintSocial(lctx, sops, sx, sy, imgs);
         }
-if (!backFacing && (fr.statusBar || fr.homeIndicator || fr.browser?.on)) {
-  if (fr.browser?.favicon) await preloadFavicon(fr.browser.favicon);
-  const auto = srcImg ? sampleChromeColors(srcImg, fr.w, fr.h) : null;
-  const cop = chromeOps(fr, sw, sh, auto)[0];
-  lctx.save();
-  lctx.translate(sx, sy);
-  paintPhoneChrome(lctx, sw, sh, cop);
-  lctx.restore();
-}
+        if (!backFacing && (fr.statusBar || fr.homeIndicator || fr.dynamicIsland || fr.browser?.on)) {
+          if (fr.browser?.favicon) await preloadFavicon(fr.browser.favicon);
+          const auto = srcImg ? sampleChromeColors(srcImg, fr.w, fr.h) : null;
+          const cop = chromeOps(fr, sw, sh, auto)[0];
+          lctx.save();
+          lctx.translate(sx, sy);
+          paintPhoneChrome(lctx, sw, sh, cop);
+          lctx.restore();
+        }
         fr.effects
           .filter((e) => e.visible && e.type === "noise")
           .forEach((e) => drawNoise(lctx, sx, sy, sw, sh, e.amount, Math.max(1, ((1 + e.size * 0.5) / 1.4) * k)));

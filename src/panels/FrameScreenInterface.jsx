@@ -10,6 +10,7 @@ import { fileToFavicon } from "../MockupScene.jsx";
 export function FrameScreenInterface({
   toolbarMode, openSections, toggleSection,
   frameStatusBar, setFrameStatusBar, frameHomeIndicator, setFrameHomeIndicator,
+  frameStatusBarTheme, setFrameStatusBarTheme, frameDynamicIsland, setFrameDynamicIsland,
   frameBrowser, updateBrowser, browserOptions,
   frameSocial, toggleSocialOn, changeSocialPlatform, changeSocialMode,
   activeSocialPlatform, activeSocialMode, updateSocial,
@@ -27,6 +28,22 @@ export function FrameScreenInterface({
               <div className="overflow-hidden">
                 <div className="pt-4 flex flex-col gap-2">
                   <ToggleRow label="Status bar" checked={!!frameStatusBar} onChange={setFrameStatusBar} />
+                  {!!frameStatusBar && (
+                    <div className="fx-enter flex items-center p-0.5 w-full h-8 bg-[#F0F0F0] dark:bg-black rounded-2xl">
+                      {["auto", "light", "dark"].map((t) => (
+                        <button
+                          key={t}
+                          onClick={() => setFrameStatusBarTheme(t)}
+                          className={`seg-tab flex-1 h-7 flex items-center justify-center gap-2 px-2.5 py-1 rounded-[14px] leading-5 capitalize transition-colors duration-200 ${
+                            (frameStatusBarTheme ?? "auto") === t ? SEG_ON : SEG_OFF
+                          }`}
+                        >
+                          {t}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <ToggleRow label="Dynamic island" checked={!!frameDynamicIsland} onChange={setFrameDynamicIsland} />
                   <ToggleRow label="Home indicator" checked={!!frameHomeIndicator} onChange={setFrameHomeIndicator} />
                   <ToggleRow label="Browser" checked={frameBrowser.on} onChange={(on) => updateBrowser({ on })} disabled={frameSocial.on} />
                   {frameBrowser.on && (

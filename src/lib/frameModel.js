@@ -16,7 +16,7 @@ export const makeFrame = (id, patch = {}) => ({
   stroke: DEFAULT_STROKE,
   effects: [],
   social: DEFAULT_SOCIAL,
-    statusBar: false, homeIndicator: false,
+    statusBar: false, statusBarTheme: "auto", dynamicIsland: false, homeIndicator: false,
   backType: "solid", backHex: "FFFFFF", backOpacity: 100,
   backGradientType: "Linear", backGradientAngle: 90, backGradientOpacity: 100,
   backStops: [

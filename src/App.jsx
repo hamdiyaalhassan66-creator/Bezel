@@ -468,8 +468,12 @@ useEffect(() => {
   const frameSocial = primaryFrame.social;
   const setFrameSocial = makeFrameSetter("social");
   const updateSocial = (patch) => setFrameSocial((prev) => ({ ...prev, ...patch }));
-    const frameStatusBar = primaryFrame.statusBar;
+  const frameStatusBar = primaryFrame.statusBar;
   const setFrameStatusBar = makeFrameSetter("statusBar");
+  const frameStatusBarTheme = primaryFrame.statusBarTheme ?? "auto";
+  const setFrameStatusBarTheme = makeFrameSetter("statusBarTheme");
+  const frameDynamicIsland = primaryFrame.dynamicIsland ?? false;
+  const setFrameDynamicIsland = makeFrameSetter("dynamicIsland");
   const frameHomeIndicator = primaryFrame.homeIndicator;
   const setFrameHomeIndicator = makeFrameSetter("homeIndicator");
   const frameBrowser = { ...FRAME_BROWSER_DEFAULT, ...primaryFrame.browser };
@@ -1282,6 +1286,8 @@ useEffect(() => {
   const [lighting, setLighting] = useState("none");
   // Off by default so screenshots that already include a status bar / home indicator don't get a second one.
   const [showStatusBar, setShowStatusBar] = useState(false);
+  const [statusBarTheme, setStatusBarTheme] = useState("auto"); // "auto" | "light" | "dark"
+  const [showDynamicIsland, setShowDynamicIsland] = useState(false);
   const [showHomeIndicator, setShowHomeIndicator] = useState(false);
   const [showMenuBar, setShowMenuBar] = useState(false);
   const [showBrowser, setShowBrowser] = useState(false);
@@ -2222,6 +2228,8 @@ useEffect(() => {
     const t = setTimeout(() => {
       sceneRef.current?.setScreenOverlays({
         statusBar: showStatusBar && !isWatch,
+        statusBarTheme,
+        dynamicIsland: showDynamicIsland && isPhone,
         homeIndicator: showHomeIndicator && !isWatch,
         menuBar: showMenuBar,
         browser: showBrowser && !showSocial && !isWatch ? browserType : "none",
@@ -2234,7 +2242,7 @@ useEffect(() => {
       });
     }, 120);
     return () => clearTimeout(t);
-  }, [showStatusBar, showHomeIndicator, showMenuBar, showBrowser, browserType, browserTheme, browserUrl, browserFavicon, safariTabs, deviceOrientation, showSocial, mockupSocial, socialImgTick, fontTick, isWatch]);
+  }, [showStatusBar, statusBarTheme, showDynamicIsland, showHomeIndicator, showMenuBar, showBrowser, browserType, browserTheme, browserUrl, browserFavicon, safariTabs, deviceOrientation, showSocial, mockupSocial, socialImgTick, fontTick, isWatch]);
 
   useEffect(() => {
     if (isEditingTitle && projectTitleInputRef.current) {
@@ -2874,6 +2882,8 @@ handlePositionXChange(0);
     setLighting("none");
     setLightingIntensity(60);
     setShowStatusBar(false);
+    setStatusBarTheme("auto");
+    setShowDynamicIsland(false);
     setShowHomeIndicator(false);
     setShowMenuBar(false);
     setShowBrowser(false);
@@ -3409,7 +3419,7 @@ const unpackBgs = (bgs) =>
     deviceCategory, deviceType, finish, bodyHex, bodyOpacity, deviceOrientation,
     brightness, reflectionMode, reflectionShiny, reflectionMatte,
     lighting, lightingIntensity,
-    showStatusBar, showHomeIndicator, showMenuBar, showBrowser, browserType, browserTheme, browserUrl, safariTabs,
+    showStatusBar, statusBarTheme, showDynamicIsland, showHomeIndicator, showMenuBar, showBrowser, browserType, browserTheme, browserUrl, safariTabs,
     // In Video mode the camera comes from the timeline, so it stays out of the history
     ...(videoOn ? {} : { rotationX, rotationY, rotationZ, positionX, positionY, zoom, fov }),
     canvasSize, customWidth, customHeight,
@@ -3503,6 +3513,8 @@ vidDuration,
       setReflectionShiny(s.reflectionShiny);
       setReflectionMatte(s.reflectionMatte);
       setShowStatusBar(s.showStatusBar);
+      setStatusBarTheme(s.statusBarTheme ?? "auto");
+      setShowDynamicIsland(s.showDynamicIsland ?? false);
       setShowHomeIndicator(s.showHomeIndicator);
       setShowMenuBar(s.showMenuBar);
       setShowBrowser(s.showBrowser);
@@ -5895,6 +5907,10 @@ const chrome = {
   toggleSection={toggleSection}
   frameStatusBar={frameStatusBar}
   setFrameStatusBar={setFrameStatusBar}
+  frameStatusBarTheme={frameStatusBarTheme}
+  setFrameStatusBarTheme={setFrameStatusBarTheme}
+  frameDynamicIsland={frameDynamicIsland}
+  setFrameDynamicIsland={setFrameDynamicIsland}
   frameHomeIndicator={frameHomeIndicator}
   setFrameHomeIndicator={setFrameHomeIndicator}
   frameBrowser={frameBrowser}
@@ -5961,8 +5977,24 @@ const chrome = {
                 <div className="pt-4 flex flex-col gap-2">
                   {(DEVICE_TYPE_OPTIONS.some((o) => o.value === deviceType) || isTablet) && (
                     <>
-<ToggleRow label="Status bar" checked={showStatusBar} onChange={setShowStatusBar} />
-<ToggleRow label="Home indicator" checked={showHomeIndicator} onChange={setShowHomeIndicator} />
+                    <ToggleRow label="Status bar" checked={showStatusBar} onChange={setShowStatusBar} />
+                    {showStatusBar && (
+                      <div className="fx-enter flex items-center p-0.5 w-full h-8 bg-[#F0F0F0] dark:bg-black rounded-2xl">
+                        {["auto", "light", "dark"].map((t) => (
+                          <button
+                            key={t}
+                            onClick={() => setStatusBarTheme(t)}
+                            className={`seg-tab flex-1 h-7 flex items-center justify-center gap-2 px-2.5 py-1 rounded-[14px] leading-5 capitalize transition-colors duration-200 ${
+                              statusBarTheme === t ? SEG_ON : SEG_OFF
+                            }`}
+                          >
+                            {t}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {isPhone && <ToggleRow label="Dynamic island" checked={showDynamicIsland} onChange={setShowDynamicIsland} />}
+                    <ToggleRow label="Home indicator" checked={showHomeIndicator} onChange={setShowHomeIndicator} />
                     </>
                   )}
 

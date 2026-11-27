@@ -3877,7 +3877,7 @@ function loadEnvironmentTexture(renderer, key) {
 // the top, home indicator from the bottom). `color` is passed in because Frame has no pixels
 // to sample, it picks black/white from the social UI's theme.
 export function paintPhoneChrome(ctx, w, h, {
-  statusBar, homeIndicator, color = "#FFFFFF", statusColor, homeColor, deviceLabel = "iPhone 16 Pro Max",
+  statusBar, homeIndicator, dynamicIsland = false, color = "#FFFFFF", statusColor, homeColor, deviceLabel = "iPhone 16 Pro Max",
   browser = "none", browserTheme = "light", browserTabs = "top", browserUrl = "", browserFavicon = "", layout = "phone",
 }) {
   const { w: lw, h: baseH } = SCREEN_LOGICAL_PT[deviceLabel] ?? SCREEN_LOGICAL_PT.default;
@@ -3932,6 +3932,7 @@ export function paintPhoneChrome(ctx, w, h, {
       getStatusBarCenterY(deviceLabel)
     );
   }
+  if (dynamicIsland) drawDynamicIsland(ctx, lw, getStatusBarCenterY(deviceLabel));
   if (homeIndicator) drawHomeIndicator(ctx, lw, h / k, homeColor ?? color, getHomeIndicatorBottomGap(deviceLabel));
   ctx.restore();
 }
@@ -4203,6 +4204,23 @@ function drawHomeIndicator(ctx, W, H, color, bottomGap) {
   ctx.fillStyle = color;
   roundedRectPath(ctx, (W - w) / 2, H - bottomGap - h, w, h, h / 2);
   ctx.fill();
+  ctx.restore();
+}
+
+function drawDynamicIsland(ctx, W, cy) {
+  const { width: w, height: h } = DYNAMIC_ISLAND_SPEC;
+  const x = (W - w) / 2, y = cy - h / 2;
+  ctx.save();
+  ctx.fillStyle = "#000000";
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, h / 2);
+  ctx.fill();
+  // camera housing + lens, right of center like the real one
+  const cx = x + w * 0.854;
+  ctx.fillStyle = "#141418";
+  ctx.beginPath(); ctx.arc(cx, cy, h * 0.17, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#05060c";
+  ctx.beginPath(); ctx.arc(cx, cy, h * 0.1, 0, Math.PI * 2); ctx.fill();
   ctx.restore();
 }
 
@@ -5245,12 +5263,14 @@ function drawTabletChrome(ctx, W, H, deviceLabel, overlays) {
 
   // Read the pixels for the theme decision BEFORE any chrome is painted over them.
   const dark = overlays?.browserTheme === "dark";
-  const statusColor =
+  const autoStatusColor =
     browser !== "none"
       ? dark ? "#FFFFFF" : "#000000"
       : (lumaAt(20, 0, 160, TABLET_STATUS_H) + lumaAt(lw - 180, 0, 160, TABLET_STATUS_H)) / 2 > 0.6
         ? "#000000"
         : "#FFFFFF";
+          const st = overlays?.statusBarTheme;
+  const statusColor = browser !== "none" ? autoStatusColor : st === "light" ? "#000000" : st === "dark" ? "#FFFFFF" : autoStatusColor;
   const url = (overlays?.browserUrl || DEFAULT_BROWSER_URL).trim();
   const homeColor = lumaAt(lw * 0.35, lh - 18, lw * 0.3, 14) > 0.6 ? "#000000" : "#FFFFFF";
 
@@ -5282,7 +5302,7 @@ function drawScreenChrome(ctx, W, H, deviceLabel, overlays) {
     return;
   }
   const phoneBrowser = getPhoneBrowserMetrics(deviceLabel, overlays);
-  if (!overlays?.statusBar && !overlays?.homeIndicator && !phoneBrowser) return;
+  if (!overlays?.statusBar && !overlays?.homeIndicator && !overlays?.dynamicIsland && !phoneBrowser) return;
 
   const bm = getScreenBMConfig(deviceLabel);
   const { w: lw, h: lh } = SCREEN_LOGICAL_PT[deviceLabel] ?? SCREEN_LOGICAL_PT.default;
@@ -5318,8 +5338,11 @@ function drawScreenChrome(ctx, W, H, deviceLabel, overlays) {
     const earC = (lw - STATUS_BAR.islandW) / 4 + offsetPt / 2;
     const y0 = cy - 9;
     const luma = (lumaAt(earC - 22, y0, 44, 18) + lumaAt(lw - earC - 38, y0, 76, 18)) / 2;
-    drawStatusBar(ctx, lw, luma > 0.6 ? "#000000" : "#FFFFFF", getStatusBarScale(deviceLabel), offsetPt, cy);
+    const theme = overlays.statusBarTheme;
+    const barColor = theme === "light" ? "#000000" : theme === "dark" ? "#FFFFFF" : luma > 0.6 ? "#000000" : "#FFFFFF";
+    drawStatusBar(ctx, lw, barColor, getStatusBarScale(deviceLabel), offsetPt, cy);
   }
+  if (overlays.dynamicIsland) drawDynamicIsland(ctx, lw, getStatusBarCenterY(deviceLabel));
   if (overlays.homeIndicator) {
     const luma = lumaAt(lw * 0.3, lh - 18, lw * 0.4, 14);
     drawHomeIndicator(ctx, lw, lh, luma > 0.6 ? "#000000" : "#FFFFFF", getHomeIndicatorBottomGap(deviceLabel));
