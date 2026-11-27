@@ -240,7 +240,7 @@ export async function renderFrameCanvas(S, width, transparent = false, height = 
           }
           const inset = statusInset(fr, sw, sh);
           if (inset > 0) {
-            lctx.fillStyle = "#000";
+            lctx.fillStyle = fr.statusBarTheme === "light" ? "#FFFFFF" : "#000";
             lctx.fillRect(sx, sy, sw, inset);
           }
           lctx.beginPath();
