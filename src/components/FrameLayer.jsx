@@ -774,7 +774,7 @@ const bandMaps = useMemo(
                 }}
                >
                 {statusInset(f, r.width, r.height) > 0 && (
-                  <div className="absolute left-0 right-0 top-0 bg-black" style={{ height: statusInset(f, r.width, r.height) }} />
+                  <div className="absolute left-0 right-0 top-0" style={{ height: statusInset(f, r.width, r.height), background: f.statusBarTheme === "light" ? "#FFFFFF" : "#000000" }} />
                 )}
                 <div className="absolute left-0 right-0 bottom-0" style={{ top: statusInset(f, r.width, r.height), transform: flipCss }}>
                 {backVisible ? (
@@ -822,7 +822,7 @@ const bandMaps = useMemo(
                   <SocialOverlay social={{ ...f.social, media: imgUrl }} width={r.width} height={r.height} />
                 )}
 
-                {!backVisible && (f.statusBar || f.homeIndicator || f.browser?.on) && (
+                {!backVisible && (f.statusBar || f.homeIndicator || f.dynamicIsland || f.browser?.on) && (
                   <ChromeCanvas o={chromeOps(f, r.width, r.height, chromeColors?.[chromeKey(f)])[0]} />
                 )}
 
